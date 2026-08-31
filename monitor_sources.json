@@ -1,0 +1,49 @@
+{
+  "sources": [
+    {
+      "name": "해커스학점은행 채용정보",
+      "url": "https://m.hackershakjum.com/korean/sub/job_view.php?wr_id={id}",
+      "trust": 62,
+      "kind": "hackers_mobile_probe",
+      "id_start": 4480
+    },
+    {
+      "name": "국립국어원 한국어교원 구인정보",
+      "url": "https://kteacher.korean.go.kr/jobsearch/list",
+      "trust": 88,
+      "kind": "kteacher_list",
+      "pages": 20
+    },
+    {
+      "name": "세종학당재단 채용정보",
+      "url": "https://www.ksif.or.kr/cop/bbs/selectBoardList.do?bbsId=BBSMSTR_000000000001",
+      "trust": 90,
+      "kind": "generic_links"
+    },
+    {
+      "name": "동신대학교 국제한국어학과 재게시",
+      "url": "https://korean.dsu.ac.kr/korean/index.php?pCode=news",
+      "trust": 70,
+      "kind": "generic_links"
+    },
+    {
+      "name": "한국어교육바다(KLEOcean) 채용공고",
+      "url": "https://kleocean.com/%ed%95%9c%ea%b5%ad%ec%96%b4%ea%b5%90%ec%9b%90-%ea%b5%ad%eb%82%b4%ec%99%b8-%ec%b1%84%ec%9a%a9%ea%b3%b5%ea%b3%a0/",
+      "trust": 80,
+      "kind": "generic_links"
+    },
+    {
+      "name": "다누리 가족센터 채용정보",
+      "url": "https://liveinkorea.kr/web/lay1/bbs/S1T10C29/A/6/list.do?condition=&keyword=&cat=&area=&area_detail=&search_year=&search_month=&search_recruit_stat=&rows=10&cpage={page}",
+      "trust": 80,
+      "kind": "generic_links",
+      "pages": 5
+    },
+    {
+      "name": "인크루트 한국어강사 검색",
+      "url": "https://job.incruit.com/jobdb_list/searchjob.asp?col=job_all&il=y&kw=%ED%95%9C%EA%B5%AD%EC%96%B4%EA%B0%95%EC%82%AC",
+      "trust": 60,
+      "kind": "generic_links"
+    }
+  ]
+}

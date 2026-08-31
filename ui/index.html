@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>한국어교육 채용 데이터 검토</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Korean Teaching Jobs</p>
+        <h1>채용 데이터 검토</h1>
+      </div>
+      <button id="refreshButton" class="icon-button" title="새로고침" aria-label="새로고침">↻</button>
+    </header>
+
+    <main class="shell">
+      <section class="metrics" aria-label="요약">
+        <div class="metric">
+          <span class="metric-label">전체 공고</span>
+          <strong id="totalJobs">0</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">최근 후보</span>
+          <strong id="latestCandidates">0</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">최근 저장</span>
+          <strong id="latestSaved">0</strong>
+        </div>
+        <div class="metric">
+          <span class="metric-label">최근 스킵</span>
+          <strong id="latestSkipped">0</strong>
+        </div>
+      </section>
+
+      <section class="controls" aria-label="필터">
+        <label class="search">
+          <span>검색</span>
+          <input id="searchInput" type="search" placeholder="기관명, 제목, 지역">
+        </label>
+        <label>
+          <span>상태</span>
+          <select id="statusFilter">
+            <option value="">전체</option>
+            <option value="needs_review">검토 필요</option>
+            <option value="approved">승인</option>
+            <option value="rejected">제외</option>
+          </select>
+        </label>
+        <label>
+          <span>출처</span>
+          <select id="sourceFilter">
+            <option value="">전체 출처</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="content">
+        <div class="jobs-panel">
+          <div class="panel-heading">
+            <h2>수집 공고</h2>
+            <span id="resultCount">0건</span>
+          </div>
+          <div id="jobsList" class="jobs-list"></div>
+        </div>
+
+        <aside class="side-panel">
+          <section>
+            <h2>출처별</h2>
+            <div id="sourceStats" class="stack"></div>
+          </section>
+          <section>
+            <h2>최근 수집</h2>
+            <div id="runStats" class="stack"></div>
+          </section>
+          <section>
+            <h2>오류</h2>
+            <div id="errorStats" class="stack"></div>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <template id="jobTemplate">
+      <article class="job">
+        <div class="job-main">
+          <h3></h3>
+          <p class="meta"></p>
+          <p class="description"></p>
+          <div class="review">
+            <input class="note-input" type="text" placeholder="검토 메모">
+            <div class="review-actions" aria-label="검토 상태">
+              <button data-status="approved">승인</button>
+              <button data-status="rejected">제외</button>
+              <button data-status="needs_review">보류</button>
+            </div>
+          </div>
+        </div>
+        <div class="job-side">
+          <span class="status"></span>
+          <span class="score"></span>
+          <span class="deadline"></span>
+          <a class="source-link" target="_blank" rel="noreferrer">공고 보기</a>
+        </div>
+      </article>
+    </template>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
