@@ -9,6 +9,7 @@ import datetime as dt
 import hashlib
 import html as html_lib
 import html.parser
+import http.cookiejar
 import json
 import os
 import re
@@ -33,6 +34,16 @@ SAMPLE_HTML = ROOT / "sample_jobs.html"
 NURI_LIST_URL = "https://nuri.iksi.or.kr/front/bbs/korlecturer/layout71/list.do?pageIndex={page}"
 JINHAKPRO_LIST_URL = "https://www.jinhakpro.com/recruit/list?recruitTypeCode=L&page={page}"
 
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+)
+HIBRAIN_HOSTS = {"m.hibrain.net", "www.hibrain.net", "hibrain.net"}
+HIBRAIN_SIGNIN_URL = "https://m.hibrain.net/logins/signin"
+DEFAULT_SECRETS_FILE = ROOT / "secrets.env"
+KAKAO_KEYWORD_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
+KAKAO_ADDRESS_URL = "https://dapi.kakao.com/v2/local/search/address.json"
+
 
 @dataclass(frozen=True)
 class Source:
@@ -44,6 +55,8 @@ class Source:
     institution_hint: str | None = None
     location_hint: str | None = None
     deadline_hint: str | None = None
+    posted_at_hint: str | None = None
+    body_hint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -144,6 +157,22 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     )
     ensure_column(conn, "jobs", "review_note", "TEXT")
     ensure_column(conn, "jobs", "reviewed_at", "TEXT")
+    ensure_column(conn, "jobs", "latitude", "REAL")
+    ensure_column(conn, "jobs", "longitude", "REAL")
+    ensure_column(conn, "jobs", "address", "TEXT")
+    ensure_column(conn, "jobs", "place_name", "TEXT")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS geocode_cache (
+            query TEXT PRIMARY KEY,
+            latitude REAL,
+            longitude REAL,
+            address TEXT,
+            place_name TEXT,
+            looked_up_at TEXT NOT NULL
+        )
+        """
+    )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS collection_runs (
@@ -226,8 +255,101 @@ def load_config(path: Path) -> tuple[list[str], list[str], list[str], list[str],
     )
 
 
+def load_secrets_file(path: Path = DEFAULT_SECRETS_FILE) -> None:
+    """Load KEY=value lines from a gitignored file into the environment.
+
+    Keeps site credentials out of the repo and out of shell history. Values
+    already set in the real environment win, so a one-off override still works.
+    """
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+# Hosts whose postings are only served to signed-in members keep a logged-in
+# opener here, built once per process and reused for every later request.
+_SESSION_OPENERS: dict[str, urllib.request.OpenerDirector | None] = {}
+
+
+def build_session_opener() -> urllib.request.OpenerDirector:
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    opener.addheaders = [
+        ("User-Agent", BROWSER_USER_AGENT),
+        ("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
+        ("Accept-Language", "ko-KR,ko;q=0.9"),
+    ]
+    return opener
+
+
+def hibrain_opener() -> urllib.request.OpenerDirector | None:
+    """Sign in to hibrain.net once and reuse the session, or None if unavailable.
+
+    Most hibrain postings answer 401 to anonymous requests, so without
+    credentials only the handful of open ones can be collected. Credentials come
+    from HIBRAIN_USERID / HIBRAIN_PASSWD so they never live in the repo.
+    """
+    if "hibrain" in _SESSION_OPENERS:
+        return _SESSION_OPENERS["hibrain"]
+    _SESSION_OPENERS["hibrain"] = None
+
+    userid = os.environ.get("HIBRAIN_USERID")
+    passwd = os.environ.get("HIBRAIN_PASSWD")
+    if not userid or not passwd:
+        return None
+
+    opener = build_session_opener()
+    try:
+        with opener.open(HIBRAIN_SIGNIN_URL, timeout=20) as response:
+            response.read()
+        payload = urllib.parse.urlencode(
+            {"userid": userid, "passwd": passwd, "isAutoSignin": "false"}
+        ).encode()
+        request = urllib.request.Request(
+            f"{HIBRAIN_SIGNIN_URL}?redirectUrl=",
+            data=payload,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": HIBRAIN_SIGNIN_URL,
+                "Origin": "https://m.hibrain.net",
+            },
+        )
+        with opener.open(request, timeout=20) as response:
+            body = decode_response(response)
+    except Exception as exc:  # network trouble should not abort the whole run
+        print(f"hibrain login failed: {exc}", file=sys.stderr)
+        return None
+
+    # A rejected sign-in re-renders the login form instead of redirecting away.
+    if 'id="formSignin"' in body:
+        print("hibrain login rejected: check HIBRAIN_USERID / HIBRAIN_PASSWD", file=sys.stderr)
+        return None
+
+    _SESSION_OPENERS["hibrain"] = opener
+    return opener
+
+
+def session_opener_for(url: str) -> urllib.request.OpenerDirector | None:
+    host = urllib.parse.urlparse(url).hostname or ""
+    if host in HIBRAIN_HOSTS:
+        return hibrain_opener()
+    return None
+
+
 def fetch_url(url: str, timeout: int = 20) -> str:
     safe_url = urllib.parse.quote(url, safe=":/?&=%#@")
+    opener = session_opener_for(safe_url)
+    if opener is not None:
+        with opener.open(safe_url, timeout=timeout) as response:
+            return decode_response(response)
     request = urllib.request.Request(
         safe_url,
         headers={
@@ -421,19 +543,48 @@ def enrich_candidate(
     }
 
 
+SPACED_YMD = re.compile(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일")
+SPACED_DOTTED = re.compile(r"(\d{4})\s*\.\s*(\d{1,2})\s*\.\s*(\d{1,2})")
+
+
+def compact_spaced_dates(text: str) -> str:
+    """Rewrite loosely spaced Korean dates into the plain dotted form.
+
+    Notices pasted out of HWP wrap every run in its own tag, so the text comes
+    through as "2026 년 8 월 26 일" or "2026. 8. 26." and the deadline patterns
+    below never fire. Normalising first lets one set of patterns cover both.
+    """
+    text = SPACED_YMD.sub(r"\1.\2.\3", text)
+    return SPACED_DOTTED.sub(r"\1.\2.\3", text)
+
+
+EMPLOYMENT_PERIOD = re.compile(r"(?:근무|계약|임용|고용|재직|사업|교육|연수)\s*기간")
+
+
 def extract_deadline(text: str) -> str | None:
+    text = compact_spaced_dates(text)
     patterns = [
         r"(?:모집종료일|접수\s*종료일|종료일)\s*[:：]?\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
         r"(?:마감일|접수\s*마감|지원\s*마감)\s*[:：]?\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
-        r"(?:접수\s*기간|지원\s*기간|원서\s*접수\s*기간)\s*[:：]?\s*\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}.*?~\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
+        r"(?:접수\s*기간|지원\s*기간|원서\s*접수\s*기간)\s*[:：|]?\s*\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}.*?~\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
+        # Boards that print a two-digit year range, e.g. "접수기간 | 26.08.25~26.09.08".
+        r"(?:접수\s*기간|지원\s*기간|원서\s*접수\s*기간)\s*[:：|]?\s*\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2}\s*~\s*(\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2})",
         r"(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})\s*(?:까지|마감)",
         r"(\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2})\s*(?:까지|마감)",
-        r"~\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
-        r"~\s*(\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2})",
     ]
     for pattern in patterns:
         match = re.search(pattern, text)
         if match:
+            return normalize_date(match.group(1))
+    # A bare "~ date" is only a guess, so skip ranges that describe how long the
+    # job lasts (근무기간 2026.9.1. ~ 2027.8.31.) rather than when to apply.
+    for pattern in (
+        r"~\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
+        r"~\s*(\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2})",
+    ):
+        for match in re.finditer(pattern, text):
+            if EMPLOYMENT_PERIOD.search(text[max(0, match.start() - 40) : match.start()]):
+                continue
             return normalize_date(match.group(1))
     if "채용시까지" in text or "상시" in text:
         return "rolling"
@@ -809,8 +960,13 @@ def collect_seed_urls(
         if job_exists_for_url(conn, source.url):
             continue
         try:
-            html = fetch_url(source.url)
-            text = parse_html(html).text
+            if source.body_hint is not None:
+                # Boards that only answer POST were already read during discovery.
+                html = ""
+                text = source.body_hint
+            else:
+                html = fetch_url(source.url)
+                text = parse_html(html).text
             title = source.title_hint or extract_html_title(html, text, source.url)
             stats["candidates"] += 1
             if has_excluded_term(title, exclude_terms):
@@ -835,7 +991,7 @@ def collect_seed_urls(
                 "original_url": source.url,
                 "location_text": location,
                 "deadline": deadline,
-                "posted_at": extract_posted_at(text),
+                "posted_at": source.posted_at_hint or extract_posted_at(text),
                 "collected_at": utc_now(),
                 "description": text[:4000],
                 "raw_text": text[:20000],
@@ -868,6 +1024,10 @@ def collect_discovery_sources(
         try:
             if source.kind == "kteacher_list":
                 discovered.extend(discover_kteacher(source, today, active_only))
+            elif source.kind == "iakle_list":
+                discovered.extend(
+                    discover_iakle(source, include_terms, hiring_terms, today, active_only)
+                )
             elif source.kind == "jobkorea_mobile_list":
                 discovered.extend(discover_jobkorea_mobile(source, today, active_only))
             elif source.kind == "hackers_mobile_probe":
@@ -908,6 +1068,22 @@ def collect_discovery_sources(
     return stats
 
 
+HIBRAIN_DETAIL_PATH = re.compile(r"^/recruitment/recruits/\d+$")
+
+
+def normalize_discovered_url(url: str) -> str:
+    """Drop list-position query params that would otherwise re-save the same post.
+
+    Hibrain detail links carry the caller's paging state (pagekey, page, sortType).
+    Those shift between runs, so keeping them would defeat the already-collected
+    check and the content hash.
+    """
+    parts = urllib.parse.urlsplit(url)
+    if (parts.hostname or "") in HIBRAIN_HOSTS and HIBRAIN_DETAIL_PATH.match(parts.path):
+        return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+    return url
+
+
 def discover_generic_links(
     source: DiscoverySource, include_terms: list[str], hiring_terms: list[str]
 ) -> list[Source]:
@@ -927,17 +1103,23 @@ def discover_generic_links(
         seen_hrefs = page_hrefs
 
         page_items = 0
+        list_path = urllib.parse.urlparse(page_url).path
         for link_text, href in parsed.links:
             if not link_text:
                 continue
             if urllib.parse.urlparse(href).scheme not in {"", "http", "https"}:
+                continue
+            absolute = normalize_discovered_url(urllib.parse.urljoin(page_url, href))
+            # Links back to the board itself (filter tabs, paging) are navigation,
+            # not postings, even when the query string looks relevant.
+            if urllib.parse.urlparse(absolute).path == list_path:
                 continue
             if not is_relevant(f"{link_text} {href}", include_terms, hiring_terms, []):
                 continue
             items.append(
                 Source(
                     name=source.name,
-                    url=urllib.parse.urljoin(page_url, href),
+                    url=absolute,
                     trust=source.trust,
                     kind="discovered_url",
                     title_hint=link_text[:180],
@@ -950,6 +1132,136 @@ def discover_generic_links(
         consecutive_empty_pages = 0 if page_items else consecutive_empty_pages + 1
         if consecutive_empty_pages >= 3:
             break
+    return items
+
+
+IAKLE_LIST_ENDPOINT = "/module/ntt/unity/selectNttListAjax.ink"
+IAKLE_DETAIL_ENDPOINT = "/module/ntt/unity/selectNttDetailAjax.ink"
+IAKLE_ROW = re.compile(r"<tr>(.*?)</tr>", re.DOTALL)
+IAKLE_ROW_LINK = re.compile(r"fnView\('(\d+)'[^)]*\)[^>]*>(.*?)</a>", re.DOTALL)
+IAKLE_ROW_DATE = re.compile(r"<td[^>]*>\s*(\d{4}\.\d{1,2}\.\d{1,2})\s*</td>")
+IAKLE_HIDDEN_INPUT = re.compile(
+    r'<input[^>]*id="(siteSeq|bbsSeq|menuSeq|sitecntntsSeq)"[^>]*value="(\d+)"'
+)
+
+
+def post_form(
+    opener: urllib.request.OpenerDirector,
+    url: str,
+    fields: dict[str, str],
+    referer: str,
+    timeout: int = 25,
+) -> str:
+    request = urllib.request.Request(
+        url,
+        data=urllib.parse.urlencode(fields).encode(),
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Referer": referer,
+            "X-Requested-With": "XMLHttpRequest",
+        },
+    )
+    with opener.open(request, timeout=timeout) as response:
+        return decode_response(response)
+
+
+IAKLE_BODY_MARKERS = (
+    re.compile(r"첨부\s*파일\s*\(\d+\)"),
+    re.compile(r"작성자\s*\S+"),
+)
+IAKLE_BODY_END = re.compile(r"조회수\s*[\d,]+")
+
+
+def trim_iakle_body(text: str) -> str:
+    """Drop the board's own chrome so only the notice itself is left.
+
+    The detail fragment wraps the post in prev/next links and an author line;
+    leaving them in makes extract_institution report the poster ("IAKLE") as the
+    hiring institution.
+    """
+    # Both markers sit ahead of the post; start after whichever comes last.
+    starts = [m.end() for m in (p.search(text) for p in IAKLE_BODY_MARKERS) if m]
+    body = text[max(starts) :] if starts else text
+    end = IAKLE_BODY_END.search(body)
+    if end:
+        body = body[: end.start()]
+    return clean_text(body)
+
+
+def discover_iakle(
+    source: DiscoverySource,
+    include_terms: list[str],
+    hiring_terms: list[str],
+    today: dt.date,
+    active_only: bool,
+) -> list[Source]:
+    """Read the IAKLE notice board, which only answers POSTed AJAX calls.
+
+    The board renders nothing on a plain GET and its rows carry no hrefs — each
+    row is an fnView(nttSeq) call — so neither generic_links nor a seed URL can
+    reach it. Post bodies are pasted out of HWP, and some carry only "see the
+    attachment", so a post without a parseable deadline is left for the caller
+    to drop.
+    """
+    parts = urllib.parse.urlsplit(source.url)
+    origin = f"{parts.scheme}://{parts.netloc}"
+    opener = build_session_opener()
+    with opener.open(source.url, timeout=25) as response:
+        board_html = decode_response(response)
+    fields = {name: value for name, value in IAKLE_HIDDEN_INPUT.findall(board_html)}
+    if "bbsSeq" not in fields:
+        raise ValueError(f"IAKLE board form not found at {source.url}")
+    fields.update({"mngrAt": "N", "ordrSe": "D", "searchCnd": "frstRegistPnttm"})
+
+    items: list[Source] = []
+    seen_rows: set[str] | None = None
+    for page in range(1, source.pages + 1):
+        listing = post_form(
+            opener, origin + IAKLE_LIST_ENDPOINT, {**fields, "pageIndex": str(page)}, source.url
+        )
+        rows = []
+        for row_html in IAKLE_ROW.findall(listing):
+            link = IAKLE_ROW_LINK.search(row_html)
+            if not link:
+                continue
+            posted = IAKLE_ROW_DATE.search(row_html)
+            rows.append((link.group(1), link.group(2), normalize_date(posted.group(1)) if posted else None))
+        if not rows:
+            break
+        page_rows = {seq for seq, _, _ in rows}
+        if seen_rows is not None and page_rows == seen_rows:
+            break
+        seen_rows = page_rows
+
+        for ntt_seq, raw_title, posted_at in rows:
+            title = html_clean(raw_title)
+            if not is_relevant(title, include_terms, hiring_terms, []):
+                continue
+            detail = post_form(
+                opener,
+                origin + IAKLE_DETAIL_ENDPOINT,
+                {**fields, "pageIndex": str(page), "nttSeq": ntt_seq, "parntsNttSeq": "", "secretAt": ""},
+                source.url,
+            )
+            text = trim_iakle_body(parse_html(detail).text)
+            deadline = extract_deadline(text)
+            if active_only and not is_active_deadline(deadline, today):
+                continue
+            items.append(
+                Source(
+                    name=source.name,
+                    url=f"{source.url}?nttSeq={ntt_seq}",
+                    trust=source.trust,
+                    kind="discovered_iakle",
+                    title_hint=title,
+                    institution_hint=clean_extracted_field(
+                        extract_institution(text, title), source.name
+                    ),
+                    deadline_hint=deadline,
+                    posted_at_hint=posted_at,
+                    body_hint=text,
+                )
+            )
     return items
 
 
@@ -1442,7 +1754,125 @@ def collect_saramin(
     return stats
 
 
+# 지역명만 담긴 location_text는 기관 검색이 실패했을 때만 쓰는 대략적인 보조 좌표다.
+REGION_FALLBACK_QUERY = {
+    "서울": "서울특별시청", "부산": "부산광역시청", "대구": "대구광역시청",
+    "인천": "인천광역시청", "광주": "광주광역시청", "대전": "대전광역시청",
+    "울산": "울산광역시청", "세종": "세종특별자치시청", "경기": "경기도청",
+    "강원": "강원특별자치도청", "충북": "충청북도청", "충남": "충청남도청",
+    "전북": "전북특별자치도청", "전남": "전라남도청", "경북": "경상북도청",
+    "경남": "경상남도청", "제주": "제주특별자치도청", "창원": "창원시청",
+}
+
+
+def kakao_local_search(url: str, query: str, rest_key: str) -> dict | None:
+    request = urllib.request.Request(
+        f"{url}?{urllib.parse.urlencode({'query': query, 'size': 1})}",
+        headers={"Authorization": f"KakaoAK {rest_key}"},
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    documents = payload.get("documents") or []
+    if not documents:
+        return None
+    top = documents[0]
+    try:
+        latitude = float(top["y"])
+        longitude = float(top["x"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return {
+        "latitude": latitude,
+        "longitude": longitude,
+        "address": top.get("road_address_name") or top.get("address_name"),
+        "place_name": top.get("place_name") or top.get("address_name"),
+    }
+
+
+def geocode_query(conn: sqlite3.Connection, query: str, rest_key: str) -> dict | None:
+    """Resolve one place name to coordinates, caching every answer.
+
+    Misses are cached too (as NULL coordinates) so a name Kakao cannot find is
+    not retried on every run.
+    """
+    cached = conn.execute(
+        "SELECT latitude, longitude, address, place_name FROM geocode_cache WHERE query = ?",
+        (query,),
+    ).fetchone()
+    if cached is not None:
+        if cached[0] is None:
+            return None
+        return {"latitude": cached[0], "longitude": cached[1], "address": cached[2], "place_name": cached[3]}
+
+    result = None
+    for url in (KAKAO_KEYWORD_URL, KAKAO_ADDRESS_URL):
+        try:
+            result = kakao_local_search(url, query, rest_key)
+        except Exception as exc:
+            print(f"kakao geocode failed for {query!r}: {exc}", file=sys.stderr)
+            return None
+        if result:
+            break
+
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO geocode_cache
+            (query, latitude, longitude, address, place_name, looked_up_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            query,
+            result["latitude"] if result else None,
+            result["longitude"] if result else None,
+            result["address"] if result else None,
+            result["place_name"] if result else None,
+            utc_now(),
+        ),
+    )
+    return result
+
+
+def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
+    """Fill in coordinates for saved jobs that do not have them yet.
+
+    Searches on the institution name, which is the most specific place name the
+    collector has; location_text only names a province and often reflects the
+    posting site's own office rather than the workplace, so it is a last resort.
+    """
+    stats = {"geocoded": 0, "unresolved": 0}
+    rest_key = os.environ.get("KAKAO_REST_API_KEY")
+    if not rest_key:
+        return stats
+
+    rows = conn.execute(
+        """
+        SELECT job_id, institution_name, location_text
+        FROM jobs
+        WHERE latitude IS NULL AND status != 'rejected'
+        """
+    ).fetchall()
+    for job_id, institution, location in rows:
+        result = None
+        for query in (institution, REGION_FALLBACK_QUERY.get(clean_text(location or ""))):
+            if not query:
+                continue
+            result = geocode_query(conn, query, rest_key)
+            if result:
+                break
+        if not result:
+            stats["unresolved"] += 1
+            continue
+        conn.execute(
+            "UPDATE jobs SET latitude = ?, longitude = ?, address = ?, place_name = ? WHERE job_id = ?",
+            (result["latitude"], result["longitude"], result["address"], result["place_name"], job_id),
+        )
+        stats["geocoded"] += 1
+    conn.commit()
+    return stats
+
+
 def collect(args: argparse.Namespace) -> int:
+    load_secrets_file(Path(args.secrets))
     keywords, include_terms, hiring_terms, exclude_terms, sources = load_config(Path(args.sources))
     today = dt.date.fromisoformat(args.today) if args.today else dt.date.today()
     if args.sample:
@@ -1558,6 +1988,10 @@ def collect(args: argparse.Namespace) -> int:
                 log_error(conn, run_id, source, str(exc))
         finish_run(conn, run_id, stats)
         conn.commit()
+        if args.geocode:
+            geo = geocode_jobs(conn)
+            if geo["geocoded"] or geo["unresolved"]:
+                print(f"geocoded={geo['geocoded']} ungeocoded={geo['unresolved']}")
     finally:
         conn.close()
 
@@ -1598,8 +2032,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Skip re-fetching already-saved jobs' own URLs to catch deadline changes",
     )
-    parser.set_defaults(active_only=True, refresh=True)
+    parser.add_argument(
+        "--no-geocode",
+        dest="geocode",
+        action="store_false",
+        help="Skip Kakao lookups that place saved jobs on the map",
+    )
+    parser.set_defaults(active_only=True, refresh=True, geocode=True)
     parser.add_argument("--saramin-count", type=int, default=50, help="Saramin jobs per keyword")
+    parser.add_argument(
+        "--secrets",
+        default=str(DEFAULT_SECRETS_FILE),
+        help="Gitignored KEY=value file holding site credentials",
+    )
     return parser
 
 

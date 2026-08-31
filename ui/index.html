@@ -61,9 +61,19 @@
         <div class="jobs-panel">
           <div class="panel-heading">
             <h2>수집 공고</h2>
-            <span id="resultCount">0건</span>
+            <div class="panel-tools">
+              <div class="tabs" role="tablist">
+                <button id="tabList" class="tab is-active" role="tab" aria-selected="true">목록</button>
+                <button id="tabMap" class="tab" role="tab" aria-selected="false">지도</button>
+              </div>
+              <span id="resultCount">0건</span>
+            </div>
           </div>
           <div id="jobsList" class="jobs-list"></div>
+          <div id="mapPanel" class="map-panel" hidden>
+            <div id="mapCanvas" class="map-canvas"></div>
+            <p id="mapNotice" class="map-notice"></p>
+          </div>
         </div>
 
         <aside class="side-panel">

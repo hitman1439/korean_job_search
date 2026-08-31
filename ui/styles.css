@@ -15,6 +15,12 @@
   box-sizing: border-box;
 }
 
+/* .jobs-list / .map-panel 이 display 를 직접 지정하므로,
+   hidden 속성이 무시되지 않도록 여기서 이긴다. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -395,4 +401,68 @@ a:not(.source-link):hover {
   .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* 지도 탭 */
+.panel-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tabs {
+  display: inline-flex;
+  border: 1px solid var(--border, #d8dbe2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tab {
+  padding: 5px 14px;
+  font-size: 13px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tab.is-active {
+  background: #2b6cb0;
+  color: #fff;
+}
+
+.map-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.map-canvas {
+  width: 100%;
+  height: 560px;
+  border: 1px solid var(--border, #d8dbe2);
+  border-radius: 10px;
+  background: #eef1f5;
+}
+
+.map-notice {
+  margin: 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.map-bubble {
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 260px;
+}
+
+.map-bubble strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.map-bubble a {
+  color: #2b6cb0;
 }

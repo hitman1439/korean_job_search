@@ -111,6 +111,34 @@ url,source_name,confidence_score,kind,title_hint,institution_hint,location_hint,
 - **다누리 가족센터 채용정보**: 전국 다문화가족지원센터/건강가정지원센터 채용을 모아둔 정부 포털 게시판. 실제로는 대부분 사회복지사·상담원 채용이라 한국어 강사 공고 비중은 낮지만(5페이지 중 1건 수준), 정식 게시판이라 안전하게 걸어둠.
 - **인크루트 한국어강사 검색**: 검색 키워드가 완전히는 안 먹히지만 어느 정도 관련도순으로 나오고, 서버가 목록을 그대로 내려줘서(SPA 아님) 자동화 가능.
 
+`generic_links`는 게시판 자기 자신을 가리키는 링크(필터 탭·페이지 이동처럼 목록 URL과 경로가 같은 링크)는 건너뜁니다. 이런 링크는 쿼리스트링에 검색 키워드가 들어 있어 관련도 검사를 통과해버리는데, 실제로 열어보면 공고가 아니라 목록 페이지라서 `진행 989건` 같은 쓰레기 레코드가 저장되기 때문입니다.
+
+### 하이브레인넷 (로그인 필요)
+
+`하이브레인넷 한국어 채용검색`은 목록 페이지는 로그인 없이 열리지만, **개별 공고 상세 페이지 대부분이 비회원에게 401 Unauthorized를 돌려줍니다.** 한국어 키워드 진행중 공고 25건을 확인해본 결과 5건만 비회원에게 열려 있었고, 정작 우리가 원하는 `웅지세무대학교 국제교육원 한국어 강사 모집`, `동아보건대학교 한국어교육원 한국어강사 모집` 같은 공고는 전부 막혀 있었습니다. 즉 로그인 없이는 이 출처에서 실질적으로 건질 게 없습니다.
+
+그래서 하이브레인넷 요청만 로그인 세션을 태웁니다. 계정 정보는 저장소에 들어가지 않도록 `secrets.env`에서 읽습니다. 이 파일은 `.gitignore`에 등록돼 있어 커밋되지 않습니다.
+
+```
+# secrets.env
+HIBRAIN_USERID=아이디
+HIBRAIN_PASSWD=비밀번호
+```
+
+`secrets.env.example`을 복사해서 값만 채우면 됩니다. 이후에는 평소대로 실행하면 됩니다.
+
+```powershell
+python collect_jobs.py
+```
+
+`secrets.env` 대신 셸 환경변수(`$env:HIBRAIN_USERID`)를 써도 되고, 둘 다 있으면 환경변수가 우선합니다. 다른 경로의 파일을 쓰려면 `--secrets`로 지정합니다. 같은 파일에 `SARAMIN_ACCESS_KEY`도 함께 넣어둘 수 있습니다.
+
+동작 방식은 브라우저와 같습니다 — `/logins/signin`을 GET해서 세션 쿠키를 받고, 같은 주소로 `userid`/`passwd`/`isAutoSignin`을 form POST한 뒤, 그 쿠키를 하이브레인넷 요청에 계속 사용합니다. 로그인은 프로세스당 한 번만 수행하고 결과를 재사용합니다.
+
+환경변수가 없으면 로그인을 시도하지 않고 비회원으로 접근하며, 아이디/비밀번호가 틀리면 `hibrain login rejected` 한 줄만 남기고 **나머지 출처 수집은 그대로 진행**합니다. 어느 쪽이든 막힌 공고는 `source_errors`에 401로 기록됩니다.
+
+하이브레인넷 상세 링크에는 목록에서의 위치(`pagekey`, `page`, `sortType`)가 쿼리로 붙어 있는데, 이 값은 새 공고가 올라올 때마다 바뀝니다. 그대로 두면 같은 공고가 매번 다른 URL로 보여 중복 저장되므로 상세 URL은 `/recruitment/recruits/{id}`만 남기고 쿼리를 떼어 저장합니다.
+
 `sources.json`의 `sources` 배열은 원래 이 `generic_links` 방식과 같은 일을 했던 자리인데, 자동탐색 출처를 한곳(`monitor_sources.json`)에서 관리하도록 여기로 옮겼습니다. `sources.json`은 이제 키워드/포함·제외어 설정 전용입니다.
 
 **자동화 조사했지만 아직 미구현인 곳**
@@ -139,6 +167,9 @@ python collect_jobs.py --saramin-count 50
 - `seed_urls.txt`: 사람이 직접 등록하는 상세 페이지 URL 목록(1줄 = 공고 1건)
 - `jobs.sqlite3`: 실행 후 생성되는 SQLite DB
 - `sample_jobs.html`: 로컬 검증용 샘플 공고
+- `secrets.env`: 사이트 계정·API 키(gitignore 대상). `secrets.env.example`을 복사해서 사용
+
+지도 관련 컬럼: `jobs.latitude`, `jobs.longitude`, `jobs.address`, `jobs.place_name`, 그리고 조회 캐시 `geocode_cache` 테이블
 
 ## 검토 UI
 
@@ -150,6 +181,35 @@ python review_ui.py --port 8765
 
 각 공고는 UI에서 `승인`, `제외`, `보류` 상태로 바꿀 수 있고, 검토 메모를 함께 저장할 수 있습니다. 상태값은 `jobs.status`, 메모는 `jobs.review_note`, 검토 시각은 `jobs.reviewed_at`에 저장됩니다.
 
+## 지도 (카카오맵)
+
+수집한 공고를 지도에 찍습니다. developers.kakao.com에서 앱을 하나 만들고 키 2개를 `secrets.env`에 넣습니다.
+
+```
+KAKAO_REST_API_KEY=REST_API_키
+KAKAO_JS_KEY=JavaScript_키
+```
+
+- **REST API 키**: 수집이 끝난 뒤 좌표를 채우는 데 씁니다(서버에서만 사용).
+- **JavaScript 키**: 브라우저가 지도를 그릴 때 씁니다. 카카오 앱 설정의 **플랫폼 > Web**에 `http://127.0.0.1:8765`를 등록해야 지도가 뜹니다. 이 키는 브라우저에 노출되는 값이라 도메인 등록이 사실상의 보호 장치입니다.
+
+키를 넣고 평소대로 실행하면 저장 직후 좌표를 채우고 `geocoded=N ungeocoded=N`을 출력합니다. 키가 없으면 지오코딩을 건너뛰고 나머지는 그대로 동작합니다. 좌표만 다시 채우고 싶지 않으면 `--no-geocode`로 끕니다.
+
+```powershell
+python collect_jobs.py
+python review_ui.py --port 8765   # 브라우저에서 '지도' 탭
+```
+
+### 왜 기관명으로 찾는가
+
+좌표는 `location_text`가 아니라 **`institution_name`**을 카카오 로컬 키워드 검색에 넣어 얻습니다. `location_text`는 광역 단위인 데다 실측해보니 오류가 많았습니다 — 게시 사이트 푸터의 주소를 집어서 하이브레인넷 공고 4건이 전부 `창원`(회사 소재지)으로, 여러 지방 공고가 `서울`로 잘못 붙어 있었습니다. 기관명은 `웅지세무대학교`, `동아보건대학교`처럼 실제 장소라 검색이 정확합니다.
+
+기관명 검색이 실패하면 `location_text`의 광역명을 시·도청 좌표로 대체합니다(`REGION_FALLBACK_QUERY`). 대략적인 위치라는 뜻이므로 지도에서 시청 자리에 찍힌 마커는 그렇게 이해하면 됩니다.
+
+조회 결과는 `geocode_cache` 테이블에 쌓입니다. 못 찾은 이름도 같이 캐시해서 매 실행마다 같은 실패를 재요청하지 않습니다. 좌표는 `jobs.latitude`/`longitude`/`address`/`place_name`에 저장되고, 이미 좌표가 있는 공고는 다시 조회하지 않습니다.
+
+지도 탭은 목록과 같은 필터(검색어·상태·출처)를 그대로 씁니다. 좌표가 없는 공고는 지도에서 빠지며 몇 건이 빠졌는지 지도 아래에 표시됩니다.
+
 ## 데이터 모델
 
 `jobs` 테이블은 제목, 기관명, 출처, 원문 URL, 위치, 마감일, 본문, 신뢰도 점수, 중복 해시를 저장합니다. 같은 `content_hash`가 다시 들어오면 신규 삽입 대신 기존 공고를 업데이트합니다.
@@ -157,6 +217,7 @@ python review_ui.py --port 8765
 ## 다음 수집기 후보
 
 - 사람인 채용정보 API: 구현됨. `SARAMIN_ACCESS_KEY` 환경변수 필요
+- 하이브레인넷: 구현됨. 상세 페이지가 회원 전용이라 `HIBRAIN_USERID`/`HIBRAIN_PASSWD` 환경변수 필요
 - 국립국어원 한국어교원 구인정보: 구현됨. `monitor_sources.json`의 `kteacher_list`
 - 누리 세종학당 한국어 교원 모집: 구현됨. `--nuri-pages`로 수집 페이지 수 조절
 - 진학프로 강사 목록: 구현됨. `--jinhakpro-pages`로 수집 페이지 수 조절

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import sqlite3
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -46,6 +47,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/jobs":
             self.send_json(self.get_jobs(parse_qs(parsed.query)))
+            return
+        if parsed.path == "/api/config":
+            self.send_json(self.get_config())
             return
         if parsed.path == "/api/summary":
             self.send_json(self.get_summary())
@@ -128,7 +132,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
         sql = f"""
             SELECT job_id, title, institution_name, source_name, source_url,
                    original_url, location_text, deadline, posted_at, collected_at,
-                   description, confidence_score, status, review_note, reviewed_at
+                   description, confidence_score, latitude, longitude, address, place_name,
+                   status, review_note, reviewed_at
             FROM jobs
             {where}
             ORDER BY
@@ -180,13 +185,21 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 """
                 SELECT job_id, title, institution_name, source_name, source_url,
                        original_url, location_text, deadline, posted_at, collected_at,
-                       description, confidence_score, status, review_note, reviewed_at
+                       description, confidence_score, latitude, longitude, address, place_name,
+                       status, review_note, reviewed_at
                 FROM jobs
                 WHERE job_id = ?
                 """,
                 (job_id,),
             ).fetchone()
         self.send_json({"job": dict(row)})
+
+    def get_config(self) -> dict[str, object]:
+        """Hand the browser the Kakao JavaScript key so the map tab can load."""
+        import collect_jobs
+
+        collect_jobs.load_secrets_file()
+        return {"kakao_js_key": os.environ.get("KAKAO_JS_KEY") or ""}
 
     def get_summary(self) -> dict[str, object]:
         with self.connect() as conn:

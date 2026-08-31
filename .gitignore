@@ -9,3 +9,6 @@ jobs.sqlite3-wal
 # Scratch/investigation files
 work/
 outputs/
+
+# Site credentials (never commit)
+secrets.env
