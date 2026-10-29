@@ -28,6 +28,8 @@ import collect_jobs
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "site_static"
 DEFAULT_OUT = ROOT / "site"
+# Owner-only build that also shows overseas jobs. Gitignored; never deploy it.
+PRIVATE_OUT = ROOT / "site_private"
 KST = dt.timezone(dt.timedelta(hours=9))
 
 SITE_NAME = "한국어강사 채용판"
@@ -67,7 +69,7 @@ def json_for_script(data: object) -> str:
 
 # --- data --------------------------------------------------------------------
 
-def load_jobs(conn: sqlite3.Connection, today: dt.date, approved_only: bool) -> list[dict]:
+def load_jobs(conn: sqlite3.Connection, today: dt.date, approved_only: bool, include_overseas: bool = False) -> list[dict]:
     conn.row_factory = sqlite3.Row
     statuses = ("approved",) if approved_only else ("approved", "needs_review")
     rows = conn.execute(
@@ -83,6 +85,9 @@ def load_jobs(conn: sqlite3.Connection, today: dt.date, approved_only: bool) -> 
         for row in rows
         if collect_jobs.is_live_job(row["deadline"], row["posted_at"], row["first_seen_at"], today)
     ]
+    # Overseas postings are still collected but only shown in the private build.
+    if not include_overseas:
+        jobs = [job for job in jobs if job["scope"] != "overseas"]
     # Dated deadlines first (soonest on top), then rolling, then unknown.
     jobs.sort(key=lambda j: (j["sort_days"], j["job_id"]))
     return jobs
@@ -207,6 +212,11 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
         if adsense else ""
     )
     site_config = {"kakaoKey": config.get("kakao_js_key") or "", "alertEndpoint": config.get("alert_endpoint") or ""}
+    private = config.get("private")
+    private_head = '<meta name="robots" content="noindex, nofollow">' if private else ""
+    private_bar = (
+        '<div class="private-bar" role="note">비공개 미리보기 · 해외 공고 포함 · 배포하지 마세요</div>' if private else ""
+    )
     return f"""<!doctype html>
 <html lang="ko">
 <head>
@@ -221,9 +231,11 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
 <link rel="stylesheet" href="{FONT_CSS}">
 <link rel="stylesheet" href="{root}assets/styles.css">
 {head_ads}
+{private_head}
 {extra_head}
 </head>
 <body{body_attrs}>
+{private_bar}
 {header(root, active)}
 {body}
 {footer(root)}
@@ -259,8 +271,9 @@ def footer(root: str) -> str:
 
 
 def ad_slot(config: dict, kind: str, label: str) -> str:
-    # With AdSense on, Auto ads place units; the reserved boxes are for review only.
-    if config.get("adsense_client"):
+    # With AdSense on, Auto ads place units; the reserved boxes are for review
+    # only. The owner-only build carries no ads at all.
+    if config.get("adsense_client") or config.get("private"):
         return ""
     tag = "li" if kind == "infeed" else "div"
     return f'<{tag} class="ad-slot {kind}" aria-label="광고">{label}</{tag}>'
@@ -297,15 +310,20 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
         f'<div class="country"><p>{e(name)}</p><strong>{count}개</strong></div>'
         for name, count in sorted(countries.items(), key=lambda kv: -kv[1])
     )
+    show_overseas = bool(config.get("private"))
+    scopes = [("all", "전체", len(jobs)), ("domestic", "국내", counts["domestic"])]
+    if show_overseas:
+        scopes.append(("overseas", "해외", counts["overseas"]))
+    scopes.append(("online", "온라인", counts["online"]))
     scope_buttons = "".join(
         f'<button type="button" data-scope-btn="{key}" aria-pressed="{"true" if key == "all" else "false"}">{label} {count}</button>'
-        for key, label, count in (
-            ("all", "전체", len(jobs)),
-            ("domestic", "국내", counts["domestic"]),
-            ("overseas", "해외", counts["overseas"]),
-            ("online", "온라인", counts["online"]),
-        )
+        for key, label, count in scopes
     )
+    countries_view = f"""<div class="alt-view" data-view="countries" hidden>
+<h2>나라별로 볼게요</h2>
+<p>해외 공고는 지역보다 나라가 먼저 중요해요. 비자·항공·숙소 지원은 공고 안에서 확인하세요.</p>
+<div class="countries">{country_cards or '<p class="fine">지금 열린 해외 공고가 없어요.</p>'}</div>
+</div>""" if show_overseas else ""
     services = service_blocks(config, "")
     body = f"""<main class="wrap" data-board>
 <section class="hero" aria-labelledby="headline">
@@ -331,11 +349,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 <a class="btn btn-primary" href="#">자세히 보기</a>
 </div>
 </div>
-<div class="alt-view" data-view="countries" hidden>
-<h2>나라별로 볼게요</h2>
-<p>해외 공고는 지역보다 나라가 먼저 중요해요. 비자·항공·숙소 지원은 공고 안에서 확인하세요.</p>
-<div class="countries">{country_cards or '<p class="fine">지금 열린 해외 공고가 없어요.</p>'}</div>
-</div>
+{countries_view}
 <div class="alt-view" data-view="online" hidden>
 <h2>온라인·재택 공고는 장소가 없어요</h2>
 <p>오른쪽 목록에서 수업 시간대와 학습자 국가를 확인하세요.</p>
@@ -363,7 +377,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 {ad_slot(config, "display", "광고")}
 </div>
 </main>"""
-    description = f"한국어 강사·한국어교원 채용 공고 {len(jobs)}개. 어학당, 세종학당, 가족센터, 해외 대학 공고를 지도와 마감일 순으로 모았어요."
+    description = f"한국어 강사·한국어교원 채용 공고 {len(jobs)}개. 어학당, 대학 언어교육원, 가족센터, 교육청 공고를 지도와 마감일 순으로 모았어요."
     return page(f"{SITE_NAME} · 한국어 강사 채용 공고 모음", description, body, root="", config=config,
                 canonical=absolute(config, "index.html"), active="jobs")
 
@@ -636,7 +650,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
           approved_only: bool = False) -> dict[str, int]:
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        jobs = load_jobs(conn, today, approved_only)
+        jobs = load_jobs(conn, today, approved_only, include_overseas=bool(config.get("private")))
         last_run = conn.execute("SELECT MAX(finished_at) FROM collection_runs").fetchone()[0]
     finally:
         conn.close()
@@ -655,10 +669,13 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     write("resume.html", render_resume(config))
     for job in jobs:
         write(job["path"], render_job(job, jobs, config, today))
-    sitemap = render_sitemap(jobs, config, today)
-    if sitemap:
-        write("sitemap.xml", sitemap)
-    write("robots.txt", render_robots(config))
+    if config.get("private"):
+        write("robots.txt", "User-agent: *\nDisallow: /\n")
+    else:
+        sitemap = render_sitemap(jobs, config, today)
+        if sitemap:
+            write("sitemap.xml", sitemap)
+        write("robots.txt", render_robots(config))
     return {
         "jobs": len(jobs),
         "domestic": sum(1 for j in jobs if j["scope"] == "domestic"),
@@ -671,7 +688,12 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build the public job board as static HTML.")
     parser.add_argument("--db", default=str(collect_jobs.DEFAULT_DB), help="SQLite database path")
-    parser.add_argument("--out", default=str(DEFAULT_OUT), help="Output folder (replaced on every build)")
+    parser.add_argument("--out", default=None, help="Output folder (replaced on every build); default site/ or site_private/")
+    parser.add_argument(
+        "--private",
+        action="store_true",
+        help="Owner-only build with overseas jobs, marked noindex, written to site_private/ (never deploy it)",
+    )
     parser.add_argument("--secrets", default=str(collect_jobs.DEFAULT_SECRETS_FILE), help="KEY=value file")
     parser.add_argument("--approved-only", action="store_true", help="Publish only jobs a reviewer approved")
     parser.add_argument("--today", default=None, help="Reference date, YYYY-MM-DD")
@@ -687,10 +709,12 @@ def main() -> int:
         "site_url": os.environ.get("SITE_URL"),
         "kakao_js_key": os.environ.get("KAKAO_JS_KEY"),
         "alert_endpoint": os.environ.get("ALERT_ENDPOINT"),
-        "adsense_client": os.environ.get("ADSENSE_CLIENT"),
+        "adsense_client": None if args.private else os.environ.get("ADSENSE_CLIENT"),
+        "private": args.private,
     }
-    stats = build(Path(args.db), Path(args.out), config, today, now, args.approved_only)
-    print(" ".join(f"{k}={v}" for k, v in stats.items()) + f" out={Path(args.out).resolve()}")
+    out = Path(args.out) if args.out else (PRIVATE_OUT if args.private else DEFAULT_OUT)
+    stats = build(Path(args.db), out, config, today, now, args.approved_only)
+    print(" ".join(f"{k}={v}" for k, v in stats.items()) + f" out={out.resolve()}")
     if not config["site_url"]:
         print("note: SITE_URL is not set, so canonical links and sitemap.xml were skipped", file=sys.stderr)
     if not config["kakao_js_key"]:

@@ -69,12 +69,31 @@ class BuildTests(unittest.TestCase):
                 return text
         self.fail(f"no job page containing {title_fragment!r}")
 
-    def test_only_live_canonical_unrejected_jobs_publish(self):
-        self.assertEqual(self.stats["jobs"], 3)
+    def test_only_live_canonical_unrejected_domestic_jobs_publish(self):
+        self.assertEqual(self.stats["jobs"], 2)
         self.assertNotIn("이미 마감", self.index)
         self.assertNotIn("반려된 공고", self.index)
         self.assertNotIn("중복 공고", self.index)
-        self.assertEqual(len(list((self.out / "jobs").glob("*.html"))), 3)
+        self.assertEqual(len(list((self.out / "jobs").glob("*.html"))), 2)
+
+    def test_public_build_hides_overseas(self):
+        self.assertEqual(self.stats["overseas"], 0)
+        self.assertNotIn("Smith College", self.index)
+        self.assertNotIn('data-scope-btn="overseas"', self.index)
+        self.assertNotIn('data-view="countries"', self.index)
+        self.assertNotIn("noindex", self.index)
+
+    def test_private_build_shows_overseas_and_stays_unindexed(self):
+        private_out = Path(self.tmp.name) / "site_private"
+        stats = bs.build(self.db, private_out, {**self.config, "private": True}, TODAY, BUILT_AT)
+        index = (private_out / "index.html").read_text(encoding="utf-8")
+        self.assertEqual(stats["overseas"], 1)
+        self.assertIn("Smith College", index)
+        self.assertIn('data-scope-btn="overseas"', index)
+        self.assertIn('<meta name="robots" content="noindex, nofollow">', index)
+        self.assertIn("비공개 미리보기", index)
+        self.assertFalse((private_out / "sitemap.xml").exists())
+        self.assertEqual((private_out / "robots.txt").read_text(encoding="utf-8"), "User-agent: *\nDisallow: /\n")
 
     def test_untrusted_text_is_escaped(self):
         self.assertNotIn('<script>alert("x")</script>', self.index)
@@ -95,15 +114,13 @@ class BuildTests(unittest.TestCase):
         self.assertIn("data-mini-map", page)
         self.assertIn("모의수업이 있는 공고예요", page)
 
-    def test_map_rows_and_overseas_counts(self):
+    def test_map_rows(self):
         self.assertEqual(self.stats["on_map"], 1)
-        self.assertEqual(self.stats["overseas"], 1)
         self.assertIn('data-lat="37.28"', self.index)
-        self.assertIn("<p>미국</p><strong>1개</strong>", self.index)
 
     def test_sitemap_and_canonical(self):
         sitemap = (self.out / "sitemap.xml").read_text(encoding="utf-8")
-        self.assertEqual(sitemap.count("<url>"), 6)
+        self.assertEqual(sitemap.count("<url>"), 5)
         self.assertIn('<link rel="canonical" href="https://jobs.example/index.html">', self.index)
 
     def test_resume_service_page_and_links(self):
@@ -123,7 +140,7 @@ class BuildTests(unittest.TestCase):
         conn.commit()
         conn.close()
         stats = bs.build(self.db, self.out, self.config, TODAY, BUILT_AT)
-        self.assertEqual(stats["jobs"], 2)
+        self.assertEqual(stats["jobs"], 1)
         self.assertNotIn("아주대 강사 모집", (self.out / "index.html").read_text(encoding="utf-8"))
 
 

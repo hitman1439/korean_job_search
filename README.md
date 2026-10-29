@@ -172,7 +172,16 @@ python -m http.server 8765 --bind 127.0.0.1 -d site   # 미리보기: http://127
 - `demo.html`: 시강 교안 AI 체험 화면. **지금은 예시 교안만 보여 줘요(생성 기능은 아직 없음).**
 - `sitemap.xml`, `robots.txt`
 
-공개 기준: `is_canonical = 1`(중복 묶음의 대표), `status`가 `rejected`가 아니고, 마감 전인 공고. 검토자가 승인한 것만 올리려면 `--approved-only`.
+공개 기준: `is_canonical = 1`(중복 묶음의 대표), `status`가 `rejected`가 아니고, 마감 전인 **국내·온라인** 공고. 검토자가 승인한 것만 올리려면 `--approved-only`.
+
+**해외 공고는 공개 사이트에 싣지 않습니다.** 수집은 계속하고, 운영자만 보는 비공개 빌드에서 봅니다.
+
+```powershell
+python build_site.py --private            # site_private/ 생성 (해외 포함, 나라별 보기)
+python -m http.server 8765 --bind 127.0.0.1 -d site_private   # http://127.0.0.1:8765
+```
+
+`site_private/`는 gitignore 대상이고 **배포하면 안 됩니다.** 실수로 올라가도 검색에 걸리지 않도록 모든 페이지에 `noindex`, robots.txt에 `Disallow: /`를 넣고, 사이트맵과 광고 자리는 만들지 않습니다. 화면 맨 위에 "비공개 미리보기" 띠가 붙습니다.
 
 안전장치: 공고의 모든 값은 다른 사이트에서 온 텍스트라서 HTML 이스케이프하고, 원문 링크는 `http(s)`만 연결합니다(`javascript:` 같은 링크는 버림). 본문 원문은 싣지 않고 요약(`summary`)만 씁니다.
 

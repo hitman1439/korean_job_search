@@ -127,6 +127,11 @@
 
     function hasPlace(job) { return !isNaN(job.lat) && !isNaN(job.lng); }
 
+    function setHidden(selector, hidden) {
+      var el = board.querySelector(selector);
+      if (el) el.hidden = hidden;
+    }
+
     function apply() {
       var visible = jobs.filter(matches);
       jobs.forEach(function (job) { job.row.hidden = visible.indexOf(job) === -1; });
@@ -134,9 +139,10 @@
       board.querySelector("[data-empty]").hidden = visible.length !== 0;
 
       var showMap = state.scope === "all" || state.scope === "domestic";
-      board.querySelector("[data-view=map]").hidden = !showMap;
-      board.querySelector("[data-view=countries]").hidden = state.scope !== "overseas";
-      board.querySelector("[data-view=online]").hidden = state.scope !== "online";
+      // The countries view exists only in the private build.
+      setHidden("[data-view=map]", !showMap);
+      setHidden("[data-view=countries]", state.scope !== "overseas");
+      setHidden("[data-view=online]", state.scope !== "online");
 
       var current = visible.filter(function (j) { return j.id === state.selected && hasPlace(j); })[0];
       if (!current) current = visible.filter(hasPlace)[0] || null;

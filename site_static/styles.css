@@ -45,6 +45,9 @@ button, input, select { font: inherit; }
 
 .wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 var(--gutter); }
 
+/* Owner-only build marker */
+.private-bar { padding: 8px var(--gutter); background: #191f28; color: #fff; font-size: 13px; font-weight: 600; text-align: center; }
+
 /* Header & footer */
 .top { border-bottom: 1px solid var(--line); background: var(--bg); }
 .top .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 28px; padding-block: 12px; }
