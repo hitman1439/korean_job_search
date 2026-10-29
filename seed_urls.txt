@@ -35,17 +35,17 @@ https://00gangsa.com/recruitments/22824,공공강사,65,job_board,신규 한국�
 https://korean.dsu.ac.kr/korean/index.php?idx=3086&mode=view&pCode=news,동신대학교 국제한국어학과 재게시,70,repost,외국인 유학생 대상 한국어 강사 채용,한국국제교류중심,서울,2026-09-12
 https://youngssamnote.tistory.com/m/23,Young쌤노트 재게시,60,repost,화성시글로벌청소년센터 찾아가는 한국어 교육 강사 채용,화성시글로벌청소년센터,경기,rolling
 # retired (잡코리아): https://www.jobkorea.co.kr/Recruit/GI_Read/49627879,잡코리아,70,job_board,캐럿글로벌 외국인 대상 한국어 강사,캐럿글로벌,서울,rolling
-https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54631159&view_type=etc,사람인,70,job_board,롤링코리아 외국인대상 한국어강사 채용,롤링코리아,서울,2026-09-02
-https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54661296&view_type=etc,사람인,70,job_board,신경주대학교 한국어학당 한국어강사 채용 공고,신경주대학교 한국어학당,경북,2026-09-04
-https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54717552&view_type=etc,사람인,70,job_board,재택 프리랜서 온라인 한국어 강사 모집,하티웍스,서울,2026-10-10
-https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54797993&view_type=etc,사람인,70,job_board,Carrot Solutions 한국어 강사 모집,Carrot Solutions,지역무관,2026-09-19
-https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54360720&view_type=etc,사람인,70,job_board,아주대학교 한국어 강사 객원 강사 채용 공고,아주대학교,경기,2026-09-01
-https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54637322&view_type=etc,사람인,70,job_board,창신대학교 한국어교육센터 교육강사 채용 공고,창신대학교 한국어교육센터,경남,2026-09-02
-https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54630808&view_type=etc,사람인,70,job_board,부산다문화국제학교 한국어 강사 채용 공고,부산다문화국제학교,부산,2026-09-02
-https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54660190&view_type=etc,사람인,70,job_board,평일 저녁 토요일 한국어 신입 강사 모집,윈터 한국어 교육센터,서울,2026-09-04
-https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54788277&view_type=etc,사람인,70,job_board,평일 오후 한국어 신입 강사 모집,윈터 한국어 교육센터,서울,2026-09-18
-https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54840834&view_type=etc,사람인,70,job_board,한국어 강의 경력 강사 모집,윈터 한국어 교육센터,서울,2026-09-24
-https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54840829&view_type=etc,사람인,70,job_board,상시 모집 한국어 신입 강사 모집,윈터 한국어 교육센터,서울,2026-09-24
+# retired (사람인 상세 페이지 — 사람인은 공식 API로만 수집): https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54631159&view_type=etc,사람인,70,job_board,롤링코리아 외국인대상 한국어강사 채용,롤링코리아,서울,2026-09-02
+# retired (사람인 상세 페이지 — 사람인은 공식 API로만 수집): https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54661296&view_type=etc,사람인,70,job_board,신경주대학교 한국어학당 한국어강사 채용 공고,신경주대학교 한국어학당,경북,2026-09-04
+# retired (사람인 상세 페이지 — 사람인은 공식 API로만 수집): https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54717552&view_type=etc,사람인,70,job_board,재택 프리랜서 온라인 한국어 강사 모집,하티웍스,서울,2026-10-10
+# retired (사람인 상세 페이지 — 사람인은 공식 API로만 수집): https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54797993&view_type=etc,사람인,70,job_board,Carrot Solutions 한국어 강사 모집,Carrot Solutions,지역무관,2026-09-19
+# retired (사람인 상세 페이지 — 사람인은 공식 API로만 수집): https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54360720&view_type=etc,사람인,70,job_board,아주대학교 한국어 강사 객원 강사 채용 공고,아주대학교,경기,2026-09-01
+# retired (사람인 상세 페이지 — 사람인은 공식 API로만 수집): https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54637322&view_type=etc,사람인,70,job_board,창신대학교 한국어교육센터 교육강사 채용 공고,창신대학교 한국어교육센터,경남,2026-09-02
+# retired (사람인 상세 페이지 — 사람인은 공식 API로만 수집): https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54630808&view_type=etc,사람인,70,job_board,부산다문화국제학교 한국어 강사 채용 공고,부산다문화국제학교,부산,2026-09-02
+# retired (사람인 상세 페이지 — 사람인은 공식 API로만 수집): https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54660190&view_type=etc,사람인,70,job_board,평일 저녁 토요일 한국어 신입 강사 모집,윈터 한국어 교육센터,서울,2026-09-04
+# retired (사람인 상세 페이지 — 사람인은 공식 API로만 수집): https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54788277&view_type=etc,사람인,70,job_board,평일 오후 한국어 신입 강사 모집,윈터 한국어 교육센터,서울,2026-09-18
+# retired (사람인 상세 페이지 — 사람인은 공식 API로만 수집): https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54840834&view_type=etc,사람인,70,job_board,한국어 강의 경력 강사 모집,윈터 한국어 교육센터,서울,2026-09-24
+# retired (사람인 상세 페이지 — 사람인은 공식 API로만 수집): https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54840829&view_type=etc,사람인,70,job_board,상시 모집 한국어 신입 강사 모집,윈터 한국어 교육센터,서울,2026-09-24
 # retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49868359?sc=621,잡코리아,72,job_board,와이드스텝어학원 러시아어 한국어 영어 소통 가능 강사 채용,와이드스텝어학원,경기,2026-10-26
 # retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49802628?sc=621,잡코리아,72,job_board,가바플러스어학원 한국어 회화 강사 모집,가바플러스어학원,경기,2026-09-17
 # retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49737075?sc=621,잡코리아,72,job_board,디헤럴드플립언어교육 TOPIK 한국어 시험대비 화상수업 강사 모집,디헤럴드플립언어교육,서울,2026-09-06

@@ -146,6 +146,36 @@ def make_job(**overrides):
     return job
 
 
+KTEACHER_ROW = """<table class="desktopShow"><tbody><tr> <td>1</td> <td> 국내 </td>
+<td> <a title="숭실대학교 한국어교육원 한국어강사 채용 공고" href="/certif/jobsearch/35051" >숭실대학교 한국어교육원 한국어강사 채용 공고</a> </td>
+<td>숭실대학교 한국어교육원</td> <td> <span class="formattedDate"> 20261027 </span> </td>
+<td> <span class="replace-formatted-date"> 2026-11-09 </span> </td> </tr></tbody></table>"""
+
+
+class SourceParserTests(unittest.TestCase):
+    def test_kteacher_rows_on_moved_board(self):
+        rows = cj.parse_kteacher_rows(KTEACHER_ROW)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["path"], "/certif/jobsearch/35051")
+        self.assertEqual(rows[0]["deadline"], "2026-11-09")
+        self.assertEqual(rows[0]["institution"], "숭실대학교 한국어교육원")
+
+    def test_same_path_post_links_are_kept(self):
+        board = (
+            '<a href="/board/?pageid=2">2</a>'
+            '<a href="/board/?mod=document&#038;uid=623">성신여대 한국어강사 모집 공고</a>'
+            '<a href="/board/?category=한국어강사">한국어 강사 모집 분류</a>'
+        )
+        source = cj.DiscoverySource("test", "https://example.org/board/", 70, "generic_links")
+        original = cj.fetch_url
+        cj.fetch_url = lambda url, timeout=20: board
+        try:
+            items = cj.discover_generic_links(source, ["한국어"], ["모집"])
+        finally:
+            cj.fetch_url = original
+        self.assertEqual([i.url for i in items], ["https://example.org/board/?mod=document&uid=623"])
+
+
 class DatabaseTests(unittest.TestCase):
     def setUp(self):
         self.conn = cj.init_db(Path(":memory:"))
@@ -171,12 +201,44 @@ class DatabaseTests(unittest.TestCase):
                 title="[아주대학교 국제교육센터] 한국어 강사 초빙",
                 institution_name="아주대학교 국제교육센터",
                 original_url="https://other.example/9",
+                source_name="other board",
                 confidence_score=90,
             ),
         )
         self.assertEqual(cj.assign_duplicate_groups(self.conn), 1)
         rows = self.conn.execute("SELECT confidence_score, is_canonical FROM jobs ORDER BY confidence_score").fetchall()
         self.assertEqual(rows, [(60, 0), (90, 1)])
+
+    def test_undated_repost_joins_dated_original(self):
+        cj.save_job(self.conn, make_job(title="숭실대학교 한국어교육원 한국어강사 채용 공고", institution_name="숭실대학교 한국어교육원",
+                                        deadline="2026-11-09", confidence_score=88))
+        cj.save_job(self.conn, make_job(title="숭실대학교 한국어교육원 한국어강사 채용 공고", institution_name=None,
+                                        deadline=None, original_url="https://repost.example/1", confidence_score=95))
+        cj.save_job(self.conn, make_job(title="New 일본 ハングルネット 한국어강사 해외 채용 공고", deadline=None,
+                                        original_url="https://k.example/a"))
+        cj.save_job(self.conn, make_job(title="일본 ハングルネット 한국어강사 해외 채용 공고", deadline=None,
+                                        original_url="https://k.example/b"))
+        self.assertEqual(cj.assign_duplicate_groups(self.conn), 2)
+        # The dated original wins over the more trusted but undated repost.
+        canonical = self.conn.execute(
+            "SELECT deadline FROM jobs WHERE is_canonical = 1 AND title LIKE '숭실%'"
+        ).fetchall()
+        self.assertEqual(canonical, [("2026-11-09",)])
+
+    def test_two_positions_on_one_board_stay_apart(self):
+        cj.save_job(self.conn, make_job(title="세종대학교 세종어학원 한국어과정 시간강사 초빙 공고", institution_name="세종대학교 세종어학원",
+                                        deadline="2026-11-12", source_name="국립국어원"))
+        cj.save_job(self.conn, make_job(title="세종대학교 세종어학원 한국어과정 강의전담강사 초빙 공고", institution_name="세종대학교 세종어학원",
+                                        deadline="2026-11-12", source_name="국립국어원", original_url="https://example.org/2"))
+        self.assertEqual(cj.assign_duplicate_groups(self.conn), 0)
+
+    def test_title_key_drops_board_markers(self):
+        self.assertEqual(cj.title_key("남서울대학교 겨울학기 한국어 강사 채용 공고-2"), cj.title_key("남서울대학교 겨울학기 한국어 강사 채용 공고"))
+        self.assertEqual(cj.title_key("N 미국 Emory University 한국어 교수"), cj.title_key("미국 Emory University 한국어 교수"))
+
+    def test_old_rolling_posting_expires(self):
+        self.assertFalse(cj.is_live_job("rolling", "2025-12-23", None, TODAY))
+        self.assertTrue(cj.is_live_job("rolling", "2026-09-01", None, TODAY))
 
     def test_undated_jobs_survive_grace_period_then_go(self):
         cj.save_job(self.conn, make_job(deadline=None, collected_at="2026-10-01T00:00:00+00:00"))

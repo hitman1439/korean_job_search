@@ -145,8 +145,10 @@ def place_text(job: dict) -> str:
 def display_title(title: str | None) -> str:
     """Drop board clutter: KLEOcean's "N" new-post marker, notice numbers like "(제2026-02-011호)"."""
     text = (title or "").strip()
-    text = re.sub(r"^N\s+(?=\S)", "", text)
+    text = re.sub(r"^(?:N|New)\s+(?=\S)", "", text)
     text = re.sub(r"^\(?제?\s*[\d\-]+\s*호\)\s*", "", text)
+    # KBoard list titles end with the board's own status: "… 접수중 2026.07.22~2026.07.29".
+    text = re.sub(r"\s+(?:접수중|접수\s*마감|마감|모집중)?\s*\d{4}\.\d{1,2}\.\d{1,2}\s*~\s*\d{4}\.\d{1,2}\.\d{1,2}\s*$", "", text)
     return text or "제목 미확인"
 
 

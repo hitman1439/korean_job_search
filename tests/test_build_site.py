@@ -131,6 +131,10 @@ class BadgeTests(unittest.TestCase):
         self.assertEqual(bs.display_title("N 미국 Emory University 한국어 교수"), "미국 Emory University 한국어 교수")
         self.assertEqual(bs.display_title("(제2026-02-011호) 2026년 강북구가족센터 강사"), "2026년 강북구가족센터 강사")
         self.assertEqual(bs.display_title("Nagoya University 강사"), "Nagoya University 강사")
+        self.assertEqual(
+            bs.display_title("성신여자대학교 국제교육원 한국어강사 모집 공고 접수중 2026.07.22~2026.07.29"),
+            "성신여자대학교 국제교육원 한국어강사 모집 공고",
+        )
 
     def test_script_json_cannot_close_tag(self):
         self.assertNotIn("</script>", bs.json_for_script({"x": "</script><b>"}))

@@ -50,6 +50,7 @@ MIN_REQUEST_INTERVAL = 1.0
 # it was first seen, then dropped. Overseas notices often state the deadline in
 # a form the parser misses, and dropping them outright lost most of them.
 UNDATED_GRACE_DAYS = 45
+ROLLING_MAX_DAYS = 90
 KAKAO_KEYWORD_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 KAKAO_ADDRESS_URL = "https://dapi.kakao.com/v2/local/search/address.json"
 
@@ -694,13 +695,15 @@ def is_active_deadline(deadline: str | None, today: dt.date) -> bool:
 
 def is_live_job(deadline: str | None, posted_at: str | None, first_seen_at: str | None, today: dt.date) -> bool:
     """An undated posting stays for UNDATED_GRACE_DAYS after it was posted, or
-    after we first saw it when the board shows no posting date."""
+    after we first saw it when the board shows no posting date. A rolling
+    ("상시") posting stays ROLLING_MAX_DAYS: boards rarely take them down."""
+    started = posted_at or first_seen_at
+    age = (today - dt.date.fromisoformat(started[:10])).days if started else 0
+    if deadline == "rolling":
+        return age <= ROLLING_MAX_DAYS
     if deadline:
         return is_active_deadline(deadline, today)
-    started = posted_at or first_seen_at
-    if not started:
-        return True
-    return (today - dt.date.fromisoformat(started[:10])).days <= UNDATED_GRACE_DAYS
+    return age <= UNDATED_GRACE_DAYS
 
 
 def prune_inactive_jobs(conn: sqlite3.Connection, today: dt.date) -> int:
@@ -1045,32 +1048,72 @@ def institution_core(institution: str | None, title: str) -> str | None:
     return normalize(institution) if institution else None
 
 
+def title_key(title: str | None) -> str:
+    """A title reduced to what stays the same when another board reposts it.
+
+    Drops new-post markers ("N", "New"), notice numbers, the board's own
+    "접수중 2026.07.22~2026.07.29" tail and part suffixes ("-1", "(2)").
+    """
+    text = (title or "").strip()
+    text = re.sub(r"^(?:N|New)\s+(?=\S)", "", text)
+    text = re.sub(r"^\(?제?\s*[\d\-]+\s*호\)\s*", "", text)
+    text = re.sub(r"\s*(?:접수중|접수\s*마감|마감|모집중)?\s*\d{4}\.\d{1,2}\.\d{1,2}\s*~\s*\d{4}\.\d{1,2}\.\d{1,2}\s*$", "", text)
+    text = re.sub(r"\s*(?:-\s*\d|\(\d\))\s*$", "", text)
+    return normalize(text)
+
+
 def assign_duplicate_groups(conn: sqlite3.Connection) -> int:
     """Group the same notice collected from different boards; mark one canonical.
 
-    Same institution core + same dated deadline = same notice. Undated or
-    rolling postings only group with themselves (by content hash), because a
-    rolling deadline says nothing about whether two notices are the same. Rows
+    Two rows are the same notice when they share an institution core and a
+    dated deadline, or when their titles reduce to the same key (a repost
+    without a deadline, the same post reached through two board URLs). Rows
     are never deleted here: the public site shows only is_canonical = 1.
     Returns the number of non-canonical (duplicate) rows.
     """
     rows = conn.execute(
-        "SELECT job_id, title, institution_name, deadline, content_hash, confidence_score, status, first_seen_at FROM jobs"
+        "SELECT job_id, title, institution_name, deadline, content_hash, confidence_score, status, first_seen_at, source_name FROM jobs"
     ).fetchall()
-    groups: dict[str, list[tuple]] = {}
-    for row in rows:
-        job_id, title, institution, deadline, content_hash, *_ = row
+    parent = {row[0]: row[0] for row in rows}
+
+    def find(job_id: int) -> int:
+        while parent[job_id] != job_id:
+            parent[job_id] = parent[parent[job_id]]
+            job_id = parent[job_id]
+        return job_id
+
+    first_by_title: dict[str, int] = {}
+    # One institution can post two positions with one deadline on the same
+    # board (세종대: 시간강사 / 강의전담강사), so institution + deadline only
+    # joins rows that came from different boards: a repost.
+    by_deadline: dict[str, list[tuple[int, str]]] = {}
+    for job_id, title, institution, deadline, *_, source in rows:
+        tkey = title_key(title)
+        if len(tkey) >= 8:  # too short a title ("강사 모집") names no single notice
+            if tkey in first_by_title:
+                parent[find(job_id)] = find(first_by_title[tkey])
+            else:
+                first_by_title[tkey] = job_id
         core = institution_core(institution, title)
         if core and deadline and deadline != "rolling":
-            key = hashlib.sha256(f"{core}|{deadline}".encode("utf-8")).hexdigest()[:16]
-        else:
-            key = content_hash[:16]
-        groups.setdefault(key, []).append(row)
+            seen = by_deadline.setdefault(f"{core}|{deadline}", [])
+            for other_id, other_source in seen:
+                if other_source != source:
+                    parent[find(job_id)] = find(other_id)
+                    break
+            seen.append((job_id, source))
+
+    groups: dict[int, list[tuple]] = {}
+    for row in rows:
+        groups.setdefault(find(row[0]), []).append(row)
 
     duplicates = 0
-    for key, members in groups.items():
-        # Prefer a reviewed-approved row, then the most trusted board, then the oldest.
-        members.sort(key=lambda r: (r[6] != "approved", -(r[5] or 0), r[7] or "", r[0]))
+    for members in groups.values():
+        key = hashlib.sha256(",".join(str(r[0]) for r in sorted(members)).encode("utf-8")).hexdigest()[:16] \
+            if len(members) > 1 else members[0][4][:16]
+        # Prefer a reviewed-approved row, then one that states its deadline,
+        # then the most trusted board, then the oldest.
+        members.sort(key=lambda r: (r[6] != "approved", not r[3], -(r[5] or 0), r[7] or "", r[0]))
         for index, row in enumerate(members):
             conn.execute(
                 "UPDATE jobs SET duplicate_group_id = ?, is_canonical = ? WHERE job_id = ?",
@@ -1333,6 +1376,9 @@ def collect_discovery_sources(
     return stats
 
 
+POST_ID_PARAM = re.compile(r"(?:^|&)(?:uid|idx|seq|nttId|nttSn|articleNo|wr_id|bbs_idx|boardNo|no|id)=\d+", re.I)
+
+
 def discover_generic_links(
     source: DiscoverySource, include_terms: list[str], hiring_terms: list[str]
 ) -> list[Source]:
@@ -1360,8 +1406,11 @@ def discover_generic_links(
                 continue
             absolute = urllib.parse.urljoin(page_url, href)
             # Links back to the board itself (filter tabs, paging) are navigation,
-            # not postings, even when the query string looks relevant.
-            if urllib.parse.urlparse(absolute).path == list_path:
+            # not postings, even when the query string looks relevant -- unless
+            # the query names one post, as KBoard (?mod=document&uid=623) and
+            # most Korean boards (?articleNo=…, ?nttId=…) do.
+            parsed_link = urllib.parse.urlparse(absolute)
+            if parsed_link.path == list_path and not POST_ID_PARAM.search(parsed_link.query):
                 continue
             if not is_relevant(f"{link_text} {href}", include_terms, hiring_terms, []):
                 continue
@@ -1528,7 +1577,7 @@ def discover_kteacher(source: DiscoverySource, today: dt.date, active_only: bool
             items.append(
                 Source(
                     name=source.name,
-                    url=urllib.parse.urljoin(page_url, f"/jobsearch/{row['id']}"),
+                    url=urllib.parse.urljoin(page_url, row["path"]),
                     trust=source.trust,
                     kind="discovered_kteacher",
                     title_hint=row["title"],
@@ -1549,14 +1598,16 @@ def parse_kteacher_rows(html: str) -> list[dict[str, str]]:
         cells = re.findall(r"<td[^>]*>(.*?)</td>", row, flags=re.DOTALL)
         if len(cells) != 6:
             continue
-        link = re.search(r'href="/jobsearch/(\d+)"[^>]*>(.*?)</a>', cells[2], flags=re.DOTALL)
+        # The board moved from kteacher.korean.go.kr/jobsearch/… to klp.korean.go.kr/certif/jobsearch/….
+        link = re.search(r'href="((?:/certif)?/jobsearch/(\d+))"[^>]*>(.*?)</a>', cells[2], flags=re.DOTALL)
         if not link:
             continue
         rows.append(
             {
-                "id": link.group(1),
+                "path": link.group(1),
+                "id": link.group(2),
                 "group": html_clean(cells[1]),
-                "title": html_clean(link.group(2)),
+                "title": html_clean(link.group(3)),
                 "institution": html_clean(cells[3]),
                 "deadline": parse_kteacher_deadline(html_clean(cells[5])),
             }
