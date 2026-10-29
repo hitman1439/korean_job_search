@@ -96,6 +96,37 @@
       "kind": "generic_links"
     },
     {
+      "name": "경기도교육청 구인구직",
+      "url": "https://www.goe.go.kr/recruit/ad/func/pb/hnfpPbancList.do?mi=10502",
+      "trust": 88,
+      "kind": "goe_recruit",
+      "terms": [
+        "한국어",
+        "다문화",
+        "한국어학급"
+      ]
+    },
+    {
+      "name": "진학프로 (대학 채용 접수)",
+      "url": "https://www.jinhakpro.com/sitemap.xml",
+      "trust": 85,
+      "kind": "jinhakpro_sitemap",
+      "pages": 120
+    },
+    {
+      "name": "동국대학교 한국어교육원 공지(한국어 검색)",
+      "url": "https://interlang.dongguk.edu/bbs/board.php?bo_table=interlang5_1&sfl=wr_subject&stx=%ED%95%9C%EA%B5%AD%EC%96%B4",
+      "trust": 90,
+      "kind": "generic_links"
+    },
+    {
+      "name": "서울대 한국어교육 공지사항 재게시",
+      "url": "https://kfl.snu.ac.kr/%EA%B2%8C%EC%8B%9C%ED%8C%90-%EA%B3%B5%EC%A7%80%EC%82%AC%ED%95%AD/?pageid={page}",
+      "trust": 75,
+      "kind": "generic_links",
+      "pages": 2
+    },
+    {
       "name": "국제한국어교육학회 한국어교육소식",
       "url": "https://www.iakle.com/subList/32000004955",
       "trust": 92,
@@ -126,14 +157,6 @@
     {
       "name": "잡코리아",
       "reason": "채용공고 DB 무단 복제 분쟁 이력이 있는 분야의 상업 채용포털. 예전 실행에서 저장된 행 정리용."
-    },
-    {
-      "name": "진학프로 강사 목록",
-      "reason": "다른 게시판 공고의 재게시. 필요하면 --jinhakpro-pages로 명시적으로 켤 수 있지만, 그 경우 이 항목을 지워야 행이 남음."
-    },
-    {
-      "name": "진학프로",
-      "reason": "seed_urls.txt의 진학프로 상세 URL로 저장된 행 정리용."
     },
     {
       "name": "사람인",

@@ -235,7 +235,11 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
 
 
 def header(root: str, active: str) -> str:
-    links = [("jobs", f"{root}index.html", "채용공고"), ("demo", f"{root}demo.html", "시강 교안 AI")]
+    links = [
+        ("jobs", f"{root}index.html", "채용공고"),
+        ("resume", f"{root}resume.html", "이력서·자소서 첨삭"),
+        ("demo", f"{root}demo.html", "시강 교안 AI"),
+    ]
     nav = "".join(
         f'<a href="{href}"{" aria-current=\"page\"" if key == active else ""}>{label}</a>' for key, href, label in links
     )
@@ -371,6 +375,10 @@ def service_blocks(config: dict, root: str) -> str:
 <p class="kicker">전자책</p><h2 id="ebookTitle">어학당 면접, 이 질문은 꼭 나와요</h2>
 <p class="desc">기관 유형별 질문과 15분 시강 구성법</p>
 <a class="btn btn-line" href="{e(SERVICE_LINKS['ebook'])}">미리보기</a></section>""")
+    blocks.append(f"""<section class="callout service" aria-labelledby="resumeBlock">
+<p class="kicker">이력서·자소서 첨삭</p><h2 id="resumeBlock">지원 전에 서류부터 다듬어 보세요</h2>
+<p class="desc">한국어 강사 채용을 아는 사람이 이력서와 자기소개서를 기관에 맞춰 고쳐 드려요.</p>
+<a class="btn btn-line" href="{root}resume.html">첨삭 알아보기</a></section>""")
     blocks.append(f"""<section class="callout service" aria-labelledby="demoBlock">
 <p class="kicker">시강 교안 AI</p><h2 id="demoBlock">모의수업 교안, 초안부터 잡아 보세요</h2>
 <p class="desc">수준과 문법만 고르면 다섯 단계 교안 초안이 나와요.</p>
@@ -506,6 +514,56 @@ def job_posting(job: dict, config: dict) -> dict:
     return {k: v for k, v in data.items() if v is not None}
 
 
+def render_resume(config: dict) -> str:
+    """이력서·자기소개서 첨삭: a placeholder page that takes pre-registrations."""
+    offers = [
+        ("이력서 첨삭", "한국어 교육 경력, 자격, 학력을 기관이 보는 순서로 다시 배치하고, 빠진 항목을 짚어 드려요."),
+        ("자기소개서 첨삭", "지원 동기와 교수 경험을 그 기관의 학습자와 과정에 맞춰 구체적으로 고쳐 드려요."),
+        ("강의계획서·교안 점검", "서류와 함께 내는 강의계획서나 시강 교안이 있다면 같이 봐 드려요."),
+    ]
+    offer_cards = "".join(
+        f'<section class="callout service"><h2>{e(t)}</h2><p class="desc">{e(d)}</p></section>' for t, d in offers
+    )
+    steps = [
+        ("서류 보내기", "지원할 공고와 지금 쓴 이력서·자기소개서를 보내요."),
+        ("첨삭", "공고 요건에 맞춰 고칠 곳과 이유를 문서에 바로 표시해요."),
+        ("다시 보기", "고친 서류를 한 번 더 봐 드려요."),
+    ]
+    step_items = "".join(
+        f'<li><span class="n">{i}</span><span><strong>{e(t)}</strong> <span class="hint">· {e(d)}</span></span></li>'
+        for i, (t, d) in enumerate(steps, 1)
+    )
+    body = f"""<main class="wrap">
+<div class="detail">
+<div class="detail-main">
+<section class="sec" aria-labelledby="resumeHead">
+<p class="eyebrow">준비 중인 서비스예요</p>
+<h1 id="resumeHead" class="title-xl">한국어 강사 지원 서류,<br>기관에 맞춰 다듬어 드려요</h1>
+<p class="prose">어학당, 세종학당, 가족센터, 해외 대학은 보는 것이 서로 달라요. 지원하려는 공고를 기준으로 이력서와 자기소개서를 고쳐 드려요.</p>
+</section>
+<div class="row" style="margin-top: 32px">{offer_cards}</div>
+<section class="sec" aria-labelledby="stepsTitle"><h2 id="stepsTitle">이렇게 진행해요</h2><ol class="steps">{step_items}</ol></section>
+<section class="sec" aria-labelledby="priceTitle"><h2 id="priceTitle">가격</h2>
+<p class="prose">가격과 진행 기간은 서비스를 열 때 안내해 드려요.</p></section>
+</div>
+<aside class="detail-side" aria-label="사전 신청">
+<section class="callout" aria-labelledby="preTitle">
+<p class="kicker">사전 신청</p>
+<h2 id="preTitle">서비스가 열리면 먼저 알려 드릴게요</h2>
+<p class="desc">이메일을 남겨 주시면 오픈 소식과 첫 신청 혜택을 보내 드려요.</p>
+<form class="alert-form" data-alert-form data-kind="resume">
+<label><span class="sr-only">이메일</span><input type="email" name="email" required placeholder="이메일 주소" autocomplete="email"></label>
+<button type="submit" class="btn btn-primary">사전 신청</button>
+</form>
+<p class="alert-done" data-alert-done role="status" hidden></p>
+</section>
+</aside>
+</div>
+</main>"""
+    return page(f"이력서·자소서 첨삭 · {SITE_NAME}", "한국어 강사 지원용 이력서와 자기소개서를 기관에 맞춰 첨삭해 드려요.", body,
+                root="", config=config, canonical=absolute(config, "resume.html"), active="resume")
+
+
 def render_demo(config: dict) -> str:
     def options(group: str, values: list[str], chosen: str) -> str:
         return "".join(
@@ -562,7 +620,7 @@ def absolute(config: dict, path: str) -> str | None:
 def render_sitemap(jobs: list[dict], config: dict, today: dt.date) -> str | None:
     if not config.get("site_url"):
         return None
-    urls = ["index.html", "demo.html"] + [job["path"] for job in jobs]
+    urls = ["index.html", "resume.html", "demo.html"] + [job["path"] for job in jobs]
     entries = "".join(f"<url><loc>{e(absolute(config, u))}</loc><lastmod>{today.isoformat()}</lastmod></url>" for u in urls)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{entries}</urlset>\n'
 
@@ -594,6 +652,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     write = lambda rel, text: (out_dir / rel).write_text(text, encoding="utf-8")
     write("index.html", render_index(jobs, config, collected_at))
     write("demo.html", render_demo(config))
+    write("resume.html", render_resume(config))
     for job in jobs:
         write(job["path"], render_job(job, jobs, config, today))
     sitemap = render_sitemap(jobs, config, today)

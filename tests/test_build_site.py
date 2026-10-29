@@ -103,8 +103,16 @@ class BuildTests(unittest.TestCase):
 
     def test_sitemap_and_canonical(self):
         sitemap = (self.out / "sitemap.xml").read_text(encoding="utf-8")
-        self.assertEqual(sitemap.count("<url>"), 5)
+        self.assertEqual(sitemap.count("<url>"), 6)
         self.assertIn('<link rel="canonical" href="https://jobs.example/index.html">', self.index)
+
+    def test_resume_service_page_and_links(self):
+        page = (self.out / "resume.html").read_text(encoding="utf-8")
+        self.assertIn('data-kind="resume"', page)
+        self.assertIn('aria-current="page">이력서·자소서 첨삭', page)
+        # Every page's menu and every job page's sidebar lead to it.
+        self.assertIn('href="resume.html"', self.index)
+        self.assertIn('href="../resume.html"', self.job_page("아주대 강사 모집"))
 
     def test_kakao_key_reaches_page_config(self):
         self.assertIn('window.SITE = {"kakaoKey": "KEY"', self.index)

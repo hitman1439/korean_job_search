@@ -70,7 +70,21 @@
 
   function showMapNote(box, text) {
     var note = box.querySelector(".map-note");
-    if (note) { note.textContent = text; note.hidden = false; }
+    if (note) { note.textContent = text + mapHelp(); note.hidden = false; }
+  }
+
+  // Kakao answers 401 unless the page's origin is registered for the key
+  // (localhost and 127.0.0.1 count as different origins; file:// never works).
+  // Say so on a developer's machine; visitors only see the short notice.
+  function mapHelp() {
+    var host = location.hostname;
+    if (location.protocol === "file:") {
+      return " 파일을 직접 열면 지도가 뜨지 않아요. python -m http.server 8765 --bind 127.0.0.1 -d site 로 띄운 뒤 http://127.0.0.1:8765 로 여세요.";
+    }
+    if (host === "localhost" || host === "127.0.0.1") {
+      return " 카카오 개발자 콘솔의 플랫폼 > Web에 " + location.origin + " 이 등록돼 있는지 확인하세요.";
+    }
+    return "";
   }
 
   // --- home page ---------------------------------------------------------
@@ -304,8 +318,10 @@
       var done = box.querySelector("[data-alert-done]");
       var email = form.querySelector("input[type=email]").value.trim();
       if (!email) return;
+      // "alert" = new-job alerts; other kinds are service pre-registrations.
+      var kind = form.getAttribute("data-kind") || "alert";
       if (!SITE.alertEndpoint) {
-        done.textContent = "알림 신청은 곧 열려요. 그동안 이 페이지를 즐겨찾기 해 두세요.";
+        done.textContent = "신청 접수는 곧 열려요. 그동안 이 페이지를 즐겨찾기 해 두세요.";
         done.hidden = false;
         return;
       }
@@ -313,11 +329,13 @@
       fetch(SITE.alertEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email, filters: summary ? summary.textContent : "" })
+        body: JSON.stringify({ kind: kind, email: email, filters: summary ? summary.textContent : "" })
       }).then(function (res) {
         if (!res.ok) throw new Error(res.status);
         form.hidden = true;
-        done.textContent = "알림을 켰어요. 새 공고가 올라오면 보내 드릴게요.";
+        done.textContent = kind === "alert"
+          ? "알림을 켰어요. 새 공고가 올라오면 보내 드릴게요."
+          : "신청됐어요. 서비스가 열리면 가장 먼저 알려 드릴게요.";
         done.hidden = false;
       }).catch(function () {
         done.textContent = "신청하지 못했어요. 잠시 뒤에 다시 해 주세요.";

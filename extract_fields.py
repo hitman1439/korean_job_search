@@ -143,13 +143,18 @@ def detect_demo_lesson(text: str) -> int | None:
 
 
 def detect_salary(text: str) -> str | None:
+    # Only the amount and its unit ("시간당 32,000원"), never the clause before
+    # it ("화, 목요일 배정 시 : …"), which made chips unreadable.
     match = re.search(
-        r"(?:강의료|강사료|시간당\s*강의료|시급|급여|보수|월급|연봉|임금)\s*[:：]?\s*"
-        r"([^.\n]{0,30}?\d[\d,.]*\s*(?:만\s*)?원(?:\s*\([^)]{0,20}\))?)",
+        r"(?:강의료|강사료|시간당\s*강의료|시급|급여|보수|월급|연봉|임금)[^\d\n]{0,40}?"
+        r"((?:시간당|시급|월|연)?\s*\d{1,3}(?:,\d{3})+\s*원|(?:시간당|시급|월|연)?\s*\d[\d,]*\s*만\s*원)",
         text,
     )
     if match:
-        return re.sub(r"\s+", " ", match.group(1)).strip()
+        amount = re.sub(r"\s+", " ", match.group(1)).strip()
+        if re.match(r"\d", amount) and re.search(r"시간당|시급", match.group(0)):
+            amount = "시간당 " + amount
+        return amount
     english = re.search(r"(?:salary|compensation|pay)[^$\n]{0,40}(\$\s?\d[\d,]*(?:\s*[-–]\s*\$?\s?\d[\d,]*)?)", text, re.I)
     return english.group(1).replace(" ", "") if english else None
 

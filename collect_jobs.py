@@ -86,6 +86,7 @@ class DiscoverySource:
     pages: int = 1
     id_start: int | None = None
     id_end: int | None = None
+    terms: tuple[str, ...] = ()
 
 
 class LinkTextParser(html.parser.HTMLParser):
@@ -1294,6 +1295,7 @@ def load_discovery_sources(path: Path) -> list[DiscoverySource]:
                 pages=int(item.get("pages", 1)),
                 id_start=item.get("id_start"),
                 id_end=item.get("id_end"),
+                terms=tuple(item.get("terms", ())),
             )
         )
     return sources
@@ -1378,6 +1380,7 @@ def collect_seed_urls(
             }
             result = save_job(conn, job)
             stats[result] += 1
+            conn.commit()
         except Exception as exc:
             stats["failed"] += 1
             log_error(conn, run_id, source, str(exc))
@@ -1404,6 +1407,12 @@ def collect_discovery_sources(
                 discovered.extend(
                     discover_iakle(source, include_terms, hiring_terms, today, active_only)
                 )
+            elif source.kind == "goe_recruit":
+                discovered.extend(discover_goe_recruit(source))
+            elif source.kind == "jinhakpro_sitemap":
+                discovered.extend(
+                    discover_jinhakpro_sitemap(conn, source, ["한국어", "Korean"], exclude_terms, today)
+                )
             elif source.kind == "jobkorea_mobile_list":
                 discovered.extend(discover_jobkorea_mobile(source, today, active_only))
             elif source.kind == "hackers_mobile_probe":
@@ -1420,6 +1429,8 @@ def collect_discovery_sources(
         except Exception as exc:
             stats["failed"] += 1
             log_error(conn, run_id, Source(source.name, source.url, source.trust, source.kind), str(exc))
+        # Keep each board's work (closed_urls, discovery state) if a later one hangs.
+        conn.commit()
 
     unique: dict[str, Source] = {}
     for item in discovered:
@@ -1631,6 +1642,117 @@ def discover_iakle(
                     deadline_hint=deadline,
                     posted_at_hint=posted_at,
                     body_hint=text,
+                )
+            )
+    return items
+
+
+JINHAKPRO_SITEMAP_ID = re.compile(r"/recruit/(\d+)\s*</loc>")
+
+
+def discover_jinhakpro_sitemap(
+    conn: sqlite3.Connection,
+    source: DiscoverySource,
+    include_terms: list[str],
+    exclude_terms: list[str],
+    today: dt.date,
+) -> list[Source]:
+    """진학프로 via its published sitemap.
+
+    Universities post their own calls here to take applications, so this is
+    the institutions' channel, not a repost (robots.txt allows /recruit/). The
+    list page only shows 24 posts and ignores paging; the sitemap lists them
+    all. Posts are opened newest first, at most source.pages per run; a post
+    that is not a Korean-teaching call is remembered in closed_urls so it is
+    opened once. Relevance is judged on the post's own title: its pages carry
+    a sidebar of other calls that mention 한국어.
+    """
+    sitemap = fetch_url(source.url)
+    ids = sorted({int(i) for i in JINHAKPRO_SITEMAP_ID.findall(sitemap)}, reverse=True)
+    items: list[Source] = []
+    opened = 0
+    for post_id in ids:
+        if opened >= source.pages:
+            break
+        url = f"https://www.jinhakpro.com/recruit/{post_id}"
+        if job_exists_for_url(conn, url) or is_closed_url(conn, url):
+            continue
+        opened += 1
+        try:
+            text = parse_html(fetch_url(url)).text
+        except Exception:
+            continue  # tried again next run
+        institution, title = extract_jinhakpro_heading(text)
+        title = title or ""
+        relevant = (
+            any(term.casefold() in title.casefold() for term in include_terms)
+            and TEACHING_ROLE.search(title)
+            and not has_excluded_term(title, exclude_terms)
+        )
+        deadline = extract_deadline(text, today)
+        if not relevant or not is_live_job(deadline, None, None, today):
+            mark_closed_url(conn, url, deadline)
+            continue
+        items.append(
+            Source(
+                name=source.name,
+                url=url,
+                trust=source.trust,
+                kind="discovered_jinhakpro",
+                title_hint=title,
+                institution_hint=institution,
+                location_hint=extract_jinhakpro_location(text),
+                deadline_hint=deadline,
+                body_hint=text,
+            )
+        )
+    return items
+
+
+GOE_ROW = re.compile(r"goView\('(\d+)'\)(.*?)</li>", re.DOTALL)
+
+
+def discover_goe_recruit(source: DiscoverySource) -> list[Source]:
+    """경기도교육청 구인구직: the list only answers a POSTed title search.
+
+    The page renders no rows on a plain GET; its search form posts back to the
+    same URL. Each term in source.terms is searched separately (한국어 classes
+    for immigrant pupils are often titled 다문화 or 한국어학급 only). Detail
+    pages answer a plain GET.
+    """
+    origin = "https://www.goe.go.kr"
+    opener = build_session_opener()
+    open_with_opener(opener, source.url, 25)  # session cookie for the search
+    items: list[Source] = []
+    seen: set[str] = set()
+    for term in source.terms or ("한국어",):
+        form = {
+            "mi": "10502", "currPage": "1", "srchEcptDl": "Y", "pageIndex": "40",
+            "searchType": "sj", "searchValue": term, "srchOcptCd": "", "srchOcptNm": "",
+        }
+        request = urllib.request.Request(
+            origin + "/recruit/ad/func/pb/hnfpPbancList.do",
+            data=urllib.parse.urlencode(form).encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded", "Referer": source.url},
+        )
+        listing = open_with_opener(opener, request, 25)
+        for post_id, row in GOE_ROW.findall(listing):
+            if post_id in seen:
+                continue
+            seen.add(post_id)
+            title = re.search(r'class="cont_tit">(.*?)</p>', row, re.DOTALL)
+            school = re.search(r'class="cont_top">\s*<span>(.*?)</span>', row, re.DOTALL)
+            title_text = html_clean(title.group(1)) if title else ""
+            title_text = re.sub(r"^(?:마감임박|오늘마감|신규)\s*", "", title_text)
+            items.append(
+                Source(
+                    name=source.name,
+                    url=f"{origin}/recruit/ad/func/pb/hnfpPbancInfoView.do?mi=10502&pbancSn={post_id}",
+                    trust=source.trust,
+                    kind="discovered_goe",
+                    title_hint=title_text or None,
+                    institution_hint=html_clean(school.group(1)) if school else None,
+                    location_hint="경기",
                 )
             )
     return items
@@ -2009,6 +2131,8 @@ def build_jinhakpro_job(text: str, url: str, source: Source) -> dict[str, str | 
 
 
 def extract_jinhakpro_heading(text: str) -> tuple[str | None, str | None]:
+    # A status tag may lead the page title: "연장 - 숙명여자대학교 …" for an extended call.
+    text = re.sub(r"^\s*(?:연장|마감|접수중|진행중|재공고)\s*-\s*", "", text)
     page_title = re.match(r"(?P<title>.+?)\s+-\s+(?P<institution>.+?)\s+\|\s+진학프로", text)
     if page_title:
         return clean_text(page_title.group("institution")), clean_text(page_title.group("title"))

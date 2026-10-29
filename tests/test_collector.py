@@ -152,7 +152,57 @@ KTEACHER_ROW = """<table class="desktopShow"><tbody><tr> <td>1</td> <td> 국내 
 <td> <span class="replace-formatted-date"> 2026-11-09 </span> </td> </tr></tbody></table>"""
 
 
+GOE_LISTING = """<div class="recruit_list"><ul> <li> <a href="javascript:goView('64257');"> <div class="cont_txt">
+<div class="cont_top"> <span>성포초등학교</span> <span>031-487-4313</span> <span>등록일 : 2026/10/29</span> </div>
+<p class="cont_tit"> <span class="krds-badge bg4">마감임박 </span> 2026 한국어학급 강사 채용 공고 </p> </div></a> </li></ul></div>"""
+
+
 class SourceParserTests(unittest.TestCase):
+    def test_jinhakpro_sitemap_keeps_korean_teaching_calls_only(self):
+        conn = cj.init_db(Path(":memory:"))
+        pages = {
+            "https://www.jinhakpro.com/sitemap.xml":
+                "<url><loc>https://www.jinhakpro.com/recruit/101</loc></url><url><loc>https://www.jinhakpro.com/recruit/102</loc></url>",
+            "https://www.jinhakpro.com/recruit/102":
+                "<title>2026 겨울학기 한국어강사 채용 - 가천대학교 | 진학프로</title><p>접수 마감일 : 2026-11-08</p>",
+            "https://www.jinhakpro.com/recruit/101":
+                "<title>2026 행정직원 채용 - 가천대학교 | 진학프로</title><p>한국어학당 강사 모집(사이드바)</p><p>마감일 : 2026-11-08</p>",
+        }
+        opened = []
+        original = cj.fetch_url
+
+        def fake_fetch(url, timeout=20):
+            opened.append(url)
+            return pages[url]
+
+        cj.fetch_url = fake_fetch
+        try:
+            source = cj.DiscoverySource("진학프로", "https://www.jinhakpro.com/sitemap.xml", 85, "jinhakpro_sitemap", pages=10)
+            items = cj.discover_jinhakpro_sitemap(conn, source, ["한국어"], [], TODAY)
+            again = cj.discover_jinhakpro_sitemap(conn, source, ["한국어"], [], TODAY)
+        finally:
+            cj.fetch_url = original
+        self.assertEqual([i.institution_hint for i in items], ["가천대학교"])
+        self.assertEqual(items[0].deadline_hint, "2026-11-08")
+        # The staff call is remembered and not opened on the next run.
+        self.assertEqual(opened.count("https://www.jinhakpro.com/recruit/101"), 1)
+        conn.close()
+
+    def test_goe_recruit_rows(self):
+        responses = iter(["<html>search page</html>", GOE_LISTING])
+        original = cj.open_with_opener
+        cj.open_with_opener = lambda opener, request, timeout: next(responses)
+        try:
+            source = cj.DiscoverySource("경기도교육청", "https://www.goe.go.kr/recruit/ad/func/pb/hnfpPbancList.do?mi=10502",
+                                        85, "goe_recruit", terms=("한국어",))
+            items = cj.discover_goe_recruit(source)
+        finally:
+            cj.open_with_opener = original
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].title_hint, "2026 한국어학급 강사 채용 공고")
+        self.assertEqual(items[0].institution_hint, "성포초등학교")
+        self.assertTrue(items[0].url.endswith("pbancSn=64257"))
+
     def test_kteacher_rows_on_moved_board(self):
         rows = cj.parse_kteacher_rows(KTEACHER_ROW)
         self.assertEqual(len(rows), 1)
@@ -351,6 +401,12 @@ class FieldRuleTests(unittest.TestCase):
         fields = ef.extract_rules({"title": "강사 채용", "raw_text": "한국어 강의 경력 1년 이상인 자"})
         self.assertEqual(fields["experience_required"], "경력 1년 이상")
         self.assertEqual(fields["newcomer_ok"], 0)
+
+    def test_salary_is_only_the_amount(self):
+        self.assertEqual(ef.detect_salary("강사료: 화, 목요일 배정 시 : 시간당 32,000 원"), "시간당 32,000 원")
+        self.assertEqual(ef.detect_salary("시급 35,000원"), "시간당 35,000원")
+        self.assertEqual(ef.detect_salary("연봉 3,600만원 이상"), "3,600만원")
+        self.assertIsNone(ef.detect_salary("강의료는 내부 기준에 따름"))
 
     def test_indonesia_is_not_india(self):
         self.assertEqual(ef.detect_country("인도네시아 대학 한국어 강사", None, ""), "인도네시아")
