@@ -1,0 +1,3 @@
+# The collector itself uses only the standard library.
+# Needed only for `collect_jobs.py --llm-fields`:
+anthropic

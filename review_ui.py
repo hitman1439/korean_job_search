@@ -27,6 +27,16 @@ def ensure_db(db_path: Path) -> None:
     conn.close()
 
 
+JOB_COLUMNS = """
+    job_id, title, institution_name, source_name, source_url,
+    original_url, location_text, deadline, posted_at, collected_at,
+    description, confidence_score, latitude, longitude, address, place_name,
+    status, review_note, reviewed_at, is_canonical, duplicate_group_id,
+    institution_type, country, is_overseas, qualification, experience_required,
+    newcomer_ok, demo_lesson, salary_text, benefits, summary, fields_source
+"""
+
+
 def row_to_dict(cursor: sqlite3.Cursor, row: sqlite3.Row) -> dict[str, object]:
     return {description[0]: row[index] for index, description in enumerate(cursor.description)}
 
@@ -111,6 +121,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
         search = query.get("q", [""])[0].strip()
         status = query.get("status", [""])[0].strip()
         source = query.get("source", [""])[0].strip()
+        include_expired = query.get("include_expired", [""])[0] == "1"
         limit = min(int(query.get("limit", ["200"])[0]), 500)
 
         clauses: list[str] = []
@@ -127,13 +138,14 @@ class ReviewHandler(BaseHTTPRequestHandler):
         if source:
             clauses.append("source_name = ?")
             params.append(source)
+        if not include_expired:
+            # Closed postings stay in the DB until the next run prunes them.
+            clauses.append("(deadline IS NULL OR deadline = 'rolling' OR deadline >= ?)")
+            params.append(dt.date.today().isoformat())
 
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = f"""
-            SELECT job_id, title, institution_name, source_name, source_url,
-                   original_url, location_text, deadline, posted_at, collected_at,
-                   description, confidence_score, latitude, longitude, address, place_name,
-                   status, review_note, reviewed_at
+            SELECT {JOB_COLUMNS}
             FROM jobs
             {where}
             ORDER BY
@@ -181,17 +193,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
             if cursor.rowcount == 0:
                 self.send_error(HTTPStatus.NOT_FOUND, "Job not found")
                 return
-            row = conn.execute(
-                """
-                SELECT job_id, title, institution_name, source_name, source_url,
-                       original_url, location_text, deadline, posted_at, collected_at,
-                       description, confidence_score, latitude, longitude, address, place_name,
-                       status, review_note, reviewed_at
-                FROM jobs
-                WHERE job_id = ?
-                """,
-                (job_id,),
-            ).fetchone()
+            row = conn.execute(f"SELECT {JOB_COLUMNS} FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
         self.send_json({"job": dict(row)})
 
     def get_config(self) -> dict[str, object]:

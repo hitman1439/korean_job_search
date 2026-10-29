@@ -26,6 +26,7 @@ const els = {
   searchInput: document.querySelector("#searchInput"),
   statusFilter: document.querySelector("#statusFilter"),
   sourceFilter: document.querySelector("#sourceFilter"),
+  expiredToggle: document.querySelector("#expiredToggle"),
   refreshButton: document.querySelector("#refreshButton"),
   jobTemplate: document.querySelector("#jobTemplate"),
   tabList: document.querySelector("#tabList"),
@@ -45,6 +46,37 @@ function fmtDate(value) {
   return value;
 }
 
+const INSTITUTION_TYPE_LABELS = {
+  university: "국내 대학",
+  overseas_university: "해외 대학",
+  sejong: "세종학당",
+  multicultural: "가족센터·다문화",
+  kiip: "사회통합프로그램",
+  school: "초중고·교육청",
+  academy: "학원",
+  online: "온라인",
+  government: "공공기관",
+  other: "기타",
+};
+
+// 구조화 필드 중 값이 있는 것만 한 줄로 보여 준다. null은 "공고에 언급 없음"이다.
+function factsText(job) {
+  const flag = (value, yes, no) => (value === 1 ? yes : value === 0 ? no : null);
+  return [
+    INSTITUTION_TYPE_LABELS[job.institution_type],
+    job.is_overseas ? job.country || "해외" : null,
+    job.qualification,
+    job.experience_required,
+    flag(job.newcomer_ok, "신입 가능", "경력 필요"),
+    flag(job.demo_lesson, "모의수업 있음", null),
+    job.salary_text,
+    job.benefits,
+    job.is_canonical === 0 ? "중복 공고" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function statusLabel(value) {
   return {
     needs_review: "검토 필요",
@@ -58,6 +90,7 @@ function params() {
   if (els.searchInput.value.trim()) query.set("q", els.searchInput.value.trim());
   if (els.statusFilter.value) query.set("status", els.statusFilter.value);
   if (els.sourceFilter.value) query.set("source", els.sourceFilter.value);
+  if (els.expiredToggle.checked) query.set("include_expired", "1");
   query.set("limit", "300");
   return query.toString();
 }
@@ -127,7 +160,12 @@ function renderJobs() {
     const node = els.jobTemplate.content.cloneNode(true);
     const article = node.querySelector(".job");
     article.dataset.status = job.status;
+    article.classList.toggle("is-duplicate", job.is_canonical === 0);
     node.querySelector("h3").textContent = job.title;
+    node.querySelector(".facts").textContent = factsText(job);
+    const summary = node.querySelector(".summary");
+    summary.textContent = job.summary ? `${job.fields_source === "llm" ? "요약" : "자동 요약"}: ${job.summary}` : "";
+    summary.hidden = !job.summary;
     node.querySelector(".meta").textContent = [
       esc(job.institution_name),
       esc(job.location_text),
@@ -318,6 +356,7 @@ els.refreshButton.addEventListener("click", loadAll);
 els.searchInput.addEventListener("input", scheduleLoad);
 els.statusFilter.addEventListener("change", loadAll);
 els.sourceFilter.addEventListener("change", loadAll);
+els.expiredToggle.addEventListener("change", loadAll);
 
 loadAll().catch((error) => {
   els.jobsList.innerHTML = "";

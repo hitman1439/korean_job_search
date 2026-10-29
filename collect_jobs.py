@@ -16,6 +16,7 @@ import re
 import ssl
 import sqlite3
 import sys
+import time
 import xml.etree.ElementTree as ET
 import urllib.error
 import urllib.parse
@@ -23,6 +24,9 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+
+import extract_fields
+from extract_fields import COUNTRY_NAMES
 
 
 ROOT = Path(__file__).resolve().parent
@@ -38,9 +42,14 @@ BROWSER_USER_AGENT = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
     "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 )
-HIBRAIN_HOSTS = {"m.hibrain.net", "www.hibrain.net", "hibrain.net"}
-HIBRAIN_SIGNIN_URL = "https://m.hibrain.net/logins/signin"
 DEFAULT_SECRETS_FILE = ROOT / "secrets.env"
+# Minimum gap between two requests to the same host. Boards we read are small
+# institutional sites; back-to-back detail fetches got Jinhakpro to answer 429.
+MIN_REQUEST_INTERVAL = 1.0
+# A posting whose deadline could not be read is kept for review this long after
+# it was first seen, then dropped. Overseas notices often state the deadline in
+# a form the parser misses, and dropping them outright lost most of them.
+UNDATED_GRACE_DAYS = 45
 KAKAO_KEYWORD_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 KAKAO_ADDRESS_URL = "https://dapi.kakao.com/v2/local/search/address.json"
 
@@ -161,6 +170,12 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     ensure_column(conn, "jobs", "longitude", "REAL")
     ensure_column(conn, "jobs", "address", "TEXT")
     ensure_column(conn, "jobs", "place_name", "TEXT")
+    # collected_at moves on every refresh; first_seen_at is the undated-job clock.
+    ensure_column(conn, "jobs", "first_seen_at", "TEXT")
+    ensure_column(conn, "jobs", "is_canonical", "INTEGER NOT NULL DEFAULT 1")
+    for column, definition in JOB_FIELD_COLUMNS:
+        ensure_column(conn, "jobs", column, definition)
+    conn.execute("UPDATE jobs SET first_seen_at = collected_at WHERE first_seen_at IS NULL")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS geocode_cache (
@@ -209,6 +224,23 @@ def init_db(db_path: Path) -> sqlite3.Connection:
         """
     )
     return conn
+
+
+# Structured fields filled by extract_fields.py (rules, optionally the LLM).
+JOB_FIELD_COLUMNS = [
+    ("institution_type", "TEXT"),
+    ("country", "TEXT"),
+    ("is_overseas", "INTEGER"),
+    ("qualification", "TEXT"),
+    ("experience_required", "TEXT"),
+    ("newcomer_ok", "INTEGER"),
+    ("demo_lesson", "INTEGER"),
+    ("salary_text", "TEXT"),
+    ("benefits", "TEXT"),
+    ("summary", "TEXT"),
+    ("fields_source", "TEXT"),
+    ("fields_extracted_at", "TEXT"),
+]
 
 
 def get_discovery_last_id(conn: sqlite3.Connection, source_name: str) -> int | None:
@@ -274,11 +306,6 @@ def load_secrets_file(path: Path = DEFAULT_SECRETS_FILE) -> None:
             os.environ[key] = value
 
 
-# Hosts whose postings are only served to signed-in members keep a logged-in
-# opener here, built once per process and reused for every later request.
-_SESSION_OPENERS: dict[str, urllib.request.OpenerDirector | None] = {}
-
-
 def build_session_opener() -> urllib.request.OpenerDirector:
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
@@ -290,66 +317,50 @@ def build_session_opener() -> urllib.request.OpenerDirector:
     return opener
 
 
-def hibrain_opener() -> urllib.request.OpenerDirector | None:
-    """Sign in to hibrain.net once and reuse the session, or None if unavailable.
-
-    Most hibrain postings answer 401 to anonymous requests, so without
-    credentials only the handful of open ones can be collected. Credentials come
-    from HIBRAIN_USERID / HIBRAIN_PASSWD so they never live in the repo.
-    """
-    if "hibrain" in _SESSION_OPENERS:
-        return _SESSION_OPENERS["hibrain"]
-    _SESSION_OPENERS["hibrain"] = None
-
-    userid = os.environ.get("HIBRAIN_USERID")
-    passwd = os.environ.get("HIBRAIN_PASSWD")
-    if not userid or not passwd:
-        return None
-
-    opener = build_session_opener()
-    try:
-        with opener.open(HIBRAIN_SIGNIN_URL, timeout=20) as response:
-            response.read()
-        payload = urllib.parse.urlencode(
-            {"userid": userid, "passwd": passwd, "isAutoSignin": "false"}
-        ).encode()
-        request = urllib.request.Request(
-            f"{HIBRAIN_SIGNIN_URL}?redirectUrl=",
-            data=payload,
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Referer": HIBRAIN_SIGNIN_URL,
-                "Origin": "https://m.hibrain.net",
-            },
-        )
-        with opener.open(request, timeout=20) as response:
-            body = decode_response(response)
-    except Exception as exc:  # network trouble should not abort the whole run
-        print(f"hibrain login failed: {exc}", file=sys.stderr)
-        return None
-
-    # A rejected sign-in re-renders the login form instead of redirecting away.
-    if 'id="formSignin"' in body:
-        print("hibrain login rejected: check HIBRAIN_USERID / HIBRAIN_PASSWD", file=sys.stderr)
-        return None
-
-    _SESSION_OPENERS["hibrain"] = opener
-    return opener
+_LAST_REQUEST_AT: dict[str, float] = {}
 
 
-def session_opener_for(url: str) -> urllib.request.OpenerDirector | None:
+def wait_for_host(url: str) -> None:
+    """Space out requests to one host by MIN_REQUEST_INTERVAL seconds."""
     host = urllib.parse.urlparse(url).hostname or ""
-    if host in HIBRAIN_HOSTS:
-        return hibrain_opener()
-    return None
+    last = _LAST_REQUEST_AT.get(host)
+    if last is not None:
+        remaining = MIN_REQUEST_INTERVAL - (time.monotonic() - last)
+        if remaining > 0:
+            time.sleep(remaining)
+    _LAST_REQUEST_AT[host] = time.monotonic()
+
+
+def open_with_opener(opener: urllib.request.OpenerDirector, request: str | urllib.request.Request, timeout: int) -> str:
+    wait_for_host(request if isinstance(request, str) else request.full_url)
+    with opener.open(request, timeout=timeout) as response:
+        return decode_response(response)
+
+
+RATE_LIMIT_RETRIES = 3
 
 
 def fetch_url(url: str, timeout: int = 20) -> str:
+    """Fetch a page, backing off when the site rate-limits us (HTTP 429).
+
+    Jinhakpro answers 429 once a run fires its detail requests back to back,
+    which used to drop those postings for the whole run.
+    """
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        try:
+            return fetch_url_once(url, timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429 or attempt == RATE_LIMIT_RETRIES:
+                raise
+            retry_after = exc.headers.get("Retry-After", "")
+            delay = int(retry_after) if retry_after.isdigit() else 5 * (attempt + 1)
+            time.sleep(min(delay, 60))
+    raise AssertionError("unreachable")
+
+
+def fetch_url_once(url: str, timeout: int) -> str:
     safe_url = urllib.parse.quote(url, safe=":/?&=%#@")
-    opener = session_opener_for(safe_url)
-    if opener is not None:
-        with opener.open(safe_url, timeout=timeout) as response:
-            return decode_response(response)
+    wait_for_host(safe_url)
     request = urllib.request.Request(
         safe_url,
         headers={
@@ -362,6 +373,9 @@ def fetch_url(url: str, timeout: int = 20) -> str:
     except urllib.error.URLError as exc:
         if "CERTIFICATE_VERIFY_FAILED" not in str(exc):
             raise
+        # Several university boards serve incomplete certificate chains. Retry
+        # without verification, but say so: this must never pass silently.
+        print(f"warning: TLS verification skipped for {safe_url}", file=sys.stderr)
         context = ssl._create_unverified_context()
         with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
             return decode_response(response)
@@ -543,7 +557,7 @@ def enrich_candidate(
     }
 
 
-SPACED_YMD = re.compile(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일")
+SPACED_YMD = re.compile(r"(\d{4})\s*[년年]\s*(\d{1,2})\s*[월月]\s*(\d{1,2})\s*[일日]")
 SPACED_DOTTED = re.compile(r"(\d{4})\s*\.\s*(\d{1,2})\s*\.\s*(\d{1,2})")
 
 
@@ -559,13 +573,81 @@ def compact_spaced_dates(text: str) -> str:
 
 
 EMPLOYMENT_PERIOD = re.compile(r"(?:근무|계약|임용|고용|재직|사업|교육|연수)\s*기간")
+# A bare "~ date" is only trusted when the words just before it are about applying.
+APPLICATION_CONTEXT = re.compile(r"접수|모집|지원|원서|서류|제출|공고\s*기간")
+
+MONTHS = {
+    name: index
+    for index, names in enumerate(
+        [
+            ("january", "jan"), ("february", "feb"), ("march", "mar"), ("april", "apr"),
+            ("may",), ("june", "jun"), ("july", "jul"), ("august", "aug"),
+            ("september", "sep", "sept"), ("october", "oct"), ("november", "nov"),
+            ("december", "dec"),
+        ],
+        start=1,
+    )
+    for name in names
+}
+_MONTH = r"(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\.?"
+EN_DATE_MDY = re.compile(_MONTH + r"\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s*(\d{4}))?", re.I)
+EN_DATE_DMY = re.compile(r"(\d{1,2})(?:st|nd|rd|th)?\s+" + _MONTH + r",?\s+(\d{4})", re.I)
+EN_DEADLINE_LABEL = re.compile(
+    r"(?:application\s+deadline|deadline(?:\s+(?:to|for)\s+appl(?:y|ications))?|closing\s+date|close\s+date"
+    r"|apply\s+(?:by|before)|applications?\s+(?:are\s+|must\s+be\s+(?:received|submitted)\s+)?(?:due|by)"
+    r"|review\s+of\s+applications\s+(?:will\s+)?(?:begin|begins|start|starts|commence|commences)"
+    r"|priority\s+(?:deadline|consideration)|next\s+review\s+date|review\s+date)"
+    r"\s*(?:is|on|by|:|：)?\s*",
+    re.I,
+)
+UNTIL_FILLED = re.compile(r"until\s+(?:the\s+)?position\s+is\s+filled|open\s+until\s+filled", re.I)
 
 
-def extract_deadline(text: str) -> str | None:
+def parse_english_date(text: str, reference: dt.date) -> str | None:
+    """Read "November 15, 2026", "15 Nov 2026" or "11/15/2026" at the start of text.
+
+    A month-and-day with no year ("will start on November 15") takes the year
+    that puts it nearest after the reference date.
+    """
+    # "Monday, Nov 2, 2026" - drop a leading weekday.
+    text = re.sub(r"^(?:mon|tues|wednes|thurs|fri|satur|sun)day,?\s*", "", text[:60], flags=re.I)
+    iso = re.match(r"(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})", text)
+    if iso:
+        return normalize_date(iso.group(0))
+    us = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", text)
+    if us:
+        return safe_date(int(us.group(3)), int(us.group(1)), int(us.group(2)))
+    dmy = EN_DATE_DMY.match(text)
+    if dmy:
+        return safe_date(int(dmy.group(3)), MONTHS[dmy.group(2).lower()], int(dmy.group(1)))
+    mdy = EN_DATE_MDY.match(text)
+    if mdy:
+        month, day = MONTHS[mdy.group(1).lower()], int(mdy.group(2))
+        if mdy.group(3):
+            return safe_date(int(mdy.group(3)), month, day)
+        year = reference.year
+        guess = safe_date(year, month, day)
+        if guess and dt.date.fromisoformat(guess) < reference - dt.timedelta(days=180):
+            guess = safe_date(year + 1, month, day)
+        return guess
+    return None
+
+
+def safe_date(year: int, month: int, day: int) -> str | None:
+    try:
+        return dt.date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+def extract_deadline(text: str, reference: dt.date | None = None) -> str | None:
+    reference = reference or dt.date.today()
     text = compact_spaced_dates(text)
     patterns = [
         r"(?:모집종료일|접수\s*종료일|종료일)\s*[:：]?\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
         r"(?:마감일|접수\s*마감|지원\s*마감)\s*[:：]?\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
+        # Japanese / Chinese notices on overseas boards.
+        r"(?:応募締切|締め?切り?|応募期限|〆切|截止日期|截止)\s*(?:日)?\s*[:：]?\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
         r"(?:접수\s*기간|지원\s*기간|원서\s*접수\s*기간)\s*[:：|]?\s*\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}.*?~\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
         # Boards that print a two-digit year range, e.g. "접수기간 | 26.08.25~26.09.08".
         r"(?:접수\s*기간|지원\s*기간|원서\s*접수\s*기간)\s*[:：|]?\s*\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2}\s*~\s*(\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2})",
@@ -576,38 +658,57 @@ def extract_deadline(text: str) -> str | None:
         match = re.search(pattern, text)
         if match:
             return normalize_date(match.group(1))
-    # A bare "~ date" is only a guess, so skip ranges that describe how long the
-    # job lasts (근무기간 2026.9.1. ~ 2027.8.31.) rather than when to apply.
+    for label in EN_DEADLINE_LABEL.finditer(text):
+        found = parse_english_date(text[label.end() :], reference)
+        if found:
+            return found
+    # A bare "~ date" is only a guess. Take it only when the words just before
+    # it are about applying, and never for ranges that describe how long the
+    # job lasts (근무기간 2026.9.1. ~ 2027.8.31.).
     for pattern in (
         r"~\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
         r"~\s*(\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2})",
     ):
         for match in re.finditer(pattern, text):
-            if EMPLOYMENT_PERIOD.search(text[max(0, match.start() - 40) : match.start()]):
+            before = text[max(0, match.start() - 40) : match.start()]
+            if EMPLOYMENT_PERIOD.search(before) or not APPLICATION_CONTEXT.search(before):
                 continue
             return normalize_date(match.group(1))
-    if "채용시까지" in text or "상시" in text:
+    if re.search(r"채용\s*시\s*까지|채용\s*시\s*마감|상시\s*(?:모집|채용)|수시\s*(?:모집|채용)|채용까지", text):
+        return "rolling"
+    if UNTIL_FILLED.search(text):
         return "rolling"
     return None
 
 
 def is_active_deadline(deadline: str | None, today: dt.date) -> bool:
-    if deadline == "rolling":
+    """Whether a posting is still open. An unknown deadline counts as open:
+    prune_inactive_jobs drops undated postings after UNDATED_GRACE_DAYS."""
+    if deadline == "rolling" or not deadline:
         return True
-    if not deadline:
-        return False
     try:
         return dt.date.fromisoformat(deadline) >= today
     except ValueError:
-        return False
+        return True
+
+
+def is_live_job(deadline: str | None, posted_at: str | None, first_seen_at: str | None, today: dt.date) -> bool:
+    """An undated posting stays for UNDATED_GRACE_DAYS after it was posted, or
+    after we first saw it when the board shows no posting date."""
+    if deadline:
+        return is_active_deadline(deadline, today)
+    started = posted_at or first_seen_at
+    if not started:
+        return True
+    return (today - dt.date.fromisoformat(started[:10])).days <= UNDATED_GRACE_DAYS
 
 
 def prune_inactive_jobs(conn: sqlite3.Connection, today: dt.date) -> int:
-    rows = conn.execute("SELECT job_id, deadline FROM jobs").fetchall()
+    rows = conn.execute("SELECT job_id, deadline, posted_at, first_seen_at FROM jobs").fetchall()
     inactive_ids = [
         row[0]
         for row in rows
-        if not is_active_deadline(row[1], today)
+        if not is_live_job(row[1], row[2], row[3], today)
     ]
     if not inactive_ids:
         return 0
@@ -674,58 +775,142 @@ def extract_posted_at(text: str) -> str | None:
 
 
 def normalize_date(value: str) -> str:
-    parts = re.split(r"[.\-/]", value.strip())
+    value = value.strip()
+    # Some boards print compact dates ("20260907") with no separators.
+    compact = re.fullmatch(r"(\d{4})(\d{2})(\d{2})", value)
+    if compact:
+        value = "-".join(compact.groups())
+    parts = re.split(r"[.\-/]", value)
     if len(parts[0]) == 2:
         parts[0] = "20" + parts[0]
     year, month, day = (int(part) for part in parts[:3])
     return f"{year:04d}-{month:02d}-{day:02d}"
 
 
+# Board accounts that post on behalf of others; as 작성자 they name nobody.
+BOARD_ADMIN_NAMES = {"운영자", "관리자", "admin", "administrator"}
+
+
 def extract_institution(text: str, title: str) -> str | None:
     patterns = [
+        # KLEOcean-style posts lead with "회사명 : X 근무지역 : ..."; only trusted with a colon.
+        r"회사명\s*[:：]\s*(.{2,80}?)(?=\s*(?:근무\s*지역|근무지|고용형태|마감일|$))",
         r"(?:작성자)\s*[:：]?\s*([가-힣A-Za-z0-9()·.\- ]{2,40})",
         r"(?:기관|기관명|채용기관|근무기관)\s*[:：]?\s*(.{2,80}?)(?=\s*(?:근무지|근무\s*지역|지역|주소|접수|마감일|지원\s*기간|기관\s*유형|대표전화|$))",
         r"([가-힣A-Za-z0-9()·.\- ]{2,40}(?:대학교|한국어학당|언어교육원|국제교육원|세종학당|문화원|교육원|센터))",
     ]
-    for source_text in (text, title):
+    for source_text in (strip_site_chrome(text), title):
         for pattern in patterns:
             match = re.search(pattern, source_text)
-            if match:
-                return clean_text(match.group(1))[:80]
+            if not match:
+                continue
+            # The author field runs straight into "작성일 2026-..." on most boards.
+            value = clean_text(re.split(r"\s*(?:작성일|등록일|조회)", match.group(1))[0])
+            if value.lower() in BOARD_ADMIN_NAMES:
+                continue
+            return tidy_institution(value)[:80]
+    return None
+
+
+INSTITUTION_UNIT = r"(?:언어연구교육원|언어교육원|한국어교육원|국제교육원|한국어학당|어학당|한국어교육센터|언어교육센터|국제교육센터|교육센터|센터|교육원)"
+UNIVERSITY_WITH_UNIT = re.compile(rf"[가-힣A-Za-z]+(?:대학교|대학)(?:\s*\([^)]*\))?(?:\s+[가-힣A-Za-z]*{INSTITUTION_UNIT})?")
+
+
+def tidy_institution(value: str) -> str:
+    """Trim the run-on text the suffix pattern drags in.
+
+    "가을 · 겨울학기 이화여자대학교 언어교육원" -> "이화여자대학교 언어교육원";
+    "연세대학교 한국어학당 한국어강사 모집 공고 연세대학교 …" -> "연세대학교 한국어학당".
+    """
+    match = UNIVERSITY_WITH_UNIT.search(value)
+    return match.group(0) if match else value
+
+
+REGION_NAMES = "서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주"
+# Full province/city names as they appear in addresses -> the short region name.
+REGION_ALIASES = [
+    (r"서울특별시|서울시", "서울"),
+    (r"부산광역시|부산시", "부산"),
+    (r"대구광역시|대구시", "대구"),
+    (r"인천광역시|인천시", "인천"),
+    # "광주시" alone is also 경기도 광주시, so only the metropolitan form counts.
+    (r"광주광역시", "광주"),
+    (r"대전광역시|대전시", "대전"),
+    (r"울산광역시|울산시", "울산"),
+    (r"세종특별자치시|세종시", "세종"),
+    (r"경기도", "경기"),
+    (r"강원특별자치도|강원도", "강원"),
+    (r"충청북도", "충북"),
+    (r"충청남도", "충남"),
+    (r"전북특별자치도|전라북도", "전북"),
+    (r"전라남도", "전남"),
+    (r"경상북도", "경북"),
+    (r"경상남도|창원시?", "경남"),
+    (r"제주특별자치도|제주도", "제주"),
+]
+# Markers that open a site footer. The footer carries the *posting site's* own
+# address (해커스 → 서울 서초구, 다누리 → 서울 중구), which used to become the
+# job's location.
+FOOTER_MARKERS = re.compile(
+    r"개인정보\s*처리\s*방침|개인정보\s*취급\s*방침|이용약관|저작권\s*정책|사업자\s*등록\s*번호|통신판매업|"
+    r"copyright|all\s+rights\s+reserved|©|ⓒ",
+    re.I,
+)
+
+
+def strip_site_chrome(text: str) -> str:
+    """Cut the footer: from the first footer marker in the last 40% of the page."""
+    tail_start = int(len(text) * 0.6)
+    match = FOOTER_MARKERS.search(text, tail_start)
+    return text[: match.start()] if match else text
+
+
+def short_region(value: str) -> str | None:
+    """Map "경기 수원시…", "서울특별시 …" or a bare "부산" to the short region name."""
+    value = value.strip()
+    head = re.match(rf"({REGION_NAMES})(?![가-힣])", value)
+    if head:
+        return head.group(1)
+    for pattern, region in REGION_ALIASES:
+        if re.match(pattern, value):
+            return region
     return None
 
 
 def extract_location(text: str) -> str | None:
-    city_patterns = [
-        (r"서울특별시|서울시", "서울"),
-        (r"부산광역시|부산시", "부산"),
-        (r"대구광역시|대구시", "대구"),
-        (r"인천광역시|인천시", "인천"),
-        (r"광주광역시|광주시", "광주"),
-        (r"대전광역시|대전시", "대전"),
-        (r"울산광역시|울산시", "울산"),
-        (r"창원", "창원"),
-    ]
-    for pattern, city in city_patterns:
+    text = strip_site_chrome(text)
+    # "근무\s*지역" must come before "근무지", or "근무지역 : 미국" leaves "역 : 미국".
+    label = r"(?:근무\s*지역|근무\s*장소|근무지|소재지|지역)"
+    labeled = re.search(label + r"\s*[:：]?\s*(.{2,80}?)(?=\s*(?:접수|마감일|지원\s*기간|기관|채용기관|채용상태|고용형태|$))", text)
+    if labeled:
+        value = clean_text(labeled.group(1))
+        region = short_region(value)
+        if region:
+            return region
+        first = value.split()[0] if value.split() else value
+        if first in {"해외", "국외", "온라인", "재택"} or first in COUNTRY_NAMES:
+            return first
+    address = re.search(r"주소\s*[:：]?\s*(.{2,40})", text)
+    if address:
+        region = short_region(clean_text(address.group(1)))
+        if region:
+            return region
+    for pattern, region in REGION_ALIASES:
         if re.search(pattern, text):
-            return city
-
-    patterns = [
-        r"(?:근무지|근무\s*지역|지역|주소)\s*[:：]?\s*(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주|창원|해외)",
-        r"(?:근무지|근무\s*지역|지역|주소)\s*[:：]?\s*(.{2,80}?)(?=\s*(?:접수|마감일|지원\s*기간|기관|채용기관|채용상태|$))",
-        r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주|해외)",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if match:
-            return clean_text(match.group(1))[:100]
-    return None
+            return region
+    # A bare region name only when it stands alone: "세종학당", "서울대학교" and
+    # "해외여행에 결격사유가 없는 자" must not become locations.
+    bare = re.search(rf"({REGION_NAMES})(?=$|[^가-힣]|시|도|캠퍼스|지역|소재)", text)
+    return bare.group(1) if bare else None
 
 
 def clean_extracted_field(value: str | None, fallback: str | None) -> str | None:
     if not value:
         return fallback
     cleaned = clean_text(value).replace("\\n", " ")
+    # Notice numbers and years lead many titles: "(제2026-02-011호) 2026년 강북구가족센터".
+    cleaned = re.sub(r"^\(?제?\s*[\d\-]+\s*호\)?\s*", "", cleaned)
+    cleaned = re.sub(r"^20\d{2}\s*(?:학년도|년도|년)?\s*", "", cleaned)
     bad_markers = ["바로가기", "주메뉴", "본문", "메뉴"]
     if len(cleaned) > 45 or any(marker in cleaned for marker in bad_markers) or re.match(r"20\d{2}", cleaned):
         return fallback
@@ -805,6 +990,9 @@ def job_exists_for_url(conn: sqlite3.Connection, url: str) -> bool:
     return conn.execute("SELECT 1 FROM jobs WHERE original_url = ? LIMIT 1", (url,)).fetchone() is not None
 
 
+REVIEW_COLUMNS = {"status", "review_note", "reviewed_at"}
+
+
 def save_job(conn: sqlite3.Connection, job: dict[str, str | int | None]) -> str:
     existing = conn.execute(
         """
@@ -816,13 +1004,14 @@ def save_job(conn: sqlite3.Connection, job: dict[str, str | int | None]) -> str:
         """,
         (job["content_hash"], job["original_url"], job["content_hash"]),
     ).fetchone()
-    columns = list(job.keys())
     if existing:
         job_id = int(existing[0])
         conn.execute(
             "DELETE FROM jobs WHERE job_id <> ? AND (content_hash = ? OR original_url = ?)",
             (job_id, job["content_hash"], job["original_url"]),
         )
+        # A re-collected posting keeps the reviewer's decision and its first-seen date.
+        columns = [column for column in job if column not in REVIEW_COLUMNS | {"first_seen_at"}]
         assignments = ", ".join(f"{column}=?" for column in columns)
         conn.execute(
             f"UPDATE jobs SET {assignments} WHERE job_id = ?",
@@ -830,12 +1019,81 @@ def save_job(conn: sqlite3.Connection, job: dict[str, str | int | None]) -> str:
         )
         return "updated"
 
+    job = {**job, "first_seen_at": job.get("first_seen_at") or job.get("collected_at") or utc_now()}
+    columns = list(job.keys())
     placeholders = ", ".join("?" for _ in columns)
     conn.execute(
         f"INSERT INTO jobs ({', '.join(columns)}) VALUES ({placeholders})",
         [job[column] for column in columns],
     )
     return "saved"
+
+
+UNIVERSITY_CORE = re.compile(r"([가-힣A-Za-z]{2,30}?(?:대학교|대학))")
+
+
+def institution_core(institution: str | None, title: str) -> str | None:
+    """The part of an institution name that stays the same across boards.
+
+    "아주대학교 국제교육센터", "아주대학교" and a title "[아주대학교 국제교육센터] …"
+    all reduce to "아주대학교", so one notice reposted on several boards groups.
+    """
+    for text in (institution or "", title):
+        match = UNIVERSITY_CORE.search(text)
+        if match:
+            return normalize(match.group(1))
+    return normalize(institution) if institution else None
+
+
+def assign_duplicate_groups(conn: sqlite3.Connection) -> int:
+    """Group the same notice collected from different boards; mark one canonical.
+
+    Same institution core + same dated deadline = same notice. Undated or
+    rolling postings only group with themselves (by content hash), because a
+    rolling deadline says nothing about whether two notices are the same. Rows
+    are never deleted here: the public site shows only is_canonical = 1.
+    Returns the number of non-canonical (duplicate) rows.
+    """
+    rows = conn.execute(
+        "SELECT job_id, title, institution_name, deadline, content_hash, confidence_score, status, first_seen_at FROM jobs"
+    ).fetchall()
+    groups: dict[str, list[tuple]] = {}
+    for row in rows:
+        job_id, title, institution, deadline, content_hash, *_ = row
+        core = institution_core(institution, title)
+        if core and deadline and deadline != "rolling":
+            key = hashlib.sha256(f"{core}|{deadline}".encode("utf-8")).hexdigest()[:16]
+        else:
+            key = content_hash[:16]
+        groups.setdefault(key, []).append(row)
+
+    duplicates = 0
+    for key, members in groups.items():
+        # Prefer a reviewed-approved row, then the most trusted board, then the oldest.
+        members.sort(key=lambda r: (r[6] != "approved", -(r[5] or 0), r[7] or "", r[0]))
+        for index, row in enumerate(members):
+            conn.execute(
+                "UPDATE jobs SET duplicate_group_id = ?, is_canonical = ? WHERE job_id = ?",
+                (key, 1 if index == 0 else 0, row[0]),
+            )
+            duplicates += index > 0
+    return duplicates
+
+
+def load_retired_source_names(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {item["name"] for item in data.get("retired_sources", [])}
+
+
+def purge_retired_sources(conn: sqlite3.Connection, names: set[str]) -> int:
+    """Drop jobs collected from boards we no longer use (see retired_sources)."""
+    if not names:
+        return 0
+    placeholders = ", ".join("?" for _ in names)
+    cursor = conn.execute(f"DELETE FROM jobs WHERE source_name IN ({placeholders})", sorted(names))
+    return cursor.rowcount
 
 
 def utc_now() -> str:
@@ -976,11 +1234,18 @@ def collect_seed_urls(
                 stats["skipped"] += 1
                 continue
 
-            deadline = source.deadline_hint or extract_deadline(text)
-            if active_only and not is_active_deadline(deadline, today):
+            deadline = source.deadline_hint or extract_deadline(text, today)
+            posted_at = source.posted_at_hint or extract_posted_at(text)
+            if active_only and not is_live_job(deadline, posted_at, None, today):
                 stats["skipped"] += 1
                 continue
-            institution = source.institution_hint or clean_extracted_field(extract_institution(text, title), source.name)
+            # Never fall back to the source's own name: geocoding would then
+            # place the job at the posting site's office.
+            institution = (
+                source.institution_hint
+                or clean_extracted_field(extract_institution(text, title), None)
+                or extract_bracketed_institution(title)
+            )
             location = source.location_hint or clean_extracted_field(extract_location(text), None)
             content_hash = make_content_hash(title, institution, deadline, source.url)
             job = {
@@ -991,7 +1256,7 @@ def collect_seed_urls(
                 "original_url": source.url,
                 "location_text": location,
                 "deadline": deadline,
-                "posted_at": source.posted_at_hint or extract_posted_at(text),
+                "posted_at": posted_at,
                 "collected_at": utc_now(),
                 "description": text[:4000],
                 "raw_text": text[:20000],
@@ -1068,22 +1333,6 @@ def collect_discovery_sources(
     return stats
 
 
-HIBRAIN_DETAIL_PATH = re.compile(r"^/recruitment/recruits/\d+$")
-
-
-def normalize_discovered_url(url: str) -> str:
-    """Drop list-position query params that would otherwise re-save the same post.
-
-    Hibrain detail links carry the caller's paging state (pagekey, page, sortType).
-    Those shift between runs, so keeping them would defeat the already-collected
-    check and the content hash.
-    """
-    parts = urllib.parse.urlsplit(url)
-    if (parts.hostname or "") in HIBRAIN_HOSTS and HIBRAIN_DETAIL_PATH.match(parts.path):
-        return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
-    return url
-
-
 def discover_generic_links(
     source: DiscoverySource, include_terms: list[str], hiring_terms: list[str]
 ) -> list[Source]:
@@ -1109,7 +1358,7 @@ def discover_generic_links(
                 continue
             if urllib.parse.urlparse(href).scheme not in {"", "http", "https"}:
                 continue
-            absolute = normalize_discovered_url(urllib.parse.urljoin(page_url, href))
+            absolute = urllib.parse.urljoin(page_url, href)
             # Links back to the board itself (filter tabs, paging) are navigation,
             # not postings, even when the query string looks relevant.
             if urllib.parse.urlparse(absolute).path == list_path:
@@ -1161,8 +1410,7 @@ def post_form(
             "X-Requested-With": "XMLHttpRequest",
         },
     )
-    with opener.open(request, timeout=timeout) as response:
-        return decode_response(response)
+    return open_with_opener(opener, request, timeout)
 
 
 IAKLE_BODY_MARKERS = (
@@ -1206,8 +1454,7 @@ def discover_iakle(
     parts = urllib.parse.urlsplit(source.url)
     origin = f"{parts.scheme}://{parts.netloc}"
     opener = build_session_opener()
-    with opener.open(source.url, timeout=25) as response:
-        board_html = decode_response(response)
+    board_html = open_with_opener(opener, source.url, 25)
     fields = {name: value for name, value in IAKLE_HIDDEN_INPUT.findall(board_html)}
     if "bbsSeq" not in fields:
         raise ValueError(f"IAKLE board form not found at {source.url}")
@@ -1254,9 +1501,7 @@ def discover_iakle(
                     trust=source.trust,
                     kind="discovered_iakle",
                     title_hint=title,
-                    institution_hint=clean_extracted_field(
-                        extract_institution(text, title), source.name
-                    ),
+                    institution_hint=clean_extracted_field(extract_institution(text, title), None),
                     deadline_hint=deadline,
                     posted_at_hint=posted_at,
                     body_hint=text,
@@ -1313,10 +1558,20 @@ def parse_kteacher_rows(html: str) -> list[dict[str, str]]:
                 "group": html_clean(cells[1]),
                 "title": html_clean(link.group(2)),
                 "institution": html_clean(cells[3]),
-                "deadline": normalize_date(html_clean(cells[5])),
+                "deadline": parse_kteacher_deadline(html_clean(cells[5])),
             }
         )
     return rows
+
+
+def parse_kteacher_deadline(value: str) -> str | None:
+    # Open-ended posts print "상시모집" instead of a date; one such row used to
+    # abort the whole kteacher listing.
+    if re.search(r"\d{4}[.\-/]?\d{1,2}[.\-/]?\d{1,2}", value):
+        return normalize_date(value)
+    if "상시" in value or "채용시" in value:
+        return "rolling"
+    return None
 
 
 def discover_jobkorea_mobile(source: DiscoverySource, today: dt.date, active_only: bool) -> list[Source]:
@@ -1444,9 +1699,16 @@ def discover_hackers_mobile(
     return items, max_id_seen
 
 
+# Board tags in brackets that name a post type, not the hiring institution.
+BRACKET_TAGS = {"공고", "홍보", "채용", "모집", "안내", "재공고", "추가", "긴급", "공지", "알림", "마감임박"}
+
+
 def extract_bracketed_institution(title: str) -> str | None:
-    match = re.match(r"\[([^\]]+)\]", title)
-    return clean_text(match.group(1)) if match else None
+    for match in re.finditer(r"\[([^\]]+)\]", title):
+        value = clean_text(match.group(1))
+        if value not in BRACKET_TAGS:
+            return value
+    return None
 
 
 def html_clean(value: str) -> str:
@@ -1849,25 +2111,90 @@ def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
         SELECT job_id, institution_name, location_text
         FROM jobs
         WHERE latitude IS NULL AND status != 'rejected'
+          AND COALESCE(is_overseas, 0) = 0
+          AND COALESCE(institution_type, '') != 'online'
         """
     ).fetchall()
     for job_id, institution, location in rows:
+        if location in {"해외", "국외", "온라인", "재택"} or location in COUNTRY_NAMES:
+            continue
         result = None
+        by_institution = False
         for query in (institution, REGION_FALLBACK_QUERY.get(clean_text(location or ""))):
             if not query:
                 continue
             result = geocode_query(conn, query, rest_key)
             if result:
+                by_institution = query == institution
                 break
         if not result:
             stats["unresolved"] += 1
             continue
+        # The institution's real address beats the region guessed from page text.
+        region = short_region(result["address"] or "") if by_institution else None
         conn.execute(
-            "UPDATE jobs SET latitude = ?, longitude = ?, address = ?, place_name = ? WHERE job_id = ?",
-            (result["latitude"], result["longitude"], result["address"], result["place_name"], job_id),
+            """
+            UPDATE jobs
+            SET latitude = ?, longitude = ?, address = ?, place_name = ?,
+                location_text = COALESCE(?, location_text)
+            WHERE job_id = ?
+            """,
+            (result["latitude"], result["longitude"], result["address"], result["place_name"], region, job_id),
         )
         stats["geocoded"] += 1
     conn.commit()
+    return stats
+
+
+def fill_job_fields(conn: sqlite3.Connection, use_llm: bool, llm_limit: int) -> dict[str, int]:
+    """Fill the structured columns (JOB_FIELD_COLUMNS) for jobs that lack them.
+
+    Rules run for every job not yet extracted. With use_llm, jobs whose fields
+    so far came only from rules also go to Claude, at most llm_limit per run, so
+    each posting is sent once and the cost per run stays bounded.
+    """
+    stats = {"rules": 0, "llm": 0, "llm_failed": 0}
+    conn.row_factory = sqlite3.Row
+    try:
+        pending = conn.execute(
+            """
+            SELECT job_id, title, institution_name, location_text, deadline, description, raw_text, fields_source
+            FROM jobs
+            WHERE status != 'rejected' AND (fields_source IS NULL OR fields_source = 'rules')
+            ORDER BY job_id
+            """
+        ).fetchall()
+    finally:
+        conn.row_factory = None
+
+    client = extract_fields.make_client() if use_llm else None
+    for row in pending:
+        job = dict(row)
+        fields = None
+        source = "rules"
+        if client is not None and stats["llm"] + stats["llm_failed"] < llm_limit:
+            text = strip_site_chrome(job["raw_text"] or job["description"] or "")
+            try:
+                fields = extract_fields.extract_llm(client, job, text)
+            except extract_fields.LlmUnavailable as exc:
+                print(f"llm fields stopped: {exc}", file=sys.stderr)
+                client = None
+            if fields is not None:
+                source = "llm"
+                stats["llm"] += 1
+            elif client is not None:
+                stats["llm_failed"] += 1
+        if fields is None:
+            if job["fields_source"] == "rules":
+                continue
+            fields = extract_fields.extract_rules(job)
+            stats["rules"] += 1
+        columns = [column for column, _ in JOB_FIELD_COLUMNS if column in fields]
+        assignments = ", ".join(f"{column} = ?" for column in columns)
+        conn.execute(
+            f"UPDATE jobs SET {assignments}, fields_source = ?, fields_extracted_at = ? WHERE job_id = ?",
+            [fields[column] for column in columns] + [source, utc_now(), job["job_id"]],
+        )
     return stats
 
 
@@ -1880,6 +2207,12 @@ def collect(args: argparse.Namespace) -> int:
         sources = [Source("local sample", sample_url, 100, "sample")]
 
     conn = init_db(Path(args.db))
+    retired_names = load_retired_source_names(Path(args.discovery_file))
+    if args.jinhakpro_pages > 0:
+        retired_names.discard("진학프로 강사 목록")  # explicitly re-enabled for this run
+    retired = purge_retired_sources(conn, retired_names)
+    if retired:
+        print(f"removed {retired} jobs from retired sources")
     if args.active_only and not args.sample:
         prune_inactive_jobs(conn, today)
     run_id = start_run(conn)
@@ -1986,8 +2319,19 @@ def collect(args: argparse.Namespace) -> int:
             except Exception as exc:
                 stats["failed"] += 1
                 log_error(conn, run_id, source, str(exc))
+        if args.active_only and not args.sample:
+            # Refresh may have pushed deadlines into the past; never leave
+            # closed postings in the DB until the next run.
+            prune_inactive_jobs(conn, today)
         finish_run(conn, run_id, stats)
         conn.commit()
+        fields = fill_job_fields(conn, args.llm_fields, args.llm_limit)
+        duplicates = assign_duplicate_groups(conn)
+        conn.commit()
+        print(
+            f"fields: rules={fields['rules']} llm={fields['llm']} llm_failed={fields['llm_failed']} "
+            f"duplicates={duplicates}"
+        )
         if args.geocode:
             geo = geocode_jobs(conn)
             if geo["geocoded"] or geo["unresolved"]:
@@ -2023,7 +2367,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--sample", action="store_true", help="Use local sample_jobs.html")
     parser.add_argument("--nuri-pages", type=int, default=126, help="Nuri KSI list pages to collect")
-    parser.add_argument("--jinhakpro-pages", type=int, default=1, help="JinhakPro lecturer list pages to collect")
+    parser.add_argument(
+        "--jinhakpro-pages",
+        type=int,
+        default=0,
+        help="JinhakPro lecturer list pages to collect (off by default: it re-posts other boards' notices)",
+    )
+    parser.add_argument(
+        "--llm-fields",
+        action="store_true",
+        help="Send postings without LLM fields to Claude for structured fields and a summary (costs API usage)",
+    )
+    parser.add_argument("--llm-limit", type=int, default=50, help="Max postings sent to Claude per run")
     parser.add_argument("--today", default=None, help="Active-period reference date, YYYY-MM-DD")
     parser.add_argument("--include-expired", dest="active_only", action="store_false", help="Keep expired or undated jobs")
     parser.add_argument(

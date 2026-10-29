@@ -110,7 +110,7 @@ h2 {
 
 .controls {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) 180px 220px;
+  grid-template-columns: minmax(240px, 1fr) 180px 220px auto;
   gap: 12px;
   margin-top: 16px;
   padding: 14px;
@@ -202,6 +202,40 @@ select {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.facts {
+  margin-top: 6px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.facts:empty {
+  display: none;
+}
+
+.summary {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--soft);
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.job.is-duplicate {
+  opacity: 0.6;
+}
+
+.controls .check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: end;
+  padding-bottom: 8px;
+  white-space: nowrap;
 }
 
 .description {

@@ -1,13 +1,6 @@
 {
   "sources": [
     {
-      "name": "해커스학점은행 채용정보",
-      "url": "https://m.hackershakjum.com/korean/sub/job_view.php?wr_id={id}",
-      "trust": 62,
-      "kind": "hackers_mobile_probe",
-      "id_start": 4480
-    },
-    {
       "name": "국립국어원 한국어교원 구인정보",
       "url": "https://kteacher.korean.go.kr/jobsearch/list",
       "trust": 88,
@@ -40,24 +33,44 @@
       "pages": 5
     },
     {
-      "name": "인크루트 한국어강사 검색",
-      "url": "https://job.incruit.com/jobdb_list/searchjob.asp?col=job_all&il=y&kw=%ED%95%9C%EA%B5%AD%EC%96%B4%EA%B0%95%EC%82%AC",
-      "trust": 60,
-      "kind": "generic_links"
-    },
-    {
-      "name": "하이브레인넷 한국어 채용검색",
-      "url": "https://m.hibrain.net/recruitment/recruits?keyword=%ED%95%9C%EA%B5%AD%EC%96%B4&listType=ING&page={page}",
-      "trust": 82,
-      "kind": "generic_links",
-      "pages": 3
-    },
-    {
       "name": "국제한국어교육학회 한국어교육소식",
       "url": "https://www.iakle.com/subList/32000004955",
       "trust": 92,
       "kind": "iakle_list",
       "pages": 3
+    }
+  ],
+  "retired_sources": [
+    {
+      "name": "하이브레인넷 한국어 채용검색",
+      "reason": "상세 공고가 회원 전용. 개인 계정 로그인으로 수집해 상업 사이트에 재게시하는 것은 이용약관·DB 권리 침해 소지가 커서 중단.",
+      "url": "https://m.hibrain.net/recruitment/recruits?keyword=%ED%95%9C%EA%B5%AD%EC%96%B4&listType=ING&page={page}",
+      "kind": "generic_links"
+    },
+    {
+      "name": "해커스학점은행 채용정보",
+      "reason": "목록이 로그인 전용이라 게시글 번호를 순차 탐색하던 출처. 한국어교원 과정을 파는 경쟁사이기도 해서 중단.",
+      "url": "https://m.hackershakjum.com/korean/sub/job_view.php?wr_id={id}",
+      "kind": "hackers_mobile_probe",
+      "id_start": 4480
+    },
+    {
+      "name": "인크루트 한국어강사 검색",
+      "reason": "다른 회사가 모은 공고 DB를 다시 모으는 구조. 원 기관 출처로 대체.",
+      "url": "https://job.incruit.com/jobdb_list/searchjob.asp?col=job_all&il=y&kw=%ED%95%9C%EA%B5%AD%EC%96%B4%EA%B0%95%EC%82%AC",
+      "kind": "generic_links"
+    },
+    {
+      "name": "잡코리아",
+      "reason": "채용공고 DB 무단 복제 분쟁 이력이 있는 분야의 상업 채용포털. 예전 실행에서 저장된 행 정리용."
+    },
+    {
+      "name": "진학프로 강사 목록",
+      "reason": "다른 게시판 공고의 재게시. 필요하면 --jinhakpro-pages로 명시적으로 켤 수 있지만, 그 경우 이 항목을 지워야 행이 남음."
+    },
+    {
+      "name": "진학프로",
+      "reason": "seed_urls.txt의 진학프로 상세 URL로 저장된 행 정리용."
     }
   ]
 }

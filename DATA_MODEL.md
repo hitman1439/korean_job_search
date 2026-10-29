@@ -41,16 +41,30 @@
 | `status` | TEXT | NOT NULL, 기본 `'needs_review'` | 검토 상태 (아래 참조) |
 | `review_note` | TEXT | | 검토자가 남긴 메모 |
 | `reviewed_at` | TEXT | | 검토 시각, UTC ISO8601 |
-| `content_hash` | TEXT | NOT NULL, **UNIQUE** | 중복 판정 해시 (아래 참조) |
-| `duplicate_group_id` | TEXT | | `content_hash`의 앞 16자 — 같은 공고 묶음 표시용 |
+| `content_hash` | TEXT | NOT NULL, **UNIQUE** | 같은 행 판정 해시 (아래 참조) |
+| `duplicate_group_id` | TEXT | | 출처가 달라도 같은 공고면 같은 값 (아래 "출처 간 중복") |
+| `is_canonical` | INTEGER | NOT NULL, 기본 1 | 중복 묶음의 대표 행이면 1. 공개 사이트는 1만 노출 |
+| `first_seen_at` | TEXT | | 처음 저장된 시각. `collected_at`과 달리 refresh로 바뀌지 않음 |
 | `latitude` | REAL | | 위도 (Kakao Local API) |
 | `longitude` | REAL | | 경도 |
 | `address` | TEXT | | 지오코딩 결과 도로명·지번 주소 |
 | `place_name` | TEXT | | 지오코딩 결과 장소명 |
+| `institution_type` | TEXT | | `university`, `overseas_university`, `sejong`, `multicultural`, `kiip`, `school`, `academy`, `online`, `government`, `other` |
+| `country` | TEXT | | 근무 국가 (`대한민국`, `미국` …). 온라인이면 NULL |
+| `is_overseas` | INTEGER | | 해외 근무면 1 |
+| `qualification` | TEXT | | 요구 자격 (`한국어교원 2급 이상`) |
+| `experience_required` | TEXT | | 요구 경력 (`경력 1년 이상`) |
+| `newcomer_ok` | INTEGER | | 1 신입 가능 / 0 경력 필요 / NULL 언급 없음 |
+| `demo_lesson` | INTEGER | | 1 모의수업·시강 있음 / NULL 언급 없음 |
+| `salary_text` | TEXT | | 급여 원문 표기 (`시간당 35,000원`) |
+| `benefits` | TEXT | | 해외 공고 지원 사항 (`항공권, 숙소, 비자`) |
+| `summary` | TEXT | | 원문을 베끼지 않은 요약. 공개 사이트에는 `description` 대신 이것을 씀 |
+| `fields_source` | TEXT | | 위 필드를 채운 방법: `rules` 또는 `llm` |
+| `fields_extracted_at` | TEXT | | 필드를 채운 시각, UTC ISO8601 |
 
-> `review_note`, `reviewed_at`, `latitude`, `longitude`, `address`, `place_name`은 `CREATE TABLE` 본문이 아니라
-> `ensure_column()` (`collect_jobs.py:233`)으로 나중에 추가된 컬럼입니다. 기존 DB도 다음 실행 때 자동으로 `ALTER TABLE` 됩니다.
-> 현재 저장소의 `jobs.sqlite3`은 코드보다 오래된 상태라 좌표 4개 컬럼과 `geocode_cache` 테이블이 아직 없습니다 — 수집기를 한 번 실행하면 생성됩니다.
+> `review_note` 이후 컬럼은 `CREATE TABLE` 본문이 아니라 `init_db()`의 `ensure_column()`으로 추가됩니다.
+> 기존 DB도 다음 실행 때 자동으로 `ALTER TABLE` 되고, `first_seen_at`은 비어 있으면 `collected_at`으로 채웁니다.
+> 구조화 필드 목록은 `collect_jobs.py`의 `JOB_FIELD_COLUMNS`가 기준입니다.
 
 ### `status` 값
 
@@ -60,14 +74,12 @@
 | `approved` | 사람이 확인해 채택 | 검토 UI (`PATCH /api/jobs/<id>`) |
 | `rejected` | 사람이 확인해 제외 | 검토 UI |
 
-검토 UI는 이 세 값만 허용합니다 (`review_ui.py:166`). `--refresh`는 `status != 'rejected'`인 공고만 다시 확인합니다.
+검토 UI는 이 세 값만 허용합니다. refresh·지오코딩·필드 추출은 `status != 'rejected'`인 공고만 다룹니다.
+같은 공고가 다시 수집되어도 `status`, `review_note`, `reviewed_at`은 덮어쓰지 않습니다.
 
-> ⚠️ 알려진 불일치: 지오코딩 쿼리(`collect_jobs.py:1851`)만 `status != '거절'`(한글)로 비교합니다.
-> 실제 저장되는 값은 영문이므로 이 조건은 항상 참이 되어, `rejected` 처리된 공고까지 지오코딩 대상에 들어갑니다.
+### 같은 행 판정 (`content_hash`)
 
-### 중복 처리 (`content_hash`)
-
-`make_content_hash()` (`collect_jobs.py:735`):
+`make_content_hash()`:
 
 ```
 stable = normalize(제목) | normalize(기관명) | 마감일
@@ -77,19 +89,37 @@ content_hash = sha256(stable)
 
 `normalize()`는 영숫자 외 문자를 제거하고 소문자화하므로, 공백·기호·대소문자만 다른 제목은 같은 해시가 됩니다.
 
-저장은 `save_job()` (`collect_jobs.py:807`)에서 수동 upsert로 처리합니다.
+저장은 `save_job()`에서 수동 upsert로 처리합니다.
 
 1. `content_hash` 또는 `original_url`이 일치하는 기존 행을 찾음 (해시 일치를 우선)
-2. 있으면 → **나머지 중복 행을 DELETE**한 뒤 그 행을 UPDATE (`"updated"` 반환)
-3. 없으면 → INSERT (`"saved"` 반환)
+2. 있으면 → 나머지 같은 해시·URL 행을 DELETE한 뒤 그 행을 UPDATE (`"updated"` 반환). 검토 컬럼과 `first_seen_at`은 유지
+3. 없으면 → INSERT (`"saved"` 반환), `first_seen_at` 기록
 
 `--refresh` 경로에서는 `original_url`, `deadline`, `collected_at`, `description`, `raw_text`, `content_hash`,
 `duplicate_group_id`만 갱신합니다. 제목·기관명·위치는 최초 수집 시 정제된 값을 유지합니다.
 
+### 출처 간 중복 (`duplicate_group_id`, `is_canonical`)
+
+`content_hash`는 제목이 조금만 달라도 다른 값이 되므로, 같은 공고가 여러 게시판에 올라오면 따로 저장됩니다.
+매 실행 끝에 `assign_duplicate_groups()`가 다시 묶습니다.
+
+```
+기관명 핵심 = 기관명 또는 제목에서 처음 나오는 "…대학교/…대학" (없으면 정규화한 기관명)
+마감일이 날짜이고 기관명 핵심이 있으면  →  group = sha256(기관명 핵심|마감일)[:16]
+그 외(마감일 없음·상시)                →  group = content_hash[:16]  (자기 자신만)
+```
+
+묶음마다 `approved` 행 → `confidence_score` 높은 행 → `first_seen_at` 이른 행 순으로 하나만 `is_canonical = 1`입니다. 행은 지우지 않습니다.
+
 ### 삭제 규칙
 
-`--active-only` 실행 시 `prune_inactive_jobs()`가 **마감된 공고를 물리적으로 삭제**합니다 (`collect_jobs.py:605`).
-살아남는 조건은 `deadline == "rolling"` 이거나 `deadline >= 오늘`. **마감일이 없는(NULL) 공고도 삭제 대상**입니다.
+기본 실행(`--include-expired` 없이)에서는 `prune_inactive_jobs()`가 실행 시작과 끝에 다음을 **물리적으로 삭제**합니다.
+
+- 마감일이 오늘보다 이전인 공고
+- 마감일이 없는(NULL) 공고 중 게시일(`posted_at`, 없으면 `first_seen_at`)로부터 45일(`UNDATED_GRACE_DAYS`)이 지난 것
+
+`deadline == "rolling"`은 남습니다. 또 실행마다 `purge_retired_sources()`가 `monitor_sources.json`의 `retired_sources`에 있는 출처 이름으로 저장된 행을 지웁니다.
+
 즉 `jobs`는 이력 테이블이 아니라 "현재 유효한 공고" 스냅샷입니다. 실행 이력이 필요하면 `collection_runs`를 보세요.
 
 ---
@@ -200,9 +230,8 @@ discovery_state (source_name) ~ jobs.source_name   -- 이름으로만 느슨하�
 | `GET /api/runs` | `collection_runs` | 실행 이력 |
 | `GET /api/config` | — | 지도용 Kakao JS 키 전달 |
 
-`ui/app.js`가 화면에서 쓰는 필드: `job_id`, `title`, `institution_name`, `source_name`, `location_text`,
-`description`, `review_note`, `confidence_score`, `deadline`, `original_url`, `status`,
-`latitude`, `longitude`, `address`, `place_name`.
+`GET /api/jobs`는 기본으로 마감된 공고를 빼고 반환합니다(`include_expired=1`이면 포함).
+반환 컬럼은 `review_ui.py`의 `JOB_COLUMNS`가 기준이며, 구조화 필드와 `is_canonical`도 포함합니다.
 
 ---
 

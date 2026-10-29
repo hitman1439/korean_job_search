@@ -2,7 +2,7 @@
 https://www.ksif.or.kr/cop/bbs/selectBoardList.do?bbsId=BBSMSTR_000000000001&ctgryCode=A00005&menuNo=30101100&nttId=92600529&pageIndex=1&useAt=Y,세종학당재단 채용정보,90,official,2026년 세종학당재단 하반기 무기계약직 일반계약직 채용 공고,세종학당재단,서울,
 https://www.hansung.edu/hansung/6172/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGaGFuc3VuZyUyRjIxMjclMkYyMjE5NDUlMkZhcnRjbFZpZXcuZG8lM0Y%3D,한성대학교 언어교육센터,90,university,한성대학교 언어교육센터 한국어과정 강사 모집,한성대학교 언어교육센터,서울,
 https://interlang.dongguk.edu/bbs/board.php?bo_table=interlang5_1&wr_id=696,동국대학교 한국어교육원,90,university,2026학년도 봄 학기 한국어교육원 한국어 강사 채용 공고,동국대학교 한국어교육원,서울,2026-02-01
-https://www.jinhakpro.com/recruit/43398,진학프로,75,job_board,2026년 하반기 2차 세종학당 국외 파견 한국어 교원 선발,세종학당재단,서울,2026-06-19
+# retired (진학프로 재게시): https://www.jinhakpro.com/recruit/43398,진학프로,75,job_board,2026년 하반기 2차 세종학당 국외 파견 한국어 교원 선발,세종학당재단,서울,2026-06-19
 https://www.gne.go.kr/works/user/recruitment/BD_recruitmentDetail.do?regSn=1806681,경상남도교육청 구인구직포털,85,public,2026 찾아가는 한국어 놀이 교실 강사 채용 공고,창원진달래유치원,창원,2026-03-12
 https://www.knue.ac.kr/www/selectBbsNttView.do?bbsNo=27&key=808&nttNo=83387,한국교원대학교 한국어학당,90,university,2026학년도 제2학기 한국교원대학교 한국어학당 한국어강사 공개 채용 공고,한국교원대학교 한국어학당,충북,
 https://lang.kaist.ac.kr/boards/view/notices/bo_id/871/page/1,KAIST Language Center,90,university,KAIST 한국어학당 강사 채용 공고 26년 봄학기,KAIST 한국어학당,대전,2026-02-20
@@ -13,28 +13,28 @@ https://www.jejunu.ac.kr/ara/noticesurvey/recruit.htm?act=view&page=4&seq=270881
 https://www.xn--vk1b831bhta.kr/ara/noticesurvey/recruit.htm?act=view&page=6&seq=268591,제주대학교 한국어과정,90,university,제주대학교 한국어과정 2026학년도 봄학기 한국어 강사 단기 채용,제주대학교 한국어과정,제주,2026-01-29
 https://www.ice.go.kr/ice/na/ntt/selectNttInfo.do?mi=10997&nttSn=3381661,인천광역시교육청 채용공고,85,public,인천계산초등학교 2026 찾아가는 한국어교육 강사 채용 공고,인천계산초등학교,인천,2026-08-31
 https://www.jvision.ac.kr/vision/main/?menu=309&mode=view&no=487,전주비전대학교 국제교류처,90,university,2026년 전주비전대학교 국제교류처 한국어강사 공개 채용 모집 공고,전주비전대학교 국제교류처,전북,2026-08-12
-https://www.jinhakpro.com/recruit/46247,진학프로,75,job_board,2026학년도 가을 학기 한국어학당 강사 모집 공고,전주대학교,전북,2026-08-19
-https://www.jinhakpro.com/recruit/41779,진학프로,75,job_board,글로벌어학교육원 2026학년도 여름학기 강의 위촉을 위한 한국어 강사 추가 모집 공고,인제대학교 글로벌어학교육원,경남,2026-05-13
-https://www.jinhakpro.com/recruit/42254,진학프로,75,job_board,2026학년도 국제교류원 한국어교육센터 여름학기 한국어 강사 채용 재공고,춘해보건대학교 국제교류원 한국어교육센터,울산,2026-05-21
+# retired (진학프로 재게시): https://www.jinhakpro.com/recruit/46247,진학프로,75,job_board,2026학년도 가을 학기 한국어학당 강사 모집 공고,전주대학교,전북,2026-08-19
+# retired (진학프로 재게시): https://www.jinhakpro.com/recruit/41779,진학프로,75,job_board,글로벌어학교육원 2026학년도 여름학기 강의 위촉을 위한 한국어 강사 추가 모집 공고,인제대학교 글로벌어학교육원,경남,2026-05-13
+# retired (진학프로 재게시): https://www.jinhakpro.com/recruit/42254,진학프로,75,job_board,2026학년도 국제교류원 한국어교육센터 여름학기 한국어 강사 채용 재공고,춘해보건대학교 국제교류원 한국어교육센터,울산,2026-05-21
 https://www.sjs.ac.kr/ht_ml/w_03ed/3010.php?bbs_idx=48517&bbsid=main3010&gopage=..%2Fw_03ed%2F3010.php&pagekind=c,서울장신대학교 대외협력처,90,university,서울장신대학교 2026학년도 한국어 강사교원 초빙 공고,서울장신대학교 대외협력처,경기,
 https://cess.dsu.ac.kr/korean/index.php?idx=2768&mode=view&pCode=news&pg=3,동신대학교 국제한국어학과 재게시,70,repost,가톨릭대학교 한국어교육원 2026학년도 여름학기 한국어 강사 초빙 공고,가톨릭대학교 한국어교육원,서울,
 https://korean.dsu.ac.kr/korean/index.php?idx=2775&mode=view&pCode=news&pg=5,동신대학교 국제한국어학과 재게시,70,repost,숭실대학교 한국어교육원 한국어강사 채용 공고,숭실대학교 한국어교육원,서울,2026-05-20
 https://iwee.ice.go.kr/ice/na/ntt/selectNttInfo.do?mi=10997&nttSn=3382343,인천광역시교육청 채용공고,85,public,2026 찾아가는 한국어교육 강사 모집,인천뷰티예술고등학교,인천,2026-09-04
 https://www.ice.go.kr/ice/na/ntt/selectNttInfo.do?mi=10994&nttSn=3381776,인천광역시교육청 채용공고,85,public,2026 인천 송빛초등학교 한국어교육 강사 채용 공고,인천송빛초등학교,인천,2026-08-31
 https://safety.ice.go.kr/ice/na/ntt/selectNttInfo.do?mi=10997&nttSn=3381661,인천광역시교육청 채용공고,85,public,인천계산초등학교 2026 찾아가는 한국어교육 강사 채용 공고,인천계산초등학교,인천,2026-08-31
-https://www.jinhakpro.com/recruit/46579,진학프로,75,job_board,2026년도 2학기 한국어학당 한국어 강사 모집,중원대학교,충북,2026-08-31
+# retired (진학프로 재게시): https://www.jinhakpro.com/recruit/46579,진학프로,75,job_board,2026년도 2학기 한국어학당 한국어 강사 모집,중원대학교,충북,2026-08-31
 https://wat.ac.kr/ko/notice/school/?id=14188&mode=view,웅지세무대학교 학교공지,90,university,웅지세무대학교 국제교육원 한국어 강사 모집공고,웅지세무대학교 국제교육원,경기,2026-09-08
 https://jobs.ac.kr/recruit-detail/1945737,JOBS.ac.kr,75,job_board,웅지세무대학교 국제교육원 한국어 강사 모집공고,웅지세무대학교 국제교육원,경기,2026-09-08
 https://jobs.ac.kr/recruit-detail/1946266,JOBS.ac.kr,75,job_board,동아보건대학교 한국어교육원 한국어강사 모집공고,동아보건대학교 한국어교육원,전남,2026-09-01
-https://www.jinhakpro.com/recruit/46491,진학프로,75,job_board,동아보건대학교 한국어교육원 한국어강사 채용 공고,동아보건대학교 한국어교육원,전남,2026-09-01
-https://www.jinhakpro.com/recruit/46767,진학프로,75,job_board,2026년도 가을학기 언어교육센터 신규 강사 채용 공고,경성대학교 언어교육센터,부산,2026-09-03
-https://www.jinhakpro.com/recruit/46633,진학프로,75,job_board,웅지세무대학교 국제교육원 강사 모집공고,웅지세무대학교 국제교육원,경기,2026-09-08
-https://www.jinhakpro.com/recruit/46629,진학프로,75,job_board,2026-2 광주하남한국어랭기지스쿨 KLS 초등 담임 교사 및 한국어 시간제 강사 채용 공고,광주하남한국어랭기지스쿨 KLS,경기,2026-08-31
+# retired (진학프로 재게시): https://www.jinhakpro.com/recruit/46491,진학프로,75,job_board,동아보건대학교 한국어교육원 한국어강사 채용 공고,동아보건대학교 한국어교육원,전남,2026-09-01
+# retired (진학프로 재게시): https://www.jinhakpro.com/recruit/46767,진학프로,75,job_board,2026년도 가을학기 언어교육센터 신규 강사 채용 공고,경성대학교 언어교육센터,부산,2026-09-03
+# retired (진학프로 재게시): https://www.jinhakpro.com/recruit/46633,진학프로,75,job_board,웅지세무대학교 국제교육원 강사 모집공고,웅지세무대학교 국제교육원,경기,2026-09-08
+# retired (진학프로 재게시): https://www.jinhakpro.com/recruit/46629,진학프로,75,job_board,2026-2 광주하남한국어랭기지스쿨 KLS 초등 담임 교사 및 한국어 시간제 강사 채용 공고,광주하남한국어랭기지스쿨 KLS,경기,2026-08-31
 https://barossam.com/jobs/3cbff456-79e7-4a3c-95c9-732eef555d02,바로쌤,65,job_board,2026년도 찾아가는 한국어교육 한국어 강사 채용 공고,순천성남초등학교,전남,2026-09-03
 https://00gangsa.com/recruitments/22824,공공강사,65,job_board,신규 한국어 강사 모집 온오프라인 수업,시원스쿨,대전,2026-08-31
 https://korean.dsu.ac.kr/korean/index.php?idx=3086&mode=view&pCode=news,동신대학교 국제한국어학과 재게시,70,repost,외국인 유학생 대상 한국어 강사 채용,한국국제교류중심,서울,2026-09-12
 https://youngssamnote.tistory.com/m/23,Young쌤노트 재게시,60,repost,화성시글로벌청소년센터 찾아가는 한국어 교육 강사 채용,화성시글로벌청소년센터,경기,rolling
-https://www.jobkorea.co.kr/Recruit/GI_Read/49627879,잡코리아,70,job_board,캐럿글로벌 외국인 대상 한국어 강사,캐럿글로벌,서울,rolling
+# retired (잡코리아): https://www.jobkorea.co.kr/Recruit/GI_Read/49627879,잡코리아,70,job_board,캐럿글로벌 외국인 대상 한국어 강사,캐럿글로벌,서울,rolling
 https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54631159&view_type=etc,사람인,70,job_board,롤링코리아 외국인대상 한국어강사 채용,롤링코리아,서울,2026-09-02
 https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54661296&view_type=etc,사람인,70,job_board,신경주대학교 한국어학당 한국어강사 채용 공고,신경주대학교 한국어학당,경북,2026-09-04
 https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54717552&view_type=etc,사람인,70,job_board,재택 프리랜서 온라인 한국어 강사 모집,하티웍스,서울,2026-10-10
@@ -46,16 +46,16 @@ https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54660190&view_type=etc
 https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54788277&view_type=etc,사람인,70,job_board,평일 오후 한국어 신입 강사 모집,윈터 한국어 교육센터,서울,2026-09-18
 https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54840834&view_type=etc,사람인,70,job_board,한국어 강의 경력 강사 모집,윈터 한국어 교육센터,서울,2026-09-24
 https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=54840829&view_type=etc,사람인,70,job_board,상시 모집 한국어 신입 강사 모집,윈터 한국어 교육센터,서울,2026-09-24
-https://m.jobkorea.co.kr/Recruit/GI_Read/49868359?sc=621,잡코리아,72,job_board,와이드스텝어학원 러시아어 한국어 영어 소통 가능 강사 채용,와이드스텝어학원,경기,2026-10-26
-https://m.jobkorea.co.kr/Recruit/GI_Read/49802628?sc=621,잡코리아,72,job_board,가바플러스어학원 한국어 회화 강사 모집,가바플러스어학원,경기,2026-09-17
-https://m.jobkorea.co.kr/Recruit/GI_Read/49737075?sc=621,잡코리아,72,job_board,디헤럴드플립언어교육 TOPIK 한국어 시험대비 화상수업 강사 모집,디헤럴드플립언어교육,서울,2026-09-06
-https://m.jobkorea.co.kr/Recruit/GI_Read/49848813?sc=621,잡코리아,72,job_board,윈터한국어교육센터 한국어 경력 강사 모집,윈터한국어교육센터,서울,2026-09-24
-https://m.jobkorea.co.kr/Recruit/GI_Read/49848804?sc=621,잡코리아,72,job_board,윈터한국어교육센터 한국어 신입 강사 모집,윈터한국어교육센터,서울,2026-09-24
-https://m.jobkorea.co.kr/Recruit/GI_Read/49814121?sc=621,잡코리아,72,job_board,윈터한국어교육센터 평일 오후 한국어 신입 강사 모집,윈터한국어교육센터,서울,2026-09-18
-https://m.jobkorea.co.kr/Recruit/GI_Read/49784032?sc=621,잡코리아,72,job_board,롤링코리아 외국인대상 한국어강사 채용,롤링코리아,서울,2026-09-13
-https://m.jobkorea.co.kr/Recruit/GI_Read/49780290?sc=621,잡코리아,72,job_board,CLT 외국인임직원 한국어지도 강사 급구,CLT,서울,2026-09-12
-https://m.jobkorea.co.kr/Recruit/GI_Read/49771237?sc=621,잡코리아,72,job_board,렉시스코리아 부산 한국어 및 문화수업 강사채용,렉시스코리아,부산,2026-09-11
-https://m.jobkorea.co.kr/Recruit/GI_Read/49740392?sc=621,잡코리아,72,job_board,고스터디 재택 외국인 학생 대상 온라인 한국어 선생님 채용,고스터디,재택,rolling
-https://m.jobkorea.co.kr/Recruit/GI_Read/49732821?sc=621,잡코리아,72,job_board,윈터한국어교육센터 평일 저녁 토요일 한국어 신입 강사 모집,윈터한국어교육센터,서울,2026-09-05
-https://m.jobkorea.co.kr/Recruit/GI_Read/49532919?sc=621,잡코리아,72,job_board,티티씨에듀 전남지역 영어로 한국어 토픽 가능한 한국어 강사 모집,티티씨에듀,전남,2026-09-05
-https://m.jobkorea.co.kr/Recruit/GI_Read/49570711?sc=621,잡코리아,72,job_board,마이코리안 한국어 선생님 모집,마이코리안,서울,rolling
+# retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49868359?sc=621,잡코리아,72,job_board,와이드스텝어학원 러시아어 한국어 영어 소통 가능 강사 채용,와이드스텝어학원,경기,2026-10-26
+# retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49802628?sc=621,잡코리아,72,job_board,가바플러스어학원 한국어 회화 강사 모집,가바플러스어학원,경기,2026-09-17
+# retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49737075?sc=621,잡코리아,72,job_board,디헤럴드플립언어교육 TOPIK 한국어 시험대비 화상수업 강사 모집,디헤럴드플립언어교육,서울,2026-09-06
+# retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49848813?sc=621,잡코리아,72,job_board,윈터한국어교육센터 한국어 경력 강사 모집,윈터한국어교육센터,서울,2026-09-24
+# retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49848804?sc=621,잡코리아,72,job_board,윈터한국어교육센터 한국어 신입 강사 모집,윈터한국어교육센터,서울,2026-09-24
+# retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49814121?sc=621,잡코리아,72,job_board,윈터한국어교육센터 평일 오후 한국어 신입 강사 모집,윈터한국어교육센터,서울,2026-09-18
+# retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49784032?sc=621,잡코리아,72,job_board,롤링코리아 외국인대상 한국어강사 채용,롤링코리아,서울,2026-09-13
+# retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49780290?sc=621,잡코리아,72,job_board,CLT 외국인임직원 한국어지도 강사 급구,CLT,서울,2026-09-12
+# retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49771237?sc=621,잡코리아,72,job_board,렉시스코리아 부산 한국어 및 문화수업 강사채용,렉시스코리아,부산,2026-09-11
+# retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49740392?sc=621,잡코리아,72,job_board,고스터디 재택 외국인 학생 대상 온라인 한국어 선생님 채용,고스터디,재택,rolling
+# retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49732821?sc=621,잡코리아,72,job_board,윈터한국어교육센터 평일 저녁 토요일 한국어 신입 강사 모집,윈터한국어교육센터,서울,2026-09-05
+# retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49532919?sc=621,잡코리아,72,job_board,티티씨에듀 전남지역 영어로 한국어 토픽 가능한 한국어 강사 모집,티티씨에듀,전남,2026-09-05
+# retired (잡코리아): https://m.jobkorea.co.kr/Recruit/GI_Read/49570711?sc=621,잡코리아,72,job_board,마이코리안 한국어 선생님 모집,마이코리안,서울,rolling
