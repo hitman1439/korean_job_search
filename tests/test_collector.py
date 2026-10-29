@@ -280,17 +280,56 @@ class LlmRequestTests(unittest.TestCase):
         cj.save_job(conn, make_job())
         cj.save_job(conn, make_job(original_url="https://example.org/2", title="다른 공고"))
 
-        def unavailable(client, job, text):
+        def unavailable(job, text):
             raise ef.LlmUnavailable("no key")
 
-        original = (ef.make_client, ef.extract_llm)
-        ef.make_client, ef.extract_llm = (lambda: object()), unavailable
+        original = ef.make_extractor
+        ef.make_extractor = lambda backend: unavailable
         try:
-            stats = cj.fill_job_fields(conn, True, 50)
+            stats = cj.fill_job_fields(conn, "claude-code", 50)
         finally:
-            ef.make_client, ef.extract_llm = original
+            ef.make_extractor = original
         self.assertEqual(stats, {"rules": 2, "llm": 0, "llm_failed": 0})
         conn.close()
+
+    def run_claude_code(self, returncode, reply):
+        """extract_claude_code against a fake `claude -p` run."""
+        import json
+        import subprocess
+        from types import SimpleNamespace
+
+        seen = {}
+
+        def fake_run(command, **kwargs):
+            seen["command"], seen["input"] = command, kwargs["input"].decode("utf-8")
+            return SimpleNamespace(returncode=returncode, stdout=json.dumps(reply).encode("utf-8"), stderr=b"")
+
+        original = subprocess.run
+        subprocess.run = fake_run
+        try:
+            return ef.extract_claude_code("claude", {"job_id": 7, "title": "한성대 강사 모집"}, "본문"), seen
+        finally:
+            subprocess.run = original
+
+    def test_claude_code_success(self):
+        payload = {
+            "institution_type": "university", "country": "대한민국", "qualification": "한국어교원 2급 이상",
+            "experience_required": None, "newcomer_ok": True, "demo_lesson": None,
+            "salary_text": "시간당 35,000원", "benefits": None, "summary": "한성대가 강사를 뽑습니다.",
+        }
+        fields, seen = self.run_claude_code(0, {"is_error": False, "structured_output": payload})
+        self.assertEqual((fields["newcomer_ok"], fields["is_overseas"]), (1, 0))
+        self.assertIn("--json-schema", seen["command"])
+        self.assertEqual(seen["command"][seen["command"].index("--tools") + 1], "")
+        self.assertIn("한성대 강사 모집", seen["input"])
+
+    def test_claude_code_not_logged_in_stops_run(self):
+        with self.assertRaises(ef.LlmUnavailable):
+            self.run_claude_code(1, {"is_error": True, "result": "Not logged in · Please run /login"})
+
+    def test_claude_code_other_failure_skips_posting(self):
+        fields, _ = self.run_claude_code(1, {"is_error": True, "result": "unexpected error"})
+        self.assertIsNone(fields)
 
     def test_schema_requires_every_property(self):
         self.assertEqual(set(ef.LLM_SCHEMA["required"]), set(ef.LLM_SCHEMA["properties"]))

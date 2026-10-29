@@ -4,16 +4,23 @@ of a collected posting.
 
 Two layers:
 - extract_rules(): regular expressions, free, always run.
-- extract_llm(): Claude, opt-in with --llm-fields, fills what the rules miss and
-  writes a summary in our own words so the public site never republishes the
-  original notice text.
+- Claude, opt-in with --llm-fields: fills what the rules miss and writes a
+  summary in our own words so the public site never republishes the original
+  notice text. Two backends:
+    claude-code  the local `claude` CLI in headless mode, on the signed-in
+                 Claude Code account (no API key)
+    api          the Anthropic SDK with ANTHROPIC_API_KEY
 """
 
 from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
+from typing import Callable
 
 LLM_MODEL = "claude-opus-5-5"
 
@@ -247,6 +254,107 @@ Write every string value in Korean.
 - summary: two or three sentences in your own words for a teacher deciding whether to apply: who is hiring, where, what the role is, key requirements, and the deadline. Do not copy sentences from the posting."""
 
 
+class LlmUnavailable(Exception):
+    """Credentials are missing or rejected, or usage is exhausted: stop sending
+    postings this run."""
+
+
+Extractor = Callable[[dict, str], "dict | None"]
+
+
+def format_posting(job: dict, text: str) -> str:
+    return (
+        f"제목: {job.get('title') or ''}\n"
+        f"기관: {job.get('institution_name') or '미확인'}\n"
+        f"지역: {job.get('location_text') or '미확인'}\n"
+        f"마감일: {job.get('deadline') or '미확인'}\n\n"
+        f"{text}"
+    )
+
+
+def normalize_llm_fields(data: dict) -> dict:
+    """Turn the model's JSON into column values (booleans -> 0/1, is_overseas)."""
+    data = dict(data)
+    for key in ("newcomer_ok", "demo_lesson"):
+        if data.get(key) is not None:
+            data[key] = 1 if data[key] else 0
+    country = data.get("country")
+    data["is_overseas"] = 1 if (country and country != "대한민국") else 0
+    return data
+
+
+def make_extractor(backend: str) -> Extractor | None:
+    """The extraction function for a backend, or None when it cannot run here."""
+    if backend == "claude-code":
+        claude = shutil.which("claude")
+        if not claude:
+            print("llm fields skipped: the `claude` CLI is not on PATH", file=sys.stderr)
+            return None
+        return lambda job, text: extract_claude_code(claude, job, text)
+    if backend == "api":
+        client = make_client()
+        return None if client is None else (lambda job, text: extract_llm(client, job, text))
+    raise ValueError(f"unknown llm backend: {backend}")
+
+
+# Phrases in a failed headless run that mean no later posting can succeed either.
+CLAUDE_CODE_FATAL = re.compile(
+    r"not logged in|please run /login|invalid api key|authentication|usage limit|limit reached|rate limit",
+    re.I,
+)
+CLAUDE_CODE_TIMEOUT = 300
+
+
+def extract_claude_code(claude: str, job: dict, text: str) -> dict | None:
+    """Ask Claude through `claude -p` on the signed-in Claude Code account.
+
+    The posting goes in on stdin (it can exceed the Windows command-line limit),
+    tools are off so the model only reads, and --json-schema makes the CLI
+    validate the reply into `structured_output`. Runs from the temp directory so
+    no project CLAUDE.md or project settings join the prompt.
+    """
+    command = [
+        claude, "-p", "Record the facts of the job posting given on standard input.",
+        "--output-format", "json",
+        "--json-schema", json.dumps(LLM_SCHEMA),
+        "--system-prompt", LLM_SYSTEM,
+        "--tools", "",
+        "--no-session-persistence",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            input=format_posting(job, text).encode("utf-8"),
+            capture_output=True,
+            timeout=CLAUDE_CODE_TIMEOUT,
+            cwd=tempfile.gettempdir(),
+        )
+    except subprocess.TimeoutExpired:
+        print(f"claude code timed out for job {job.get('job_id')}", file=sys.stderr)
+        return None
+
+    stdout = completed.stdout.decode("utf-8", errors="replace")
+    stderr = completed.stderr.decode("utf-8", errors="replace")
+    try:
+        reply = json.loads(stdout)
+    except json.JSONDecodeError:
+        reply = None
+    if reply is None or completed.returncode != 0 or reply.get("is_error"):
+        message = (reply or {}).get("result") or stderr.strip() or stdout.strip()
+        if CLAUDE_CODE_FATAL.search(message):
+            raise LlmUnavailable(message[:300])
+        print(f"claude code failed for job {job.get('job_id')}: {message[:300]}", file=sys.stderr)
+        return None
+    if reply.get("stop_reason") == "refusal":
+        print(f"llm declined job {job.get('job_id')}", file=sys.stderr)
+        return None
+    data = reply.get("structured_output")
+    if not isinstance(data, dict):
+        print(f"claude code returned no structured output for job {job.get('job_id')}", file=sys.stderr)
+        return None
+    return normalize_llm_fields(data)
+
+
 def make_client():
     """An Anthropic client, or None when the SDK or a credential is missing."""
     try:
@@ -261,22 +369,12 @@ def make_client():
         return None
 
 
-class LlmUnavailable(Exception):
-    """Credentials are missing or rejected: stop sending postings this run."""
-
-
 def extract_llm(client, job: dict, text: str) -> dict | None:
-    """Ask Claude for the structured fields. Returns None when this call fails;
-    raises LlmUnavailable when no later call can succeed either."""
+    """Ask Claude through the API for the structured fields. Returns None when
+    this call fails; raises LlmUnavailable when no later call can succeed either."""
     import anthropic
 
-    posting = (
-        f"제목: {job.get('title') or ''}\n"
-        f"기관: {job.get('institution_name') or '미확인'}\n"
-        f"지역: {job.get('location_text') or '미확인'}\n"
-        f"마감일: {job.get('deadline') or '미확인'}\n\n"
-        f"{text}"
-    )
+    posting = format_posting(job, text)
     try:
         # output_config and fallbacks go through extra_body so this also runs
         # on SDK releases older than those parameters.
@@ -315,10 +413,4 @@ def extract_llm(client, job: dict, text: str) -> dict | None:
     text_block = next((block.text for block in response.content if block.type == "text"), None)
     if not text_block:
         return None
-    data = json.loads(text_block)
-    country = data.get("country")
-    for key in ("newcomer_ok", "demo_lesson"):
-        if data.get(key) is not None:
-            data[key] = 1 if data[key] else 0
-    data["is_overseas"] = 1 if (country and country != "대한민국") else 0
-    return data
+    return normalize_llm_fields(json.loads(text_block))

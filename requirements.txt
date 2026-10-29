@@ -1,3 +1,4 @@
 # The collector itself uses only the standard library.
-# Needed only for `collect_jobs.py --llm-fields`:
+# Needed only for `collect_jobs.py --llm-fields --llm-backend api`
+# (the default claude-code backend uses the local `claude` CLI instead):
 anthropic

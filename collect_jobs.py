@@ -2027,6 +2027,12 @@ REGION_FALLBACK_QUERY = {
 }
 
 
+GENERIC_INSTITUTION_NAMES = {
+    "가족센터", "다문화가족지원센터", "건강가정지원센터", "한국어학당", "어학당", "언어교육원",
+    "국제교육원", "한국어교육원", "한국어교육센터", "교육센터", "센터", "교육원", "세종학당", "학원",
+}
+
+
 def kakao_local_search(url: str, query: str, rest_key: str) -> dict | None:
     request = urllib.request.Request(
         f"{url}?{urllib.parse.urlencode({'query': query, 'size': 1})}",
@@ -2120,6 +2126,9 @@ def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
             continue
         result = None
         by_institution = False
+        # A bare unit name ("가족센터") matches some other branch anywhere in the country.
+        if institution and clean_text(institution) in GENERIC_INSTITUTION_NAMES:
+            institution = None
         for query in (institution, REGION_FALLBACK_QUERY.get(clean_text(location or ""))):
             if not query:
                 continue
@@ -2146,12 +2155,12 @@ def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
     return stats
 
 
-def fill_job_fields(conn: sqlite3.Connection, use_llm: bool, llm_limit: int) -> dict[str, int]:
+def fill_job_fields(conn: sqlite3.Connection, llm_backend: str | None, llm_limit: int) -> dict[str, int]:
     """Fill the structured columns (JOB_FIELD_COLUMNS) for jobs that lack them.
 
-    Rules run for every job not yet extracted. With use_llm, jobs whose fields
-    so far came only from rules also go to Claude, at most llm_limit per run, so
-    each posting is sent once and the cost per run stays bounded.
+    Rules run for every job not yet extracted. With an llm_backend, jobs whose
+    fields so far came only from rules also go to Claude, at most llm_limit per
+    run, so each posting is sent once and the usage per run stays bounded.
     """
     stats = {"rules": 0, "llm": 0, "llm_failed": 0}
     conn.row_factory = sqlite3.Row
@@ -2167,22 +2176,23 @@ def fill_job_fields(conn: sqlite3.Connection, use_llm: bool, llm_limit: int) -> 
     finally:
         conn.row_factory = None
 
-    client = extract_fields.make_client() if use_llm else None
+    extractor = extract_fields.make_extractor(llm_backend) if llm_backend else None
     for row in pending:
         job = dict(row)
         fields = None
         source = "rules"
-        if client is not None and stats["llm"] + stats["llm_failed"] < llm_limit:
+        if extractor is not None and stats["llm"] + stats["llm_failed"] < llm_limit:
             text = strip_site_chrome(job["raw_text"] or job["description"] or "")
             try:
-                fields = extract_fields.extract_llm(client, job, text)
+                fields = extractor(job, text)
             except extract_fields.LlmUnavailable as exc:
                 print(f"llm fields stopped: {exc}", file=sys.stderr)
-                client = None
+                extractor = None
             if fields is not None:
                 source = "llm"
                 stats["llm"] += 1
-            elif client is not None:
+                print(f"llm fields: job {job['job_id']} done", file=sys.stderr)
+            elif extractor is not None:
                 stats["llm_failed"] += 1
         if fields is None:
             if job["fields_source"] == "rules":
@@ -2325,7 +2335,7 @@ def collect(args: argparse.Namespace) -> int:
             prune_inactive_jobs(conn, today)
         finish_run(conn, run_id, stats)
         conn.commit()
-        fields = fill_job_fields(conn, args.llm_fields, args.llm_limit)
+        fields = fill_job_fields(conn, args.llm_backend if args.llm_fields else None, args.llm_limit)
         duplicates = assign_duplicate_groups(conn)
         conn.commit()
         print(
@@ -2376,7 +2386,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--llm-fields",
         action="store_true",
-        help="Send postings without LLM fields to Claude for structured fields and a summary (costs API usage)",
+        help="Send postings without LLM fields to Claude for structured fields and a summary",
+    )
+    parser.add_argument(
+        "--llm-backend",
+        choices=["claude-code", "api"],
+        default="claude-code",
+        help="claude-code: the local `claude` CLI on the signed-in account (default); api: ANTHROPIC_API_KEY",
     )
     parser.add_argument("--llm-limit", type=int, default=50, help="Max postings sent to Claude per run")
     parser.add_argument("--today", default=None, help="Active-period reference date, YYYY-MM-DD")

@@ -111,15 +111,21 @@ url,source_name,confidence_score,kind,title_hint,institution_hint,location_hint,
 
 기본은 **정규식 규칙**(무료)으로 채웁니다. 요약은 사실 정보를 이어 붙인 한 줄입니다.
 
-`--llm-fields`를 켜면 아직 규칙으로만 채워진 공고를 **Claude(`claude-opus-5-5`)**로 보내 빈 필드를 채우고, 원문을 베끼지 않은 2~3문장 요약을 만듭니다. 공고마다 한 번만 보내고, 실행당 최대 `--llm-limit`건(기본 50)입니다. API 사용료가 발생합니다.
+`--llm-fields`를 켜면 아직 규칙으로만 채워진 공고를 Claude로 보내 빈 필드를 채우고, 원문을 베끼지 않은 2~3문장 요약을 만듭니다. 공고마다 한 번만 보내고, 실행당 최대 `--llm-limit`건(기본 50)입니다.
+
+**기본은 Claude Code(`--llm-backend claude-code`)**입니다. API 키 없이, 이 컴퓨터에 로그인된 Claude Code 계정으로 `claude -p`(헤드리스 모드)를 공고마다 한 번 실행합니다. 사용량은 Claude Code 요금제 한도에서 차감됩니다.
 
 ```powershell
-pip install anthropic
-$env:ANTHROPIC_API_KEY="sk-ant-..."   # 또는 secrets.env에 ANTHROPIC_API_KEY=...
+claude          # 처음 한 번: 로그인 확인 (/login)
 python collect_jobs.py --llm-fields --llm-limit 20
 ```
 
-키가 없거나 거부되면 첫 요청에서 멈추고 규칙 결과를 그대로 둡니다. 안전 분류기가 요청을 거절하면 서버가 다른 모델로 다시 시도하도록 `fallbacks: "default"`를 켜 두었습니다.
+- 도구는 모두 끈 상태(`--tools ""`)로 실행해서 Claude는 공고 텍스트만 읽습니다. 응답은 `--json-schema`로 검증된 `structured_output`만 씁니다.
+- 프로젝트 설정이 끼어들지 않도록 임시 폴더에서 실행하고, 세션 기록은 남기지 않습니다(`--no-session-persistence`).
+- 로그인이 안 됐거나 사용량 한도에 걸리면 그 자리에서 멈추고, 나머지 공고는 규칙 결과를 그대로 둡니다.
+- 모델은 Claude Code에 설정된 기본 모델을 따릅니다.
+
+API 키로 돌리려면 `--llm-backend api`를 씁니다(`pip install anthropic`, `secrets.env`에 `ANTHROPIC_API_KEY`). 이 경우 모델은 `claude-opus-5-5`이고, 안전 분류기가 거절하면 서버가 다른 모델로 다시 시도하도록 `fallbacks: "default"`를 켜 두었습니다.
 
 ## 주요 파일
 
@@ -164,7 +170,7 @@ KAKAO_JS_KEY=JavaScript_키
 - **REST API 키**: 수집이 끝난 뒤 좌표를 채우는 데 씁니다(서버에서만 사용).
 - **JavaScript 키**: 브라우저가 지도를 그릴 때 씁니다. 카카오 앱 설정의 **플랫폼 > Web**에 `http://127.0.0.1:8765`를 등록해야 지도가 뜹니다.
 
-좌표는 **기관명**을 카카오 로컬 키워드 검색에 넣어 얻습니다. 기관명으로 찾으면 그 주소의 시·도로 `location_text`를 덮어씁니다 — 페이지 본문에서 추측한 지역보다 정확하기 때문입니다. 기관명 검색이 실패하면 `location_text`의 광역명을 시·도청 좌표로 대체합니다(대략적인 위치). 해외·온라인 공고는 지오코딩하지 않습니다. `--no-geocode`로 끌 수 있습니다.
+좌표는 **기관명**을 카카오 로컬 키워드 검색에 넣어 얻습니다. 기관명으로 찾으면 그 주소의 시·도로 `location_text`를 덮어씁니다 — 페이지 본문에서 추측한 지역보다 정확하기 때문입니다. `가족센터`, `한국어학당`처럼 기관명이 일반 명칭뿐이면 다른 지역의 같은 이름 기관이 잡히므로 기관명 검색을 건너뜁니다(`GENERIC_INSTITUTION_NAMES`). 기관명 검색이 실패하거나 건너뛰면 `location_text`의 광역명을 시·도청 좌표로 대체합니다(대략적인 위치). 해외·온라인 공고는 지오코딩하지 않습니다. `--no-geocode`로 끌 수 있습니다.
 
 조회 결과는 `geocode_cache` 테이블에 쌓이고, 못 찾은 이름도 캐시해서 같은 실패를 다시 요청하지 않습니다.
 
