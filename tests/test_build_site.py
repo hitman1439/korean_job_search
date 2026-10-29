@@ -103,7 +103,6 @@ class BuildTests(unittest.TestCase):
     def test_non_http_links_are_never_linked(self):
         page = self.job_page("&lt;script&gt;")
         self.assertNotIn("javascript:alert", page)
-        self.assertIn("원문 링크를 확인하지 못했어요", page)
 
     def test_job_page_has_valid_job_posting(self):
         page = self.job_page("아주대 강사 모집")
@@ -134,6 +133,47 @@ class BuildTests(unittest.TestCase):
         # The free alert is offered on every job page instead.
         self.assertIn('href="../index.html#alert"', job)
         self.assertIn("새 공고 알림을 켜 두세요", job)
+
+    def test_job_page_holds_everything_and_never_names_the_board(self):
+        files = Path(self.tmp.name) / "files"
+        (files / "1").mkdir(parents=True)
+        (files / "1" / "1.pdf").write_bytes(b"%PDF-1.4")
+        conn = cj.init_db(self.db)
+        job_id = conn.execute("SELECT job_id FROM jobs WHERE title = '아주대 강사 모집'").fetchone()[0]
+        conn.execute(
+            """UPDATE jobs SET apply_email = 'ili3@sejong.ac.kr',
+               attachments = '[{"name": "채용공고문.pdf", "url": "https://klp.korean.go.kr/certif/file/download?fileNo=1", "file": "1/1.pdf"},
+                               {"name": "미러없음.hwp", "url": "https://klp.korean.go.kr/certif/file/download?fileNo=2"},
+                               {"name": "악성.hwp", "url": "javascript:alert(1)", "file": "../../x.hwp"}]',
+               apply_url = 'https://klp.korean.go.kr/certif/jobsearch/35051', apply_url_source = 'aggregator',
+               original_url = 'https://klp.korean.go.kr/certif/jobsearch/35051',
+               work_period = '2026.12.07 ~ 2027.02.18',
+               body_text = '## 지원 자격
+- 한국어교원 2급 이상
+국립국어원 한국어교원 구인정보
+
+## 접수 방법
+이메일 ili3@sejong.ac.kr 또는 https://forms.example/apply 로 제출 (https://klp.korean.go.kr/certif/jobsearch/35051)'
+               WHERE job_id = ?""",
+            (job_id,),
+        )
+        conn.execute("UPDATE jobs SET apply_email = 'x\"><script>@bad' WHERE title LIKE '%script%'")
+        conn.commit()
+        conn.close()
+        bs.build(self.db, self.out, {**self.config, "files_dir": str(files)}, TODAY, BUILT_AT)
+        page = self.job_page("아주대 강사 모집")
+        self.assertIn('href="mailto:ili3@sejong.ac.kr?subject=', page)
+        self.assertIn('href="../files/1/1.pdf" download="채용공고문.pdf"', page)
+        self.assertTrue((self.out / "files" / "1" / "1.pdf").exists())
+        self.assertNotIn("미러없음.hwp", page)
+        self.assertNotIn("악성.hwp", page)
+        self.assertIn("<h3>지원 자격</h3>", page)
+        self.assertIn("<li>한국어교원 2급 이상</li>", page)
+        self.assertIn('href="https://forms.example/apply"', page)
+        self.assertIn("<dt>근무 기간</dt><dd>2026.12.07 ~ 2027.02.18</dd>", page)
+        for leak in ("korean.go.kr", "국립국어원", "원문", "출처"):
+            self.assertNotIn(leak, page)
+        self.assertNotIn("mailto:x", self.job_page("&lt;script&gt;"))
 
     def test_no_ad_boxes_until_asked(self):
         self.assertNotIn("ad-slot", self.index)
@@ -171,7 +211,7 @@ class BadgeTests(unittest.TestCase):
         self.assertEqual(bs.deadline_badge("2026-11-01", TODAY), ("마감 D-3", "urgent"))
         self.assertEqual(bs.deadline_badge("2026-12-01", TODAY), ("D-33", ""))
         self.assertEqual(bs.deadline_badge("rolling", TODAY), ("상시 모집", "rolling"))
-        self.assertEqual(bs.deadline_badge(None, TODAY), ("마감일 원문 확인", ""))
+        self.assertEqual(bs.deadline_badge(None, TODAY), ("마감일 미정", ""))
 
     def test_display_title_drops_board_clutter(self):
         self.assertEqual(bs.display_title("N 미국 Emory University 한국어 교수"), "미국 Emory University 한국어 교수")

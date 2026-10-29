@@ -116,7 +116,7 @@ def deadline_badge(deadline: str | None, today: dt.date) -> tuple[str, str]:
         return "상시 모집", "rolling"
     days = days_until(deadline, today)
     if days is None:
-        return "마감일 원문 확인", ""
+        return "마감일 미정", ""
     if days == 0:
         return "오늘 마감", "urgent"
     if days <= 7:
@@ -128,7 +128,7 @@ def deadline_text(deadline: str | None) -> str:
     if deadline == "rolling":
         return "채용될 때까지"
     if not deadline:
-        return "원문에서 확인해 주세요"
+        return "공고 내용을 확인해 주세요"
     try:
         day = dt.date.fromisoformat(deadline)
     except ValueError:
@@ -166,7 +166,18 @@ def prepare(job: dict, today: dt.date) -> dict:
     job["place"] = place_text(job)
     job["org"] = job.get("institution_name") or "기관 미확인"
     job["path"] = f"jobs/{job['job_id']}.html"
-    job["apply_url"] = safe_url(job.get("original_url"))
+    email = job.get("apply_email") or ""
+    job["apply_email"] = email if re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", email) else None
+    try:
+        files = json.loads(job.get("attachments") or "[]")
+    except ValueError:
+        files = []
+    # Only the copies the collector mirrored (mirror_attachments): the page
+    # never links to the board that carried the post.
+    job["files"] = [
+        (f.get("name") or "첨부파일", f["file"]) for f in files
+        if isinstance(f.get("file"), str) and re.fullmatch(r"\d+/\d+\.[a-z]{2,4}", f["file"])
+    ]
     job["has_place"] = job["scope"] == "domestic" and job.get("latitude") is not None and job.get("longitude") is not None
     chips = [INSTITUTION_TYPE_LABELS.get(job.get("institution_type") or "")]
     chips += [
@@ -177,6 +188,72 @@ def prepare(job: dict, today: dt.date) -> dict:
     ]
     job["chips"] = [c for c in chips if c][:4]
     return job
+
+
+# Boards that carry copies of notices. Their names and addresses never reach a
+# page, even when Claude leaves one in body_text.
+BOARD_HOSTS = set(collect_jobs.AGGREGATOR_HOSTS) | {"www.jinhakpro.com", "jinhakpro.com", "www.hibrain.net", "hibrain.net"}
+BOARD_NAMES = re.compile(
+    "|".join(map(re.escape, sorted(set(collect_jobs.AGGREGATOR_HOSTS.values()) | {
+        "한국어교원 구인정보", "한국어교원 자격", "국제한국어교육학회", "한국어교육바다", "진학프로", "하이브레인넷", "누리-세종학당",
+    }, key=len, reverse=True)))
+)
+URL_IN_TEXT = re.compile(r"https?://[^\s<>\"')\]]+")
+EMAIL_IN_TEXT = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+
+
+def inline_html(line: str) -> str:
+    """Escape a line; link emails and the hiring side's own links, drop board links."""
+    parts, last = [], 0
+    for match in re.finditer(f"{URL_IN_TEXT.pattern}|{EMAIL_IN_TEXT.pattern}", line):
+        parts.append(e(line[last:match.start()]))
+        token = match.group(0)
+        if token.startswith("http"):
+            host = (urllib.parse.urlparse(token).hostname or "").lower()
+            if host not in BOARD_HOSTS and safe_url(token):
+                parts.append(f'<a href="{e(token)}" target="_blank" rel="noopener nofollow">{e(token)}</a>')
+        else:
+            parts.append(f'<a href="mailto:{e(token)}">{e(token)}</a>')
+        last = match.end()
+    parts.append(e(line[last:]))
+    return "".join(parts)
+
+
+def notice_html(text: str | None) -> str:
+    """Render body_text ("## " headings, "- " items, blank-line paragraphs) as HTML."""
+    if not text or not text.strip():
+        return ""
+    out: list[str] = []
+    para: list[str] = []
+    items: list[str] = []
+
+    def flush() -> None:
+        if para:
+            out.append("<p>" + "<br>".join(para) + "</p>")
+            para.clear()
+        if items:
+            out.append("<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>")
+            items.clear()
+
+    for raw in text.replace("\r\n", "\n").split("\n"):
+        line = raw.strip()
+        if BOARD_NAMES.search(line):
+            continue
+        if not line:
+            flush()
+        elif line.startswith("#"):
+            flush()
+            out.append(f"<h3>{inline_html(line.lstrip('#').strip())}</h3>")
+        elif re.match(r"^[-•·*]\s+", line):
+            if para:
+                flush()
+            items.append(inline_html(re.sub(r"^[-•·*]\s+", "", line)))
+        else:
+            if items:
+                flush()
+            para.append(inline_html(line))
+    flush()
+    return "\n".join(out)
 
 
 def short(text: str | None, limit: int) -> str | None:
@@ -275,7 +352,6 @@ def footer(root: str) -> str:
     return f"""<footer class="foot"><div class="wrap">
 <strong>{SITE_NAME}</strong>
 <span>직업정보제공사업 신고번호 [신고 후 기재]</span>
-<span>공고는 각 기관 원문을 기준으로 정리하며, 지원은 원문에서 해요.</span>
 </div></footer>"""
 
 
@@ -420,8 +496,13 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
         ("기관 유형", INSTITUTION_TYPE_LABELS.get(job.get("institution_type") or "")),
         ("지원 자격", job.get("qualification")),
         ("경력", job.get("experience_required") or ("없어도 돼요" if job.get("newcomer_ok") == 1 else None)),
-        ("전형", "서류 → 모의수업" if job.get("demo_lesson") == 1 else None),
+        ("근무 기간", job.get("work_period")),
+        ("근무 시간", job.get("work_hours")),
         ("강의료", job.get("salary_text")),
+        ("전형", job.get("schedule") or ("서류 → 모의수업" if job.get("demo_lesson") == 1 else None)),
+        ("제출 서류", job.get("documents")),
+        ("접수 방법", job.get("how_to_apply") or ("이메일 접수" if job.get("apply_email") else None)),
+        ("문의", job.get("contact")),
         ("지원 사항", job.get("benefits")),
     ]
     fact_rows = "".join(f"<div><dt>{e(k)}</dt><dd>{e(v)}</dd></div>" for k, v in facts if v)
@@ -449,11 +530,27 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
 <p class="desc">수준과 문법만 고르면 돼요. 무료로 3번까지.</p></div>
 <a class="btn btn-lg" href="{root}demo.html">무료로 만들어 보기</a></section>"""
 
-    apply_link = (
-        f'<a class="btn btn-primary btn-lg" href="{e(job["apply_url"])}" target="_blank" rel="noopener nofollow">원문 공고 열기</a>'
-        if job["apply_url"] else '<span class="fine">원문 링크를 확인하지 못했어요.</span>'
-    )
-    collected = (job.get("collected_at") or "")[:10].replace("-", ".")
+    # Everything needed to apply is on this page: the email, our own copies of
+    # the notice files, and the full notice. Nothing links to where it came from.
+    email = job["apply_email"]
+    email_block = ""
+    if email:
+        subject = urllib.parse.quote(f"[지원] {job.get('title')}")
+        email_block = f"""<div class="apply-email">
+<a class="btn btn-primary btn-lg" href="mailto:{e(email)}?subject={subject}">이메일로 지원하기</a>
+<p class="fine">접수 주소 <strong>{e(email)}</strong></p></div>"""
+    files_block = ""
+    if job["files"]:
+        items = "".join(
+            f'<li><a href="{root}files/{e(path)}" download="{e(name)}">{e(name)}</a></li>' for name, path in job["files"]
+        )
+        files_block = f'<div class="files"><h3>공고문·지원 양식</h3><ul>{items}</ul></div>'
+    notice = notice_html(job.get("body_text"))
+    if notice:
+        notice_section = f'<section class="sec" aria-labelledby="noticeTitle"><h2 id="noticeTitle">공고 내용</h2><div class="notice">{notice}</div></section>'
+    else:
+        notice_section = f"""<section class="sec" aria-labelledby="sumTitle"><h2 id="sumTitle">이런 공고예요</h2>
+<p class="prose">{e(job.get('summary') or '자세한 내용은 첨부된 공고문을 확인해 주세요.')}</p></section>"""
     mentoring = SERVICE_LINKS["mentoring"]
     # After "지원했어요": with services, prepare for the demo lesson; without,
     # keep the person coming back with the free job alert.
@@ -502,19 +599,17 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
 </section>
 <section class="sec" aria-labelledby="factsTitle"><h2 id="factsTitle">한눈에 보기</h2><dl class="facts">{fact_rows}</dl></section>
 {map_section}
-<section class="sec" aria-labelledby="sumTitle"><h2 id="sumTitle">이런 공고예요</h2>
-<p class="prose">{e(job.get('summary') or '원문에서 자세한 내용을 확인해 주세요.')}</p>
-<p class="fine">원문을 바탕으로 정리했어요. 근무 일정과 제출 서류는 원문에서 확인하세요.</p></section>
+{notice_section}
 {steps}
 {demo_cta}
-<section class="sec" aria-labelledby="applyTitle"><h2 id="applyTitle">지원은 원문에서 해요</h2>
-<p class="fine">지원서 양식과 제출처가 기관 원문에 있어요.</p>
-<div class="apply-row">{apply_link}
+<section class="sec" aria-labelledby="applyTitle"><h2 id="applyTitle">지원하기</h2>
+{email_block}
+{files_block}
+<div class="apply-row">
 <button type="button" class="btn btn-gray btn-lg" data-applied>지원했어요</button>
 <button type="button" class="btn btn-gray btn-lg" data-save aria-pressed="false">저장</button></div>
 <div class="applied-note" data-applied-note role="status" hidden><p><strong>지원 완료, 수고했어요.</strong> {applied_text}</p>
-{applied_link}</div>
-<p class="fine">출처 {e(job.get('source_name'))} · {e(collected)} 수집</p></section>
+{applied_link}</div></section>
 </div>
 <aside class="detail-side" aria-label="지원 준비">{"".join(side)}</aside>
 </div>
@@ -695,7 +790,12 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     if services_on(config):
         write("demo.html", render_demo(config))
         write("resume.html", render_resume(config))
+    files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)
     for job in jobs:
+        job["files"] = [(name, rel) for name, rel in job["files"] if (files_dir / rel).is_file()]
+        for _, rel in job["files"]:
+            (out_dir / "files" / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(files_dir / rel, out_dir / "files" / rel)
         write(job["path"], render_job(job, jobs, config, today))
     if config.get("private"):
         write("robots.txt", "User-agent: *\nDisallow: /\n")

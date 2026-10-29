@@ -215,6 +215,18 @@ button, input, select { font: inherit; }
 .cta-blue p.desc { margin-top: 8px; font-size: 15px; line-height: 1.6; color: #e1edff; }
 .cta-blue .btn { background: #fff; color: var(--blue); }
 .apply-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.apply-email { margin-top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.apply-email .fine { margin: 0; }
+.notice { margin-top: 10px; max-width: 76ch; font-size: 16px; line-height: 1.8; color: var(--text-2); overflow-wrap: anywhere; }
+.notice h3 { margin: 28px 0 6px; font-size: 17px; font-weight: 700; color: var(--text); }
+.notice h3:first-child { margin-top: 0; }
+.notice p { margin: 0 0 12px; }
+.notice ul { margin: 0 0 12px; padding-left: 20px; }
+.notice li { margin: 2px 0; }
+.files { margin-top: 20px; padding: 16px 20px; background: var(--soft); border-radius: 16px; }
+.files h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; color: var(--text-3); }
+.files ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.files a { display: inline-flex; min-height: 32px; align-items: center; font-size: 15px; word-break: break-all; }
 .apply-row .btn-primary { flex: 1 1 220px; }
 .applied-note { margin-top: 16px; padding: 18px; border-radius: 16px; background: var(--warm-soft); display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; }
 .applied-note[hidden] { display: none; }

@@ -254,6 +254,48 @@ class SourceParserTests(unittest.TestCase):
             cj.fetch_url = original
         self.assertEqual([i.url for i in items], ["https://example.org/b/?uid=3"])
 
+    def test_notice_files_are_found_by_their_link_text(self):
+        page = cj.parse_html(
+            '<a href="/certif/file/download?fileNo=11032&bigCate=board">1. 숭실대학교_채용공고문.pdf</a>'
+            '<a href="/certif/file/download?fileNo=11033">2. 지원서 양식_2026.hwp </a>'
+            '<a href="/certif/jobsearch/list">목록</a><a href="javascript:fnDown(3)">3. 동의서.hwp</a>'
+        )
+        files = cj.extract_attachments(page.links, "https://klp.korean.go.kr/certif/jobsearch/35051")
+        self.assertEqual(files, [
+            ("숭실대학교_채용공고문.pdf", "https://klp.korean.go.kr/certif/file/download?fileNo=11032&bigCate=board"),
+            ("지원서 양식_2026.hwp", "https://klp.korean.go.kr/certif/file/download?fileNo=11033"),
+        ])
+
+    def test_rate_limited_host_is_skipped_for_the_run(self):
+        import urllib.error
+        calls = []
+        original_once, original_sleep = cj.fetch_url_once, cj.time.sleep
+
+        def always_429(url, timeout):
+            calls.append(url)
+            raise urllib.error.HTTPError(url, 429, "Too Many Requests", {}, None)
+
+        cj.fetch_url_once, cj.time.sleep = always_429, (lambda s: None)
+        try:
+            with self.assertRaises(cj.HostRateLimited):
+                cj.fetch_url("https://limited.example/1")
+            tried = len(calls)
+            with self.assertRaises(cj.HostRateLimited):
+                cj.fetch_url("https://limited.example/2")
+        finally:
+            cj.fetch_url_once, cj.time.sleep = original_once, original_sleep
+            cj._BLOCKED_HOSTS.discard("limited.example")
+        # The second URL is refused without another request.
+        self.assertEqual(len(calls), tried)
+
+    def test_a_hung_request_is_abandoned(self):
+        import time as _time
+        started = _time.monotonic()
+        with self.assertRaises(TimeoutError):
+            cj.with_deadline(_time.sleep, (5,), 0.2)
+        self.assertLess(_time.monotonic() - started, 2)
+        self.assertEqual(cj.with_deadline(lambda a, b: a + b, (1, 2), 1), 3)
+
     def test_attachment_links_are_not_postings(self):
         self.assertTrue(cj.ATTACHMENT_LINK.search("https://www.yu.ac.kr/main/intro/yu-news.do?mode=fileDownload&articleNo=1"))
         self.assertTrue(cj.ATTACHMENT_LINK.search("https://x.ac.kr/files/한국어강사 모집 공고.hwp"))
@@ -285,6 +327,36 @@ class DatabaseTests(unittest.TestCase):
 
     def tearDown(self):
         self.conn.close()
+
+    def test_attachments_are_mirrored_once(self):
+        import json
+        import tempfile
+        from unittest import mock
+
+        cj.save_job(self.conn, make_job())
+        files = json.dumps([
+            {"name": "공고문.pdf", "url": "https://board.example/f?1"},
+            {"name": "양식.hwp", "url": "https://board.example/f?2"},
+        ], ensure_ascii=False)
+        self.conn.execute("UPDATE jobs SET attachments = ?", (files,))
+        answers = {"https://board.example/f?1": b"%PDF", "https://board.example/f?2": ValueError("login wall")}
+
+        def fake_fetch(url):
+            answer = answers[url]
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(cj, "fetch_file", side_effect=fake_fetch) as fetch:
+            stats = cj.mirror_attachments(self.conn, Path(tmp))
+            self.assertEqual(stats, {"mirrored": 1, "failed": 1})
+            stored = json.loads(self.conn.execute("SELECT attachments FROM jobs").fetchone()[0])
+            self.assertEqual(stored[0]["file"], "1/1.pdf")
+            self.assertEqual((Path(tmp) / "1" / "1.pdf").read_bytes(), b"%PDF")
+            self.assertNotIn("file", stored[1])
+            fetch.reset_mock()
+            cj.mirror_attachments(self.conn, Path(tmp))
+            self.assertEqual([c.args[0] for c in fetch.call_args_list], ["https://board.example/f?2"])
 
     def test_recollection_keeps_review(self):
         cj.save_job(self.conn, make_job())
@@ -327,6 +399,60 @@ class DatabaseTests(unittest.TestCase):
             "SELECT deadline FROM jobs WHERE is_canonical = 1 AND title LIKE '숭실%'"
         ).fetchall()
         self.assertEqual(canonical, [("2026-11-09",)])
+
+    def apply_rows(self):
+        return dict(self.conn.execute("SELECT title, apply_url || ' ' || apply_url_source FROM jobs").fetchall())
+
+    def test_apply_link_prefers_the_institution(self):
+        # A notice on the aggregator and the same notice on the university's board.
+        cj.save_job(self.conn, make_job(title="숭실대 한국어강사 채용", deadline="2026-11-09",
+                                        original_url="https://klp.korean.go.kr/certif/jobsearch/35051", source_name="국립국어원"))
+        cj.save_job(self.conn, make_job(title="숭실대 한국어강사 채용 공고", deadline="2026-11-09",
+                                        original_url="https://ssu.ac.kr/notice/1234", source_name="숭실대",
+                                        confidence_score=60))
+        # An aggregator copy whose body links the university post.
+        cj.save_job(self.conn, make_job(title="남서울대 강사 채용", institution_name="남서울대학교", deadline="2026-11-06",
+                                        original_url="https://www.iakle.com/subList/1?nttSeq=9",
+                                        raw_text="자세한 내용 https://nsu.ac.kr/bbs/view/77 참조, 홈페이지 https://nsu.ac.kr/"))
+        # An aggregator copy with nothing better.
+        cj.save_job(self.conn, make_job(title="한글넷 강사 채용", institution_name="한글넷", deadline="2026-11-30",
+                                        original_url="https://klp.korean.go.kr/certif/jobsearch/35059",
+                                        raw_text="https://kteacher.korean.go.kr/org 참조"))
+        # A post on the institution's own board.
+        cj.save_job(self.conn, make_job(title="동국대 강사 초빙", institution_name="동국대학교", deadline="2026-11-15",
+                                        original_url="https://interlang.dongguk.edu/bbs/board.php?wr_id=763"))
+        cj.assign_duplicate_groups(self.conn)
+        cj.resolve_apply_urls(self.conn)
+        rows = self.apply_rows()
+        canonical = [t for (t,) in self.conn.execute("SELECT title FROM jobs WHERE is_canonical = 1 AND title LIKE '숭실%'")][0]
+        self.assertEqual(rows[canonical], "https://ssu.ac.kr/notice/1234 " + ("original" if "공고" in canonical else "group"))
+        self.assertEqual(rows["남서울대 강사 채용"], "https://nsu.ac.kr/bbs/view/77 body")
+        self.assertEqual(rows["한글넷 강사 채용"], "https://klp.korean.go.kr/certif/jobsearch/35059 aggregator")
+        self.assertEqual(rows["동국대 강사 초빙"], "https://interlang.dongguk.edu/bbs/board.php?wr_id=763 original")
+
+    def test_search_runs_once_per_posting(self):
+        cj.save_job(self.conn, make_job(title="[공고] 서강대학교 한국어교육원 2026 겨울학기 시간강사 선발 공고",
+                                        institution_name="서강대학교 한국어교육원", deadline=None,
+                                        original_url="https://www.iakle.com/subList/1?nttSeq=21"))
+        cj.assign_duplicate_groups(self.conn)
+        calls = []
+        original = cj.naver_search
+
+        def fake_search(query, cid, secret):
+            calls.append(query)
+            return [
+                {"link": "https://klp.korean.go.kr/x", "title": "서강대학교 한국어교육원 겨울학기 시간강사 선발"},
+                {"link": "https://korean.sogang.ac.kr/bbs/view/5", "title": "<b>서강대학교</b> 한국어교육원 2026 겨울학기 시간강사 선발 공고"},
+            ]
+
+        cj.naver_search = fake_search
+        try:
+            cj.resolve_apply_urls(self.conn, ("id", "secret"))
+            cj.resolve_apply_urls(self.conn, ("id", "secret"))
+        finally:
+            cj.naver_search = original
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(list(self.apply_rows().values()), ["https://korean.sogang.ac.kr/bbs/view/5 search"])
 
     def test_two_positions_on_one_board_stay_apart(self):
         cj.save_job(self.conn, make_job(title="세종대학교 세종어학원 한국어과정 시간강사 초빙 공고", institution_name="세종대학교 세종어학원",
@@ -407,6 +533,11 @@ class FieldRuleTests(unittest.TestCase):
         self.assertEqual(ef.detect_salary("시급 35,000원"), "시간당 35,000원")
         self.assertEqual(ef.detect_salary("연봉 3,600만원 이상"), "3,600만원")
         self.assertIsNone(ef.detect_salary("강의료는 내부 기준에 따름"))
+
+    def test_apply_email_skips_the_boards_own_address(self):
+        text = "문의 kteacher@korean.go.kr 접수: 이메일(ili3@sejong.ac.kr)로 제출."
+        self.assertEqual(ef.detect_apply_email(text), "ili3@sejong.ac.kr")
+        self.assertIsNone(ef.detect_apply_email("방문 접수만 받습니다."))
 
     def test_indonesia_is_not_india(self):
         self.assertEqual(ef.detect_country("인도네시아 대학 한국어 강사", None, ""), "인도네시아")

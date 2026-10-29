@@ -58,7 +58,14 @@
 | `demo_lesson` | INTEGER | | 1 모의수업·시강 있음 / NULL 언급 없음 |
 | `salary_text` | TEXT | | 급여 원문 표기 (`시간당 35,000원`) |
 | `benefits` | TEXT | | 해외 공고 지원 사항 (`항공권, 숙소, 비자`) |
-| `summary` | TEXT | | 원문을 베끼지 않은 요약. 공개 사이트에는 `description` 대신 이것을 씀 |
+| `body_text` | TEXT | | 공고 본문 전체 (Claude). 게시판 메뉴·이름을 뺀 정리본. `## ` 소제목, `- ` 항목. 공개 상세의 "공고 내용" |
+| `summary` | TEXT | | 2~3문장 요약. `body_text`가 없을 때와 검색 설명(meta, JSON-LD)에 씀 |
+| `apply_email` | TEXT | | 접수 이메일 (규칙 또는 Claude) |
+| `work_period`, `work_hours` | TEXT | | 근무 기간, 근무 요일·시간 (Claude) |
+| `documents`, `how_to_apply`, `schedule`, `contact` | TEXT | | 제출 서류, 접수 방법, 전형 일정, 문의처 (Claude) |
+| `attachments` | TEXT | | 공고문·양식 파일 JSON `[{"name", "url", "file"}]`. 수집·refresh 때 링크 글자가 파일명인 링크에서 추출. `file`은 `mirror_attachments()`가 내려받은 사본 경로(`files/` 기준) |
+| `apply_url` | TEXT | | 가장 원본에 가까운 링크(내부용, 화면에 나가지 않음). `resolve_apply_urls()`가 매 실행 끝에 고름 |
+| `apply_url_source` | TEXT | | `original` / `group` / `body` / `search` / `search_none` / `aggregator` |
 | `fields_source` | TEXT | | 위 필드를 채운 방법: `rules` 또는 `llm` |
 | `fields_extracted_at` | TEXT | | 필드를 채운 시각, UTC ISO8601 |
 

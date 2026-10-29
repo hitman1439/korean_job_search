@@ -19,7 +19,7 @@
   // Mirrors deadline_badge() in build_site.py.
   function badgeFor(deadline) {
     if (deadline === "rolling") return { text: "상시 모집", cls: "rolling" };
-    if (!deadline) return { text: "마감일 원문 확인", cls: "" };
+    if (!deadline) return { text: "마감일 미정", cls: "" };
     var d = daysUntil(deadline);
     if (d < 0) return { text: "마감됨", cls: "" };
     if (d === 0) return { text: "오늘 마감", cls: "urgent" };

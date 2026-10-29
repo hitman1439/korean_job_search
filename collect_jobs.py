@@ -16,6 +16,7 @@ import re
 import ssl
 import sqlite3
 import sys
+import threading
 import time
 import xml.etree.ElementTree as ET
 import urllib.error
@@ -32,6 +33,7 @@ from extract_fields import COUNTRY_NAMES
 ROOT = Path(__file__).resolve().parent
 DEFAULT_DB = ROOT / "jobs.sqlite3"
 DEFAULT_SOURCES = ROOT / "sources.json"
+DEFAULT_FILES_DIR = ROOT / "files"
 DEFAULT_URL_FILE = ROOT / "seed_urls.txt"
 DEFAULT_DISCOVERY_FILE = ROOT / "monitor_sources.json"
 SAMPLE_HTML = ROOT / "sample_jobs.html"
@@ -67,6 +69,7 @@ class Source:
     deadline_hint: str | None = None
     posted_at_hint: str | None = None
     body_hint: str | None = None
+    attachments_hint: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -175,6 +178,11 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     # collected_at moves on every refresh; first_seen_at is the undated-job clock.
     ensure_column(conn, "jobs", "first_seen_at", "TEXT")
     ensure_column(conn, "jobs", "is_canonical", "INTEGER NOT NULL DEFAULT 1")
+    # Notice files (JSON [{name, url}]) and the best link to apply through,
+    # which may differ from original_url when that is an aggregator board.
+    ensure_column(conn, "jobs", "attachments", "TEXT")
+    ensure_column(conn, "jobs", "apply_url", "TEXT")
+    ensure_column(conn, "jobs", "apply_url_source", "TEXT")
     for column, definition in JOB_FIELD_COLUMNS:
         ensure_column(conn, "jobs", column, definition)
     conn.execute("UPDATE jobs SET first_seen_at = collected_at WHERE first_seen_at IS NULL")
@@ -250,6 +258,15 @@ JOB_FIELD_COLUMNS = [
     ("demo_lesson", "INTEGER"),
     ("salary_text", "TEXT"),
     ("benefits", "TEXT"),
+    ("apply_email", "TEXT"),
+    ("work_period", "TEXT"),
+    ("work_hours", "TEXT"),
+    ("documents", "TEXT"),
+    ("how_to_apply", "TEXT"),
+    ("schedule", "TEXT"),
+    ("contact", "TEXT"),
+    # The whole notice, cleaned of the hosting board's menus and name (Claude).
+    ("body_text", "TEXT"),
     ("summary", "TEXT"),
     ("fields_source", "TEXT"),
     ("fields_extracted_at", "TEXT"),
@@ -331,14 +348,23 @@ def build_session_opener() -> urllib.request.OpenerDirector:
 
 
 _LAST_REQUEST_AT: dict[str, float] = {}
+# Hosts that want a gentler pace than MIN_REQUEST_INTERVAL.
+HOST_INTERVAL = {"www.jinhakpro.com": 3.0}
+# Hosts that kept answering 429 this run: no more requests to them until the
+# next run. Waiting out a block one post at a time once stalled a run for an hour.
+_BLOCKED_HOSTS: set[str] = set()
+
+
+class HostRateLimited(Exception):
+    """The host is rate-limiting this run; skip its remaining requests."""
 
 
 def wait_for_host(url: str) -> None:
-    """Space out requests to one host by MIN_REQUEST_INTERVAL seconds."""
+    """Space out requests to one host by MIN_REQUEST_INTERVAL (or HOST_INTERVAL) seconds."""
     host = urllib.parse.urlparse(url).hostname or ""
     last = _LAST_REQUEST_AT.get(host)
     if last is not None:
-        remaining = MIN_REQUEST_INTERVAL - (time.monotonic() - last)
+        remaining = HOST_INTERVAL.get(host, MIN_REQUEST_INTERVAL) - (time.monotonic() - last)
         if remaining > 0:
             time.sleep(remaining)
     _LAST_REQUEST_AT[host] = time.monotonic()
@@ -359,16 +385,48 @@ def fetch_url(url: str, timeout: int = 20) -> str:
     Jinhakpro answers 429 once a run fires its detail requests back to back,
     which used to drop those postings for the whole run.
     """
+    host = urllib.parse.urlparse(url).hostname or ""
+    if host in _BLOCKED_HOSTS:
+        raise HostRateLimited(f"{host} is rate-limiting this run")
     for attempt in range(RATE_LIMIT_RETRIES + 1):
         try:
-            return fetch_url_once(url, timeout)
+            return with_deadline(fetch_url_once, (url, timeout), timeout * 3)
         except urllib.error.HTTPError as exc:
-            if exc.code != 429 or attempt == RATE_LIMIT_RETRIES:
+            if exc.code != 429:
                 raise
+            if attempt == RATE_LIMIT_RETRIES:
+                _BLOCKED_HOSTS.add(host)
+                print(f"warning: {host} keeps answering 429; skipping it for the rest of this run", file=sys.stderr)
+                raise HostRateLimited(f"{host} is rate-limiting this run") from exc
             retry_after = exc.headers.get("Retry-After", "")
             delay = int(retry_after) if retry_after.isdigit() else 5 * (attempt + 1)
             time.sleep(min(delay, 60))
     raise AssertionError("unreachable")
+
+
+def with_deadline(func, args: tuple, seconds: float):
+    """Run func(*args) but give up after `seconds` in total.
+
+    The socket timeout bounds each read, not the whole request: a run once sat
+    for ten minutes on one half-closed Jinhakpro connection. The worker thread
+    is left behind as a daemon; the run moves on.
+    """
+    outcome: dict = {}
+
+    def run() -> None:
+        try:
+            outcome["value"] = func(*args)
+        except BaseException as exc:  # handed to the caller below
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise TimeoutError(f"no complete response within {seconds:.0f}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
 
 
 def fetch_url_once(url: str, timeout: int) -> str:
@@ -753,11 +811,17 @@ def refresh_existing_jobs(
         stats["candidates"] += 1
         source = Source(source_name, source_url, 0, "refresh")
         try:
-            text = parse_html(fetch_url(original_url)).text
+            page = parse_html(fetch_url(original_url))
+            text = page.text
         except Exception as exc:
             stats["failed"] += 1
             log_error(conn, run_id, source, f"refresh {original_url}: {exc}")
             continue
+        # Fill in notice files for rows saved before they were collected. Only
+        # when found: some boards (IAKLE) list them only in their AJAX view.
+        files = extract_attachments(page.links, original_url)
+        if files:
+            conn.execute("UPDATE jobs SET attachments = ? WHERE job_id = ?", (attachments_json(files), job_id))
 
         deadline = extract_deadline(text, today)
         if deadline is None:
@@ -1191,6 +1255,125 @@ def assign_duplicate_groups(conn: sqlite3.Connection) -> int:
     return duplicates
 
 
+# Boards that collect other institutions' notices. A link there shows the
+# board's whole list, so a posting is better linked to its institution.
+AGGREGATOR_HOSTS = {
+    "klp.korean.go.kr": "국립국어원",
+    "kteacher.korean.go.kr": "국립국어원",
+    "www.iakle.com": "국제한국어교육학회",
+    "iakle.com": "국제한국어교육학회",
+    "kleocean.com": "한국어교육바다",
+    "www.kleocean.com": "한국어교육바다",
+    "korean.dsu.ac.kr": "동신대 한국어교원소식",
+    "cess.dsu.ac.kr": "동신대 한국어교원소식",
+    "kfl.snu.ac.kr": "서울대 한국어교육 공지",
+    "nuri.iksi.or.kr": "누리 세종학당",
+}
+OFFICIAL_HOST = re.compile(r"\.(?:ac|go|or|re)\.kr$")
+POST_PATH = re.compile(r"\d{3,}|view|artcl|board|bbs|notice|recruit", re.I)
+
+
+def aggregator_name(url: str | None) -> str | None:
+    return AGGREGATOR_HOSTS.get(urllib.parse.urlparse(url or "").hostname or "")
+
+
+def url_in_body(text: str) -> str | None:
+    """An institution post linked in an aggregator's copy of the notice."""
+    for url in re.findall(r"https?://[^\s\"'<>()\[\]]+", text or ""):
+        url = url.rstrip(".,;")
+        parts = urllib.parse.urlparse(url)
+        host = parts.hostname or ""
+        if host in AGGREGATOR_HOSTS or host.endswith("korean.go.kr"):
+            continue
+        # A post, not a homepage: a homepage still shows nothing about the call.
+        if parts.path.strip("/") and POST_PATH.search(parts.path + "?" + parts.query):
+            return url
+    return None
+
+
+def naver_search(query: str, client_id: str, client_secret: str) -> list[dict]:
+    request = urllib.request.Request(
+        "https://openapi.naver.com/v1/search/webkr.json?" + urllib.parse.urlencode({"query": query, "display": 10}),
+        headers={"X-Naver-Client-Id": client_id, "X-Naver-Client-Secret": client_secret},
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        return json.loads(response.read().decode("utf-8")).get("items", [])
+
+
+def search_original(title: str, institution: str | None, client_id: str, client_secret: str) -> str | None:
+    """The institution's own post, found by web search on its title.
+
+    Accepted only on an official domain (.ac.kr, .go.kr, ...) that is not an
+    aggregator, with a result title sharing most of our title's words.
+    """
+    words = [w for w in re.findall(r"[가-힣A-Za-z0-9]{2,}", title_key_text(title)) if w not in {"공고", "채용", "모집"}]
+    if not words:
+        return None
+    query = f"{institution or ''} {' '.join(words[:6])}".strip()
+    for item in naver_search(query, client_id, client_secret):
+        link = item.get("link") or ""
+        host = urllib.parse.urlparse(link).hostname or ""
+        if host in AGGREGATOR_HOSTS or not OFFICIAL_HOST.search(host):
+            continue
+        found = re.sub(r"<[^>]+>", "", item.get("title") or "")
+        shared = sum(1 for w in words if w in found)
+        if shared >= max(2, (len(words) + 1) // 2):
+            return link
+    return None
+
+
+def title_key_text(title: str) -> str:
+    text = re.sub(r"^(?:N|New)\s+(?=\S)", "", (title or "").strip())
+    return re.sub(r"^\[[^\]]{1,6}\]\s*", "", text)
+
+
+def resolve_apply_urls(conn: sqlite3.Connection, naver: tuple[str, str] | None = None) -> dict[str, int]:
+    """Pick, for every canonical posting, the most original link to apply through.
+
+    original_url stays as collected; apply_url is what the site shows.
+    Order: the collected link if it is not an aggregator; another board's
+    copy of the same notice (duplicate group); a post URL in the body; a web
+    search (only with Naver keys, once per posting); else the aggregator.
+    """
+    stats = {"original": 0, "group": 0, "body": 0, "search": 0, "aggregator": 0}
+    rows = conn.execute(
+        """
+        SELECT job_id, original_url, duplicate_group_id, raw_text, title, institution_name, apply_url_source
+        FROM jobs WHERE is_canonical = 1
+        """
+    ).fetchall()
+    for job_id, original_url, group_id, raw_text, title, institution, previous in rows:
+        url, how = original_url, "original"
+        if aggregator_name(original_url):
+            how = "aggregator"
+            siblings = conn.execute(
+                "SELECT original_url FROM jobs WHERE duplicate_group_id = ? AND job_id != ?", (group_id, job_id)
+            ).fetchall()
+            direct = [u for (u,) in siblings if not aggregator_name(u)]
+            in_body = url_in_body(raw_text)
+            if direct:
+                url, how = direct[0], "group"
+            elif in_body:
+                url, how = in_body, "body"
+            elif previous == "search":
+                url, how = conn.execute("SELECT apply_url FROM jobs WHERE job_id = ?", (job_id,)).fetchone()[0], "search"
+            elif naver and previous != "search_none":
+                try:
+                    found = search_original(title, institution, *naver)
+                except Exception as exc:  # search is a bonus; never fail the run on it
+                    print(f"naver search failed for job {job_id}: {exc}", file=sys.stderr)
+                    found = None
+                if found:
+                    url, how = found, "search"
+                else:
+                    how = "search_none"
+            elif previous == "search_none":
+                how = "search_none"
+        conn.execute("UPDATE jobs SET apply_url = ?, apply_url_source = ? WHERE job_id = ?", (url, how, job_id))
+        stats["aggregator" if how == "search_none" else how] += 1
+    return stats
+
+
 def load_retired_source_names(path: Path) -> set[str]:
     if not path.exists():
         return set()
@@ -1334,9 +1517,12 @@ def collect_seed_urls(
                 # Boards that only answer POST were already read during discovery.
                 html = ""
                 text = source.body_hint
+                files = list(source.attachments_hint)
             else:
                 html = fetch_url(source.url)
-                text = parse_html(html).text
+                parsed_page = parse_html(html)
+                text = parsed_page.text
+                files = extract_attachments(parsed_page.links, source.url)
             title = source.title_hint or extract_html_title(html, text, source.url)
             stats["candidates"] += 1
             if has_excluded_term(title, exclude_terms):
@@ -1373,6 +1559,7 @@ def collect_seed_urls(
                 "collected_at": utc_now(),
                 "description": text[:4000],
                 "raw_text": text[:20000],
+                "attachments": attachments_json(files),
                 "confidence_score": source.trust,
                 "status": "needs_review",
                 "content_hash": content_hash,
@@ -1400,6 +1587,7 @@ def collect_discovery_sources(
     discovered: list[Source] = []
     stats = {"candidates": 0, "saved": 0, "updated": 0, "skipped": 0, "failed": 0}
     for source in discovery_sources:
+        print(f"source: {source.name}", file=sys.stderr, flush=True)
         try:
             if source.kind == "kteacher_list":
                 discovered.extend(discover_kteacher(source, today, active_only))
@@ -1452,6 +1640,106 @@ def collect_discovery_sources(
     )
     for key, value in seed_stats.items():
         stats[key] += value
+    return stats
+
+
+ATTACHMENT_NAME = re.compile(r"\.(?:hwp|hwpx|pdf|docx?|xlsx?|zip)\s*$", re.I)
+
+
+def extract_attachments(links: list[tuple[str, str]], base_url: str, limit: int = 6) -> list[tuple[str, str]]:
+    """Notice files linked from a post: links whose text is a file name.
+
+    Boards print the file name as the link text ("1. 채용공고문.pdf") whatever
+    their download URL looks like, so the text is the reliable signal.
+    """
+    found: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for text, href in links:
+        name = clean_text(text)
+        if not ATTACHMENT_NAME.search(name):
+            continue
+        url = urllib.parse.urljoin(base_url, href)
+        if urllib.parse.urlparse(url).scheme not in {"http", "https"} or url in seen:
+            continue
+        seen.add(url)
+        found.append((re.sub(r"^\d+\.\s*", "", name), url))
+        if len(found) >= limit:
+            break
+    return found
+
+
+def attachments_json(files: Iterable[tuple[str, str]]) -> str | None:
+    files = list(files)
+    return json.dumps([{"name": n, "url": u} for n, u in files], ensure_ascii=False) if files else None
+
+
+MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
+
+def fetch_file(url: str, timeout: int = 30) -> bytes:
+    def once() -> bytes:
+        safe_url = urllib.parse.quote(url, safe=":/?&=%#@")
+        wait_for_host(safe_url)
+        request = urllib.request.Request(safe_url, headers={"User-Agent": BROWSER_USER_AGENT})
+        try:
+            response = urllib.request.urlopen(request, timeout=timeout)
+        except urllib.error.URLError as exc:
+            if "CERTIFICATE_VERIFY_FAILED" not in str(exc):
+                raise
+            print(f"warning: TLS verification skipped for {safe_url}", file=sys.stderr)
+            response = urllib.request.urlopen(request, timeout=timeout, context=ssl._create_unverified_context())
+        with response:
+            data = response.read(MAX_ATTACHMENT_BYTES + 1)
+            kind = response.headers.get_content_type()
+        if len(data) > MAX_ATTACHMENT_BYTES:
+            raise ValueError("attachment too large")
+        # A login wall or error page answered instead of the file.
+        if kind == "text/html" or data[:200].lstrip().lower().startswith((b"<!doctype", b"<html")):
+            raise ValueError("got a web page, not a file")
+        return data
+
+    return with_deadline(once, (), timeout * 3)
+
+
+def mirror_attachments(conn: sqlite3.Connection, files_dir: Path) -> dict[str, int]:
+    """Download each published job's notice files into files_dir/<job_id>/.
+
+    The site serves its own copies, so a reader never follows a link to the
+    board that carried the post. The local name is recorded as "file" in the
+    attachments JSON; a failed download is retried on the next run.
+    """
+    stats = {"mirrored": 0, "failed": 0}
+    rows = conn.execute(
+        "SELECT job_id, attachments FROM jobs WHERE status != 'rejected' AND is_canonical = 1 AND attachments IS NOT NULL"
+    ).fetchall()
+    for job_id, raw in rows:
+        try:
+            files = json.loads(raw)
+        except ValueError:
+            continue
+        changed = False
+        for index, item in enumerate(files, start=1):
+            if item.get("file") and (files_dir / item["file"]).exists():
+                continue
+            suffix = Path(item.get("name") or "").suffix.lower()
+            if not re.fullmatch(r"\.(?:hwp|hwpx|pdf|docx?|xlsx?|zip)", suffix):
+                continue
+            relative = f"{job_id}/{index}{suffix}"
+            try:
+                data = fetch_file(item["url"])
+            except Exception as exc:  # network, size, login wall: try again next run
+                print(f"attachment: job {job_id} {item.get('name')}: {exc}", file=sys.stderr)
+                stats["failed"] += 1
+                continue
+            target = files_dir / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            item["file"] = relative
+            changed = True
+            stats["mirrored"] += 1
+        if changed:
+            conn.execute("UPDATE jobs SET attachments = ? WHERE job_id = ?", (json.dumps(files, ensure_ascii=False), job_id))
+            conn.commit()
     return stats
 
 
@@ -1627,7 +1915,8 @@ def discover_iakle(
                 {**fields, "pageIndex": str(page), "nttSeq": ntt_seq, "parntsNttSeq": "", "secretAt": ""},
                 source.url,
             )
-            text = trim_iakle_body(parse_html(detail).text)
+            detail_page = parse_html(detail)
+            text = trim_iakle_body(detail_page.text)
             deadline = extract_deadline(text)
             if active_only and not is_active_deadline(deadline, today):
                 continue
@@ -1642,6 +1931,8 @@ def discover_iakle(
                     deadline_hint=deadline,
                     posted_at_hint=posted_at,
                     body_hint=text,
+                    # IAKLE posts are often just "see the attached notice".
+                    attachments_hint=tuple(extract_attachments(detail_page.links, origin + "/")),
                 )
             )
     return items
@@ -1680,6 +1971,8 @@ def discover_jinhakpro_sitemap(
         opened += 1
         try:
             text = parse_html(fetch_url(url)).text
+        except HostRateLimited:
+            break  # the rest waits for the next run
         except Exception:
             continue  # tried again next run
         institution, title = extract_jinhakpro_heading(text)
@@ -2421,8 +2714,11 @@ def fill_job_fields(conn: sqlite3.Connection, llm_backend: str | None, llm_limit
             """
             SELECT job_id, title, institution_name, location_text, deadline, description, raw_text, fields_source
             FROM jobs
-            WHERE status != 'rejected' AND (fields_source IS NULL OR fields_source = 'rules')
-            ORDER BY job_id
+            WHERE status != 'rejected' AND is_canonical = 1
+              AND (fields_source IS NULL OR fields_source = 'rules' OR body_text IS NULL)
+            -- Public (domestic, online) postings go to Claude first; overseas
+            -- ones are only shown in the private build.
+            ORDER BY COALESCE(is_overseas, 0), job_id
             """
         ).fetchall()
     finally:
@@ -2447,7 +2743,8 @@ def fill_job_fields(conn: sqlite3.Connection, llm_backend: str | None, llm_limit
             elif extractor is not None:
                 stats["llm_failed"] += 1
         if fields is None:
-            if job["fields_source"] == "rules":
+            # Never replace Claude's fields with rules; the body comes next run.
+            if job["fields_source"] in {"rules", "llm"}:
                 continue
             fields = extract_fields.extract_rules(job)
             stats["rules"] += 1
@@ -2589,11 +2886,16 @@ def collect(args: argparse.Namespace) -> int:
         conn.commit()
         fields = fill_job_fields(conn, args.llm_backend if args.llm_fields else None, args.llm_limit)
         duplicates = assign_duplicate_groups(conn)
+        naver_keys = (os.environ.get("NAVER_CLIENT_ID"), os.environ.get("NAVER_CLIENT_SECRET"))
+        links = resolve_apply_urls(conn, naver_keys if all(naver_keys) else None)
         conn.commit()
         print(
             f"fields: rules={fields['rules']} llm={fields['llm']} llm_failed={fields['llm_failed']} "
             f"duplicates={duplicates}"
         )
+        print("apply links: " + " ".join(f"{k}={v}" for k, v in links.items()))
+        mirrored = mirror_attachments(conn, Path(args.files_dir))
+        print(f"attachments: mirrored={mirrored['mirrored']} failed={mirrored['failed']}")
         if args.geocode:
             geo = geocode_jobs(conn)
             if geo["geocoded"] or geo["unresolved"]:
@@ -2621,6 +2923,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Collect Korean teaching job posts.")
     parser.add_argument("--db", default=str(DEFAULT_DB), help="SQLite database path")
     parser.add_argument("--sources", default=str(DEFAULT_SOURCES), help="Source config JSON path")
+    parser.add_argument("--files-dir", default=str(DEFAULT_FILES_DIR), help="Where notice attachments are mirrored")
     parser.add_argument("--url-file", default=str(DEFAULT_URL_FILE), help="CSV seed URL file")
     parser.add_argument(
         "--discovery-file",

@@ -173,6 +173,25 @@ def detect_benefits(text: str) -> str | None:
     return ", ".join(found) or None
 
 
+# Addresses that belong to the boards and sites we read, not the hiring body.
+SITE_EMAIL_DOMAINS = ("korean.go.kr", "iakle.com", "kleocean.com", "paranhanul.net", "hackers.com", "kgfamily.kr")
+EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+
+
+def detect_apply_email(text: str) -> str | None:
+    """The address applications go to: the first email in the post body.
+
+    Most notices on aggregator boards say "이메일 접수"; the address lets a
+    teacher apply without visiting the board at all.
+    """
+    for email in EMAIL.findall(text):
+        email = email.rstrip(".")
+        domain = email.split("@", 1)[1].lower()
+        if not any(domain.endswith(site) for site in SITE_EMAIL_DOMAINS):
+            return email
+    return None
+
+
 def build_summary(job: dict, fields: dict) -> str:
     """A factual one-liner in our own words, used until an LLM summary exists."""
     place = fields.get("country") if fields.get("is_overseas") else job.get("location_text")
@@ -188,6 +207,13 @@ def build_summary(job: dict, fields: dict) -> str:
     ]
     detail = ", ".join(f for f in facts if f)
     return f"{head} 한국어 강사 모집, {tail}." + (f" {detail}." if detail else "")
+
+
+def strip_chrome(text: str) -> str:
+    # Shared with the collector; imported here to keep this module importable alone.
+    from collect_jobs import strip_site_chrome
+
+    return strip_site_chrome(text)
 
 
 def extract_rules(job: dict) -> dict:
@@ -212,6 +238,7 @@ def extract_rules(job: dict) -> dict:
         "demo_lesson": detect_demo_lesson(body),
         "salary_text": detect_salary(body),
         "benefits": detect_benefits(body) if overseas else None,
+        "apply_email": detect_apply_email(strip_chrome(text)),
     }
     fields["summary"] = build_summary(job, fields)
     return fields
@@ -234,11 +261,21 @@ LLM_SCHEMA = {
         "demo_lesson": _nullable({"type": "boolean"}),
         "salary_text": _nullable({"type": "string"}),
         "benefits": _nullable({"type": "string"}),
+        "apply_email": _nullable({"type": "string"}),
+        "work_period": _nullable({"type": "string"}),
+        "work_hours": _nullable({"type": "string"}),
+        "documents": _nullable({"type": "string"}),
+        "how_to_apply": _nullable({"type": "string"}),
+        "schedule": _nullable({"type": "string"}),
+        "contact": _nullable({"type": "string"}),
+        "body_text": {"type": "string"},
         "summary": {"type": "string"},
     },
     "required": [
         "institution_type", "country", "qualification", "experience_required",
-        "newcomer_ok", "demo_lesson", "salary_text", "benefits", "summary",
+        "newcomer_ok", "demo_lesson", "salary_text", "benefits",
+        "apply_email", "work_period", "work_hours", "documents", "how_to_apply", "schedule", "contact",
+        "body_text", "summary",
     ],
     "additionalProperties": False,
 }
@@ -256,6 +293,15 @@ Write every string value in Korean.
 - demo_lesson: true if the selection includes a demo lesson (모의수업, 시강, teaching demonstration).
 - salary_text: pay as stated, e.g. "시간당 35,000원".
 - benefits: for overseas jobs, support such as airfare, housing, visa, insurance, as a short comma-separated list.
+- apply_email: the email address applications are sent to, exactly as written.
+- work_period: the contract or teaching period, e.g. "2026.12.07 ~ 2027.02.18 (겨울학기)".
+- work_hours: teaching days, times or weekly hours, e.g. "주 4일, 오전 9시~13시 (주 16시간)".
+- documents: the documents to submit, as a short comma-separated list, e.g. "지원서, 자기소개서, 자격증 사본, 졸업증명서".
+- how_to_apply: how to apply in one short phrase, e.g. "이메일 접수", "방문 또는 우편 접수", "진학프로 온라인 접수".
+- schedule: the selection timeline in one line, e.g. "서류 발표 11.12 → 면접·시강 11.15 → 최종 발표 11.20".
+- contact: the contact for questions (phone or office), as written.
+Keep every value except summary and body_text short (a phrase, at most about 40 characters for qualification and experience_required): the values appear in a table of facts, not as prose.
+- body_text: the complete notice, so a reader needs nothing else to apply. Keep every part of the posting itself: positions and numbers, qualifications, working conditions, pay, documents to submit, how and when to apply, the selection schedule, notes and cautions (유의사항, 참고사항), and contact details, in the posting's own wording and order. Leave out everything that is not the posting: website menus, navigation, login and search boxes, sidebars, lists of other postings, comments, footers, and any name or mention of the website or board that carries this copy (for example 국립국어원 한국어교원 구인정보, 국제한국어교육학회, 한국어교육바다, 진학프로, 하이브레인넷). Keep the hiring institution's own name. Format as plain text: a line starting with "## " for each section heading, "- " for list items, a blank line between paragraphs. If the page only says the details are in an attachment, write that one sentence.
 - summary: two or three sentences in your own words for a teacher deciding whether to apply: who is hiring, where, what the role is, key requirements, and the deadline. Do not copy sentences from the posting."""
 
 
