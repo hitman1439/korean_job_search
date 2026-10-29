@@ -280,9 +280,10 @@ def footer(root: str) -> str:
 
 
 def ad_slot(config: dict, kind: str, label: str) -> str:
-    # With AdSense on, Auto ads place units; the reserved boxes are for review
-    # only. The owner-only build carries no ads at all.
-    if config.get("adsense_client") or config.get("private"):
+    # No ads run yet, so nothing is drawn by default. Once AdSense is approved,
+    # ADSENSE_CLIENT turns on Auto ads, which place their own units. The dashed
+    # boxes only show with --ad-slots, to review where ads would sit.
+    if not config.get("ad_slots") or config.get("adsense_client") or config.get("private"):
         return ""
     tag = "li" if kind == "infeed" else "div"
     return f'<{tag} class="ad-slot {kind}" aria-label="광고">{label}</{tag}>'
@@ -722,6 +723,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Owner-only build with overseas jobs, marked noindex, written to site_private/ (never deploy it)",
     )
     parser.add_argument(
+        "--ad-slots",
+        action="store_true",
+        help="Draw dashed boxes where ads would go (layout review only; no ads run yet)",
+    )
+    parser.add_argument(
         "--with-services",
         action="store_true",
         help="Publish the not-yet-launched services (이력서·자소서 첨삭, 시강 교안 AI) on the public site",
@@ -744,6 +750,7 @@ def main() -> int:
         "adsense_client": None if args.private else os.environ.get("ADSENSE_CLIENT"),
         "private": args.private,
         "services": args.with_services,
+        "ad_slots": args.ad_slots,
     }
     out = Path(args.out) if args.out else (PRIVATE_OUT if args.private else DEFAULT_OUT)
     stats = build(Path(args.db), out, config, today, now, args.approved_only)

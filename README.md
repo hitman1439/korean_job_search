@@ -174,6 +174,8 @@ python -m http.server 8765 --bind 127.0.0.1 -d site   # 미리보기: http://127
 
 공개 기준: `is_canonical = 1`(중복 묶음의 대표), `status`가 `rejected`가 아니고, 마감 전인 **국내·온라인** 공고. 검토자가 승인한 것만 올리려면 `--approved-only`.
 
+**광고는 아직 없으므로 광고 자리를 그리지 않습니다.** 광고가 들어갈 위치를 미리 보려면 `--ad-slots`로 점선 상자를 표시합니다.
+
 **아직 공개하지 않은 서비스**(이력서·자소서 첨삭 `resume.html`, 시강 교안 AI `demo.html`)는 공개 빌드에서 메뉴·페이지·안내 배너가 모두 빠지고, 대신 무료 새 공고 알림을 권합니다. 서비스를 열 때 `python build_site.py --with-services`로 켜면 됩니다. 비공개 빌드에는 항상 나옵니다.
 
 **해외 공고는 공개 사이트에 싣지 않습니다.** 수집은 계속하고, 운영자만 보는 비공개 빌드에서 봅니다.
@@ -194,7 +196,7 @@ python -m http.server 8765 --bind 127.0.0.1 -d site_private   # http://127.0.0.1
 | `KAKAO_JS_KEY` | 지도. **카카오 앱의 플랫폼 > Web에 사이트 도메인을 등록**해야 지도가 떠요(미리보기는 `http://127.0.0.1:8765`) | 지도 자리에 안내 문구 |
 | `SITE_URL` | 예: `https://example.com`. canonical 링크, `sitemap.xml`, 구조화 데이터의 URL | 둘 다 생략 |
 | `ALERT_ENDPOINT` | 알림 신청 폼이 `{email, filters}`를 JSON으로 POST할 주소 | "곧 열려요" 안내 |
-| `ADSENSE_CLIENT` | 예: `ca-pub-…`. 넣으면 애드센스 자동 광고 스크립트를 넣고 광고 자리 표시는 지워요 | 점선 광고 자리만 표시 |
+| `ADSENSE_CLIENT` | 예: `ca-pub-…`. 넣으면 애드센스 자동 광고 스크립트를 넣어요(광고 위치는 구글이 정함) | 광고 없음 |
 
 멘토링·전자책 링크는 `build_site.py`의 `SERVICE_LINKS`에 넣으면 해당 블록이 나타납니다(비어 있으면 숨김).
 

@@ -135,6 +135,12 @@ class BuildTests(unittest.TestCase):
         self.assertIn('href="../index.html#alert"', job)
         self.assertIn("새 공고 알림을 켜 두세요", job)
 
+    def test_no_ad_boxes_until_asked(self):
+        self.assertNotIn("ad-slot", self.index)
+        out = Path(self.tmp.name) / "site_ads"
+        bs.build(self.db, out, {**self.config, "ad_slots": True}, TODAY, BUILT_AT)
+        self.assertIn('class="ad-slot display"', (out / "index.html").read_text(encoding="utf-8"))
+
     def test_services_appear_when_launched(self):
         out = Path(self.tmp.name) / "site_services"
         bs.build(self.db, out, {**self.config, "services": True}, TODAY, BUILT_AT)
