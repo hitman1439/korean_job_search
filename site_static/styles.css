@@ -102,8 +102,8 @@ button, input, select { font: inherit; }
 /* Home: map + list */
 /* The map is the page: it takes most of the width and the window's height. */
 .board { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 24px; align-items: stretch; }
-.map-panel { flex: 7 1 640px; min-width: 0; display: flex; flex-direction: column; }
-.map-box { position: relative; flex: 1; min-height: max(600px, calc(100vh - 220px)); border-radius: var(--radius); overflow: hidden; background: #eef1f4; }
+.map-panel { flex: 6 1 560px; min-width: 0; display: flex; flex-direction: column; }
+.map-box { position: relative; flex: 1; min-height: max(520px, calc(100vh - 320px)); border-radius: var(--radius); overflow: hidden; background: #eef1f4; }
 #map { position: absolute; inset: 0; }
 .map-note { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; color: var(--text-4); font-size: 15px; }
 .pin {
@@ -146,9 +146,9 @@ button, input, select { font: inherit; }
 .alt-view h2 { font-size: 22px; font-weight: 700; }
 .alt-view > p { margin-top: 6px; font-size: 15px; color: var(--text-4); }
 
-.list-panel { flex: 3 1 380px; min-width: 0; display: flex; flex-direction: column; }
-.jobs { list-style: none; margin: 0; padding: 0; max-height: max(560px, calc(100vh - 270px)); overflow-y: auto; }
-.alt-view { min-height: max(600px, calc(100vh - 220px)); }
+.list-panel { flex: 4 1 380px; min-width: 0; display: flex; flex-direction: column; }
+.jobs { list-style: none; margin: 0; padding: 0; max-height: max(480px, calc(100vh - 370px)); overflow-y: auto; }
+.alt-view { min-height: max(520px, calc(100vh - 320px)); }
 .job-row { display: flex; align-items: stretch; margin: 2px 4px; border-radius: 16px; }
 .job-row[aria-current="true"] { background: var(--blue-soft); }
 .job-row[hidden] { display: none; }
@@ -204,7 +204,7 @@ button, input, select { font: inherit; }
 /* Phones: the page scrolls, not a box inside it; a shorter map leaves room for the list. */
 @media (max-width: 900px) {
   .jobs { max-height: none; overflow-y: visible; }
-  .map-box { min-height: 420px; }
+  .map-box { min-height: 360px; }
 }
 
 /* Job detail */
