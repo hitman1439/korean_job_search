@@ -97,6 +97,7 @@
     var map = null;
     var clusterer = null;
     var overlays = {};
+    var popup = null;
     var card = board.querySelector(".map-card");
     var mapBox = board.querySelector(".map-box");
 
@@ -113,6 +114,7 @@
         title: row.getAttribute("data-title"),
         org: row.getAttribute("data-org"),
         url: row.querySelector(".go").getAttribute("href"),
+        chips: Array.prototype.map.call(row.querySelectorAll(".chip"), function (c) { return c.textContent; }),
         row: row
       };
     }
@@ -133,6 +135,7 @@
     }
 
     function apply() {
+      if (popup) closePopup();
       var visible = jobs.filter(matches);
       jobs.forEach(function (job) { job.row.hidden = visible.indexOf(job) === -1; });
       board.querySelector("[data-count]").textContent = visible.length + "개";
@@ -196,6 +199,91 @@
       if (pan && map && overlays[chosen.id]) map.panTo(overlays[chosen.id].getPosition());
     }
 
+    // Speech bubble over the map: one job for a pin, a list for a count bubble.
+    function el(tag, cls, text) {
+      var node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    }
+    function closePopup() {
+      if (popup) { popup.setMap(null); popup = null; }
+    }
+    // Any press outside the bubble closes it: the map, a pin, the list, the
+    // page. A pin or count bubble then opens its own bubble on the click.
+    document.addEventListener("pointerdown", function (ev) {
+      if (popup && !popup.getContent().contains(ev.target)) closePopup();
+    }, true);
+    function openPopup(position, content) {
+      closePopup();
+      var box = el("div", "map-pop");
+      box.setAttribute("role", "dialog");
+      var x = el("button", "x", "×");
+      x.type = "button";
+      x.setAttribute("aria-label", "닫기");
+      x.addEventListener("click", closePopup);
+      box.appendChild(x);
+      box.appendChild(content);
+      // Clicks and drags inside the bubble must not reach the map.
+      ["mousedown", "touchstart", "click", "dblclick", "wheel"].forEach(function (type) {
+        box.addEventListener(type, function (ev) { ev.stopPropagation(); });
+      });
+      popup = new kakao.maps.CustomOverlay({ position: position, content: box, yAnchor: 0, zIndex: 10, clickable: true });
+      popup.setMap(map);
+      // Move the map so the whole bubble is inside it, not cut at an edge.
+      requestAnimationFrame(function () {
+        var frame = mapBox.getBoundingClientRect();
+        var rect = box.getBoundingClientRect();
+        var pad = 16;
+        var dx = 0, dy = 0;
+        if (rect.top < frame.top + pad) dy = rect.top - frame.top - pad;
+        else if (rect.bottom > frame.bottom - pad) dy = rect.bottom - frame.bottom + pad;
+        if (rect.left < frame.left + pad) dx = rect.left - frame.left - pad;
+        else if (rect.right > frame.right - pad) dx = rect.right - frame.right + pad;
+        if (dx || dy) map.panBy(dx, dy);
+      });
+    }
+    function badgeEl(job) {
+      var b = badgeFor(job.deadline);
+      return el("span", "badge" + (b.cls ? " " + b.cls : ""), b.text);
+    }
+    function jobPopup(job) {
+      var frag = document.createDocumentFragment();
+      frag.appendChild(badgeEl(job));
+      frag.appendChild(el("p", "t", job.title));
+      frag.appendChild(el("p", "o", job.org));
+      if (job.chips.length) {
+        var chips = el("div", "chips");
+        job.chips.forEach(function (c) { chips.appendChild(el("span", "chip", c)); });
+        frag.appendChild(chips);
+      }
+      var go = el("a", "btn btn-primary", "자세히 보기");
+      go.href = job.url;
+      frag.appendChild(go);
+      openPopup(overlays[job.id].getPosition(), frag);
+    }
+    function clusterPopup(cluster) {
+      var markers = cluster.getMarkers();
+      var inside = jobs.filter(function (job) { return markers.indexOf(overlays[job.id]) !== -1; });
+      var frag = document.createDocumentFragment();
+      frag.appendChild(el("p", "head", "같은 곳의 공고 " + inside.length + "개"));
+      var list = el("ul");
+      inside.forEach(function (job) {
+        var li = el("li");
+        var grow = el("div", "grow");
+        grow.appendChild(badgeEl(job));
+        grow.appendChild(el("p", "t", job.title));
+        grow.appendChild(el("p", "o", job.org));
+        var go = el("a", "go", "자세히");
+        go.href = job.url;
+        li.appendChild(grow);
+        li.appendChild(go);
+        list.appendChild(li);
+      });
+      frag.appendChild(list);
+      openPopup(cluster.getCenter(), frag);
+    }
+
     board.querySelectorAll("[data-scope-btn]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         state.scope = btn.getAttribute("data-scope-btn");
@@ -240,7 +328,8 @@
         clusterer = new kakao.maps.MarkerClusterer({
           map: map,
           averageCenter: true,
-          minLevel: 6,
+          minLevel: 1,
+          disableClickZoom: true,
           gridSize: 56,
           styles: [{
             width: "48px", height: "48px", lineHeight: "48px", borderRadius: "24px",
@@ -255,7 +344,7 @@
           pin.textContent = pinText(job.deadline);
           pin.setAttribute("aria-label", job.org + ", " + badgeFor(job.deadline).text);
           pin.setAttribute("aria-pressed", "false");
-          pin.addEventListener("click", function () { select(job.id, false); });
+          pin.addEventListener("click", function () { select(job.id, false); jobPopup(job); });
           overlays[job.id] = new kakao.maps.CustomOverlay({
             position: new kakao.maps.LatLng(job.lat, job.lng),
             content: pin,
@@ -263,6 +352,22 @@
             clickable: true
           });
         });
+        // A count bubble zooms in until its jobs separate into single pins.
+        // Jobs at the very same spot never separate, so those get the list.
+        kakao.maps.event.addListener(clusterer, "clusterclick", function (cluster) {
+          closePopup();
+          var markers = cluster.getMarkers();
+          var first = markers[0].getPosition();
+          var samePlace = markers.every(function (m) {
+            var pos = m.getPosition();
+            return Math.abs(pos.getLat() - first.getLat()) < 1e-5 && Math.abs(pos.getLng() - first.getLng()) < 1e-5;
+          });
+          if (samePlace || map.getLevel() <= 1) { clusterPopup(cluster); return; }
+          var bounds = new kakao.maps.LatLngBounds();
+          markers.forEach(function (m) { bounds.extend(m.getPosition()); });
+          map.setBounds(bounds, 80, 80, 80, 80);
+        });
+        kakao.maps.event.addListener(map, "click", closePopup);
         mapBox.querySelector(".map-note").hidden = true;
         apply();
       }).catch(function () {
@@ -289,6 +394,34 @@
       new kakao.maps.CustomOverlay({ position: pos, content: tag, yAnchor: 1 }).setMap(m);
     }).catch(function () {
       showMapNote(mini, "지도를 불러오지 못했어요.");
+    });
+  }
+
+  var copyBtn = document.querySelector("[data-copy]");
+  if (copyBtn) {
+    var copyStatus = document.querySelector("[data-copy-status]");
+    var copyText = document.querySelector("[data-copy-text]").textContent.trim();
+    var done = function (ok) {
+      copyStatus.textContent = ok ? "복사했어요" : "주소를 길게 눌러 복사해 주세요";
+      setTimeout(function () { copyStatus.textContent = ""; }, 2500);
+    };
+    copyBtn.addEventListener("click", function () {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(copyText).then(function () { done(true); }, function () { done(false); });
+        return;
+      }
+      // http:// previews have no Clipboard API; fall back to a hidden textarea.
+      var area = document.createElement("textarea");
+      area.value = copyText;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+      document.body.removeChild(area);
+      done(ok);
     });
   }
 

@@ -464,6 +464,7 @@ class DatabaseTests(unittest.TestCase):
     def test_title_key_drops_board_markers(self):
         self.assertEqual(cj.title_key("남서울대학교 겨울학기 한국어 강사 채용 공고-2"), cj.title_key("남서울대학교 겨울학기 한국어 강사 채용 공고"))
         self.assertEqual(cj.title_key("N 미국 Emory University 한국어 교수"), cj.title_key("미국 Emory University 한국어 교수"))
+        self.assertEqual(cj.title_key("고려대학교 한국어 강사 채용 | [국제팀] 겨울학기 강사 모집공고"), cj.title_key("[국제팀] 겨울학기 강사 모집공고"))
 
     def test_old_rolling_posting_expires(self):
         self.assertFalse(cj.is_live_job("rolling", "2025-12-23", None, TODAY))

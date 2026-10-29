@@ -1191,6 +1191,8 @@ def title_key(title: str | None) -> str:
     text = re.sub(r"^\(?제?\s*[\d\-]+\s*호\)\s*", "", text)
     text = re.sub(r"\s*(?:접수중|접수\s*마감|마감|모집중)?\s*\d{4}\.\d{1,2}\.\d{1,2}\s*~\s*\d{4}\.\d{1,2}\.\d{1,2}\s*$", "", text)
     text = re.sub(r"\s*(?:-\s*\d|\(\d\))\s*$", "", text)
+    # KLEOcean prefixes a category: "고려대학교 한국어 강사 채용 | [국제팀] …".
+    text = re.sub(r"^[^|]{2,40}\s\|\s+(?=\S)", "", text)
     return normalize(text)
 
 

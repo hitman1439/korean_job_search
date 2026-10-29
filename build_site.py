@@ -11,6 +11,8 @@ HTML-escaped on the way out, and only http(s) links are ever linked.
 from __future__ import annotations
 
 import argparse
+import functools
+import hashlib
 import datetime as dt
 import html
 import json
@@ -174,8 +176,9 @@ def prepare(job: dict, today: dt.date) -> dict:
         files = []
     # Only the copies the collector mirrored (mirror_attachments): the page
     # never links to the board that carried the post.
+    job["summary"] = public_text(job.get("summary"))
     job["files"] = [
-        (f.get("name") or "첨부파일", f["file"]) for f in files
+        (public_file_name(f.get("name") or "첨부파일", f["file"]), f["file"]) for f in files
         if isinstance(f.get("file"), str) and re.fullmatch(r"\d+/\d+\.[a-z]{2,4}", f["file"])
     ]
     job["has_place"] = job["scope"] == "domestic" and job.get("latitude") is not None and job.get("longitude") is not None
@@ -200,6 +203,29 @@ BOARD_NAMES = re.compile(
 )
 URL_IN_TEXT = re.compile(r"https?://[^\s<>\"')\]]+")
 EMAIL_IN_TEXT = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+
+
+SOURCE_HINT = re.compile(r"원문|출처")
+# Lines a board adds to every copy, which give away that the page is a copy.
+BOARD_BOILERPLATE = re.compile(r"원문|출처|해당\s*기관의?\s*(?:채용\s*)?공고를?\s*(?:반드시\s*)?확인")
+
+
+def public_text(text: str | None) -> str | None:
+    """Drop the sentences of a summary that name a board or point to an original post."""
+    if not text:
+        return text
+    sentences = re.split(r"(?<=[.!?。])\s+|(?<=다\.)\s*", text)
+    kept = [s for s in sentences if s.strip() and not BOARD_NAMES.search(s) and not SOURCE_HINT.search(s)]
+    return " ".join(kept) or None
+
+
+def public_file_name(name: str, path: str) -> str:
+    """A file's download name without a board's name in it."""
+    cleaned = re.sub(r"^[\s_\-()\[\]·.,]+", "", BOARD_NAMES.sub("", name))
+    cleaned = re.sub(r"^구인정보[\s_\-()]*", "", cleaned)
+    if ")" in cleaned and cleaned.index(")") < (cleaned.index("(") if "(" in cleaned else len(cleaned)):
+        cleaned = cleaned.replace(")", " ", 1).replace("  ", " ")
+    return cleaned if Path(cleaned).stem.strip(" _-()") else "공고문" + Path(path).suffix
 
 
 def inline_html(line: str) -> str:
@@ -237,7 +263,7 @@ def notice_html(text: str | None) -> str:
 
     for raw in text.replace("\r\n", "\n").split("\n"):
         line = raw.strip()
-        if BOARD_NAMES.search(line):
+        if BOARD_NAMES.search(line) or BOARD_BOILERPLATE.search(line):
             continue
         if not line:
             flush()
@@ -254,6 +280,116 @@ def notice_html(text: str | None) -> str:
             para.append(inline_html(line))
     flush()
     return "\n".join(out)
+
+
+# --- how to apply -----------------------------------------------------------------
+
+APPLY_EMAIL_WORDS = re.compile(r"이메일|e-?mail|메일", re.I)
+APPLY_ONLINE_WORDS = re.compile(r"온라인|홈페이지|폼|form|사이트|시스템|회원\s*가입|웹", re.I)
+APPLY_POST_WORDS = re.compile(r"우편|등기|택배")
+APPLY_VISIT_WORDS = re.compile(r"방문")
+# Hosts that are application systems themselves: a university posts there to
+# receive applications, so the applicant has to go there.
+APPLY_SYSTEM_HOSTS = {"www.jinhakpro.com", "jinhakpro.com"}
+PHONE = re.compile(r"0\d{1,2}[-)\s.]?\d{3,4}[-\s.]?\d{4}")
+
+
+def apply_text(job: dict) -> str:
+    """What the posting says about applying: how_to_apply plus the body's 접수 lines."""
+    lines = [job.get("how_to_apply") or ""]
+    lines += [l for l in (job.get("body_text") or "").splitlines() if re.search(r"접수|지원\s*방법|제출\s*방법", l)]
+    return "\n".join(lines)
+
+
+def apply_links(job: dict) -> list[tuple[str, str]]:
+    """(label, url) for pages where one actually applies; never a board that only carries the notice."""
+    found: list[tuple[str, str]] = []
+    for url in URL_IN_TEXT.findall(job.get("body_text") or ""):
+        url = url.rstrip(".,;")
+        host = (urllib.parse.urlparse(url).hostname or "").lower()
+        if host in BOARD_HOSTS or not safe_url(url) or any(u == url for _, u in found):
+            continue
+        if host in {"forms.gle", "docs.google.com"}:
+            label = "구글 폼 지원서"
+        elif host in {"form.naver.com", "m.site.naver.com", "naver.me"}:
+            label = "네이버 폼 지원서"
+        else:
+            label = f"{host.removeprefix('www.')} 지원 페이지"
+        found.append((label, url))
+    original = safe_url(job.get("original_url"))
+    # The application system's page only when the notice gives no form of its own.
+    if not found and original and (urllib.parse.urlparse(original).hostname or "").lower() in APPLY_SYSTEM_HOSTS:
+        found.append(("온라인 접수 페이지", original))
+    return found
+
+
+def apply_guide(job: dict) -> str:
+    """The 지원하기 cards, one per way the posting accepts applications."""
+    text = apply_text(job)
+    email = job["apply_email"]
+    links = apply_links(job)
+    system_link = [l for l in links if (urllib.parse.urlparse(l[1]).hostname or "") in APPLY_SYSTEM_HOSTS]
+    online = bool(APPLY_ONLINE_WORDS.search(text)) or (bool(links) and not email)
+    # "이메일지원" on an application system means its own e-mail form, not an address.
+    if not email and APPLY_EMAIL_WORDS.search(text) and system_link:
+        online = True
+    # "방문 및 우편접수 불가" rules them out rather than in.
+    allowed = "\n".join(l for l in text.splitlines() if not re.search(r"불가|받지\s*않|안\s*됨|제외", l))
+    post = bool(APPLY_POST_WORDS.search(allowed))
+    visit = bool(APPLY_VISIT_WORDS.search(allowed))
+    how = job.get("how_to_apply")
+    cards: list[str] = []
+
+    if email:
+        cards.append(f"""<div class="apply-card apply-email">
+<p class="label">이메일로 지원해요</p>
+<div class="addr-row"><strong class="addr" data-copy-text>{e(email)}</strong>
+<button type="button" class="btn btn-primary" data-copy>이메일 주소 복사하기</button>
+<span data-copy-status role="status"></span></div>
+<p class="tip">메일 제목에 지원 분야와 이름을 적고, 제출 서류를 빠짐없이 첨부하세요.</p></div>""")
+    if online and links:
+        buttons = "".join(
+            f'<a class="btn btn-primary" href="{e(url)}" target="_blank" rel="noopener nofollow">{e(label)} 열기</a>'
+            for label, url in links
+        )
+        note = f'<p class="tip">{e(how)}</p>' if how and not email else ""
+        if system_link and not email and APPLY_EMAIL_WORDS.search(text):
+            note = '<p class="tip">접수 페이지에서 <strong>이메일 지원</strong>을 눌러 서류를 보내요.</p>'
+        cards.append(f"""<div class="apply-card"><p class="label">온라인으로 지원해요</p>
+<div class="btn-row">{buttons}</div>{note}</div>""")
+    elif online and not email:
+        cards.append(f"""<div class="apply-card"><p class="label">온라인으로 지원해요</p>
+<p class="tip">{e(how or "기관 홈페이지의 온라인 접수로 지원해요.")} 지원 주소는 아래 공고문에서 확인하세요.</p></div>""")
+    if post or visit:
+        ways = " 또는 ".join(w for w, on in (("우편", post), ("방문", visit)) if on)
+        where = job.get("address")
+        place = f"<p class=\"addr-line\">기관 주소 · {e(where)}</p>" if where else ""
+        also = "으로도 접수할 수 있어요" if cards else "으로 접수해요"
+        cards.append(f"""<div class="apply-card"><p class="label">{ways}{also}</p>{place}
+<p class="tip">받는 곳과 접수 시간은 공고 내용의 접수 방법을 확인하세요.</p></div>""")
+    if not cards:
+        if job["files"]:
+            msg = "접수 방법은 첨부된 공고문에 있어요. 아래 공고문을 내려받아 확인하세요."
+        elif job.get("contact"):
+            msg = "공고에 접수 방법이 나와 있지 않아요. 아래 연락처로 문의해 지원 방법을 확인하세요."
+        else:
+            msg = f"공고에 접수 방법이 나와 있지 않아요. {job['org']}에 직접 문의해 지원 방법을 확인하세요."
+        cards.append(f'<div class="apply-card"><p class="label">지원 방법을 확인해 주세요</p><p class="tip">{e(msg)}</p></div>')
+
+    extra = []
+    if job.get("documents"):
+        extra.append(f"<div><dt>제출 서류</dt><dd>{e(job['documents'])}</dd></div>")
+    contact = job.get("contact")
+    if contact:
+        phone = PHONE.search(contact)
+        value = e(contact)
+        if phone:
+            digits = re.sub(r"\D", "", phone.group(0))
+            value = value.replace(e(phone.group(0)), f'<a href="tel:{digits}">{e(phone.group(0))}</a>', 1)
+        extra.append(f"<div><dt>문의</dt><dd>{value}</dd></div>")
+    if extra:
+        cards.append(f'<dl class="facts apply-facts">{"".join(extra)}</dl>')
+    return "\n".join(cards)
 
 
 def short(text: str | None, limit: int) -> str | None:
@@ -281,6 +417,12 @@ def nearby_jobs(job: dict, jobs: list[dict], limit: int = 3, radius_km: float = 
 
 # --- page parts -----------------------------------------------------------------
 
+@functools.cache
+def asset_version(name: str) -> str:
+    """A short hash of a static file, so browsers fetch it again after it changes."""
+    return hashlib.sha256((STATIC_DIR / name).read_bytes()).hexdigest()[:10]
+
+
 def page(title: str, description: str, body: str, *, root: str, config: dict, canonical: str | None,
          active: str, extra_head: str = "", body_attrs: str = "") -> str:
     adsense = config.get("adsense_client")
@@ -307,7 +449,7 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
 <meta property="og:description" content="{e(description)}">
 <meta property="og:type" content="website">
 <link rel="stylesheet" href="{FONT_CSS}">
-<link rel="stylesheet" href="{root}assets/styles.css">
+<link rel="stylesheet" href="{root}assets/styles.css?v={asset_version('styles.css')}">
 {head_ads}
 {private_head}
 {extra_head}
@@ -318,7 +460,7 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
 {body}
 {footer(root)}
 <script>window.SITE = {json_for_script(site_config)};</script>
-<script src="{root}assets/app.js" defer></script>
+<script src="{root}assets/app.js?v={asset_version('app.js')}" defer></script>
 </body>
 </html>
 """
@@ -377,7 +519,7 @@ def job_row(job: dict, root: str) -> str:
 <span class="job-org">{e(job['org'])} · {e(job['place'])}</span>
 <span class="chips">{chips}</span>
 </button>
-<a class="go" href="{root}{job['path']}" aria-label="{e(job['org'])} 공고 자세히 보기">›</a>
+<a class="go" href="{root}{job['path']}" aria-label="{e(job['org'])} 공고 자세히 보기">자세히</a>
 </li>"""
 
 
@@ -512,7 +654,7 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
     if job["has_place"]:
         map_section = f"""<section class="sec" aria-labelledby="mapTitle">
 <h2 id="mapTitle">어디서 일하나요</h2>
-<p class="fine">{e(job.get('address') or job['place'])}</p>
+<p class="place-line">{e(job.get('address') or job['place'])}</p>
 <div class="mini-map" data-mini-map data-lat="{job['latitude']}" data-lng="{job['longitude']}" data-label="{e(job['org'])}"><p class="map-note" hidden></p></div>
 </section>"""
 
@@ -532,13 +674,7 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
 
     # Everything needed to apply is on this page: the email, our own copies of
     # the notice files, and the full notice. Nothing links to where it came from.
-    email = job["apply_email"]
-    email_block = ""
-    if email:
-        subject = urllib.parse.quote(f"[지원] {job.get('title')}")
-        email_block = f"""<div class="apply-email">
-<a class="btn btn-primary btn-lg" href="mailto:{e(email)}?subject={subject}">이메일로 지원하기</a>
-<p class="fine">접수 주소 <strong>{e(email)}</strong></p></div>"""
+    email_block = apply_guide(job)
     files_block = ""
     if job["files"]:
         items = "".join(

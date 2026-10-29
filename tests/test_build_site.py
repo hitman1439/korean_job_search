@@ -162,7 +162,9 @@ class BuildTests(unittest.TestCase):
         conn.close()
         bs.build(self.db, self.out, {**self.config, "files_dir": str(files)}, TODAY, BUILT_AT)
         page = self.job_page("아주대 강사 모집")
-        self.assertIn('href="mailto:ili3@sejong.ac.kr?subject=', page)
+        self.assertIn('<strong class="addr" data-copy-text>ili3@sejong.ac.kr</strong>', page)
+        self.assertIn("이메일 주소 복사하기", page)
+        self.assertNotIn("이메일로 지원하기", page)
         self.assertIn('href="../files/1/1.pdf" download="채용공고문.pdf"', page)
         self.assertTrue((self.out / "files" / "1" / "1.pdf").exists())
         self.assertNotIn("미러없음.hwp", page)
@@ -173,7 +175,7 @@ class BuildTests(unittest.TestCase):
         self.assertIn("<dt>근무 기간</dt><dd>2026.12.07 ~ 2027.02.18</dd>", page)
         for leak in ("korean.go.kr", "국립국어원", "원문", "출처"):
             self.assertNotIn(leak, page)
-        self.assertNotIn("mailto:x", self.job_page("&lt;script&gt;"))
+        self.assertNotIn("data-copy-text>x", self.job_page("&lt;script&gt;"))
 
     def test_no_ad_boxes_until_asked(self):
         self.assertNotIn("ad-slot", self.index)
@@ -203,6 +205,46 @@ class BuildTests(unittest.TestCase):
         stats = bs.build(self.db, self.out, self.config, TODAY, BUILT_AT)
         self.assertEqual(stats["jobs"], 1)
         self.assertNotIn("아주대 강사 모집", (self.out / "index.html").read_text(encoding="utf-8"))
+
+
+class ApplyGuideTests(unittest.TestCase):
+    def guide(self, **job):
+        base = {"apply_email": None, "files": [], "org": "가나대학교", "original_url": "https://www.gana.ac.kr/1"}
+        return bs.apply_guide({**base, **job})
+
+    def test_email(self):
+        html = self.guide(apply_email="hr@gana.ac.kr", how_to_apply="이메일 접수")
+        self.assertIn("이메일로 지원해요", html)
+        self.assertIn("data-copy", html)
+        self.assertNotIn("온라인으로", html)
+
+    def test_online_form_links_but_never_a_board(self):
+        html = self.guide(how_to_apply="구글폼 온라인 지원",
+                          body_text="지원: https://forms.gle/abc\n공고: https://klp.korean.go.kr/certif/jobsearch/1")
+        self.assertIn('href="https://forms.gle/abc"', html)
+        self.assertIn("구글 폼 지원서 열기", html)
+        self.assertNotIn("korean.go.kr", html)
+
+    def test_application_system_email_button(self):
+        html = self.guide(how_to_apply="이메일 접수", original_url="https://www.jinhakpro.com/recruit/1")
+        self.assertIn("온라인 접수 페이지 열기", html)
+        self.assertIn("이메일 지원</strong>을 눌러", html)
+
+    def test_negated_post_and_visit_are_not_offered(self):
+        html = self.guide(apply_email="hr@gana.ac.kr", body_text="- 접수 방법: 이메일\n* 방문 및 우편접수 불가")
+        self.assertNotIn("우편", html)
+
+    def test_post_and_visit(self):
+        html = self.guide(how_to_apply="우편 또는 방문 접수", address="서울 중구 1")
+        self.assertIn("우편 또는 방문으로 접수해요", html)
+        self.assertIn("서울 중구 1", html)
+
+    def test_unknown_points_to_files_then_contact(self):
+        self.assertIn("첨부된 공고문", self.guide(files=[("공고문.pdf", "1/1.pdf")]))
+        html = self.guide(contact="교학팀 02-123-4567")
+        self.assertIn("아래 연락처로 문의", html)
+        self.assertIn('href="tel:021234567"', html)
+        self.assertIn("가나대학교에 직접 문의", self.guide())
 
 
 class BadgeTests(unittest.TestCase):
