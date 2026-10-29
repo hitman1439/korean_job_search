@@ -133,7 +133,8 @@ API 키로 돌리려면 `--llm-backend api`를 씁니다(`pip install anthropic`
 - `extract_fields.py`: 구조화 필드 추출(규칙 + 선택적 Claude)
 - `review_ui.py`: 수집된 공고를 확인하는 로컬 UI 서버
 - `ui/`: 검토 UI 정적 파일
-- `tests/`: 파서·DB 규칙 회귀 테스트 (`python -m unittest discover -s tests`)
+- `build_site.py`, `site_static/`: 공개 정적 사이트 빌더와 그 CSS·JS (결과물 `site/`는 gitignore)
+- `tests/`: 파서·DB 규칙·사이트 빌더 회귀 테스트 (`python -m unittest discover -s tests`)
 - `sources.json`: 키워드, 포함/제외어 설정
 - `monitor_sources.json`: 자동 탐색 출처 목록과 중단한 출처(`retired_sources`)
 - `seed_urls.txt`: 사람이 직접 등록하는 상세 페이지 URL 목록(1줄 = 공고 1건)
@@ -147,6 +148,40 @@ API 키로 돌리려면 `--llm-backend api`를 씁니다(`pip install anthropic`
 $env:SARAMIN_ACCESS_KEY="발급받은_access_key"
 python collect_jobs.py --saramin-count 50
 ```
+
+## 공개 사이트 (`build_site.py`)
+
+수집한 DB로 공개용 정적 사이트를 만듭니다. 서버가 필요 없어서 Cloudflare Pages, GitHub Pages, Netlify 같은 정적 호스팅에 `site/` 폴더를 그대로 올리면 됩니다.
+
+```powershell
+python collect_jobs.py            # 수집
+python build_site.py              # site/ 생성 (매번 새로 만듦)
+python -m http.server 8765 --bind 127.0.0.1 -d site   # 미리보기: http://127.0.0.1:8765
+```
+
+만들어지는 것:
+
+- `index.html`: 카카오맵 + 마감 가까운 순 목록. 국내/해외/온라인, 신입 가능, 모의수업 있음 필터와 검색. 지도 핀과 목록이 연동되고, 가까운 핀은 묶음으로 표시돼요. 해외 탭은 나라별 카드.
+- `jobs/<job_id>.html`: 공고마다 한 페이지(검색 노출용). 핵심 정보, 위치 지도, 요약, 근처 공고, 원문 지원 링크, Google 채용 검색용 `JobPosting` 구조화 데이터.
+- `demo.html`: 시강 교안 AI 체험 화면. **지금은 예시 교안만 보여 줘요(생성 기능은 아직 없음).**
+- `sitemap.xml`, `robots.txt`
+
+공개 기준: `is_canonical = 1`(중복 묶음의 대표), `status`가 `rejected`가 아니고, 마감 전인 공고. 검토자가 승인한 것만 올리려면 `--approved-only`.
+
+안전장치: 공고의 모든 값은 다른 사이트에서 온 텍스트라서 HTML 이스케이프하고, 원문 링크는 `http(s)`만 연결합니다(`javascript:` 같은 링크는 버림). 본문 원문은 싣지 않고 요약(`summary`)만 씁니다.
+
+설정(`secrets.env` 또는 환경변수):
+
+| 키 | 용도 | 없으면 |
+| --- | --- | --- |
+| `KAKAO_JS_KEY` | 지도. **카카오 앱의 플랫폼 > Web에 사이트 도메인을 등록**해야 지도가 떠요(미리보기는 `http://127.0.0.1:8765`) | 지도 자리에 안내 문구 |
+| `SITE_URL` | 예: `https://example.com`. canonical 링크, `sitemap.xml`, 구조화 데이터의 URL | 둘 다 생략 |
+| `ALERT_ENDPOINT` | 알림 신청 폼이 `{email, filters}`를 JSON으로 POST할 주소 | "곧 열려요" 안내 |
+| `ADSENSE_CLIENT` | 예: `ca-pub-…`. 넣으면 애드센스 자동 광고 스크립트를 넣고 광고 자리 표시는 지워요 | 점선 광고 자리만 표시 |
+
+멘토링·전자책 링크는 `build_site.py`의 `SERVICE_LINKS`에 넣으면 해당 블록이 나타납니다(비어 있으면 숨김).
+
+'새로 모았어요' 시각은 마지막 수집 실행(`collection_runs.finished_at`) 기준이고, D-day는 방문자가 페이지를 연 날짜(한국 시간) 기준으로 브라우저에서 다시 계산합니다.
 
 ## 검토 UI
 
