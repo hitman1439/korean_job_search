@@ -54,6 +54,48 @@
       "pages": 5
     },
     {
+      "name": "명지대학교 공지(한국어 검색)",
+      "url": "https://www.mju.ac.kr/bbs/mjukr/141/artclList.do?srchColumn=sj&srchWrd=%ED%95%9C%EA%B5%AD%EC%96%B4",
+      "trust": 88,
+      "kind": "generic_links"
+    },
+    {
+      "name": "고려대학교 국제교류교육원 모집·채용(한국어 검색)",
+      "url": "https://ids.korea.ac.kr/bbs/siae/533/artclList.do?srchColumn=sj&srchWrd=%ED%95%9C%EA%B5%AD%EC%96%B4",
+      "trust": 90,
+      "kind": "generic_links"
+    },
+    {
+      "name": "가톨릭관동대학교 공지(한국어 검색)",
+      "url": "https://www.cku.ac.kr/bbs/cku_kr/1202/artclList.do?srchColumn=sj&srchWrd=%ED%95%9C%EA%B5%AD%EC%96%B4",
+      "trust": 88,
+      "kind": "generic_links"
+    },
+    {
+      "name": "전북대학교 언어교육부 한국어강사 공고",
+      "url": "https://top.jbnu.ac.kr/bbs/lec_korean/1603/artclList.do",
+      "trust": 90,
+      "kind": "generic_links"
+    },
+    {
+      "name": "부산외국어대학교 채용공고(한국어 검색)",
+      "url": "https://stat.bufs.ac.kr/bbs/board.php?bo_table=notice_rec&sfl=wr_subject&stx=%ED%95%9C%EA%B5%AD%EC%96%B4",
+      "trust": 88,
+      "kind": "generic_links"
+    },
+    {
+      "name": "영남대학교 소식(한국어 검색)",
+      "url": "https://www.yu.ac.kr/main/intro/yu-news.do?mode=list&srSearchKey=article_title&srSearchVal=%ED%95%9C%EA%B5%AD%EC%96%B4",
+      "trust": 88,
+      "kind": "generic_links"
+    },
+    {
+      "name": "서경대학교 언어문화교육원 공지",
+      "url": "https://lcec.skuniv.ac.kr/notice",
+      "trust": 88,
+      "kind": "generic_links"
+    },
+    {
       "name": "국제한국어교육학회 한국어교육소식",
       "url": "https://www.iakle.com/subList/32000004955",
       "trust": 92,

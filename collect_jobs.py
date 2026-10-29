@@ -215,6 +215,17 @@ def init_db(db_path: Path) -> sqlite3.Connection:
         )
         """
     )
+    # Posts already found closed. University boards keep years of old notices
+    # on the pages we scan; without this every run would re-open all of them.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS closed_urls (
+            url TEXT PRIMARY KEY,
+            deadline TEXT,
+            checked_at TEXT NOT NULL
+        )
+        """
+    )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS discovery_state (
@@ -732,12 +743,12 @@ def refresh_existing_jobs(
     stats = {"candidates": 0, "saved": 0, "updated": 0, "skipped": 0, "failed": 0}
     rows = conn.execute(
         """
-        SELECT job_id, title, institution_name, source_name, source_url, original_url
+        SELECT job_id, title, institution_name, source_name, source_url, original_url, posted_at
         FROM jobs
         WHERE status != 'rejected'
         """
     ).fetchall()
-    for job_id, title, institution_name, source_name, source_url, original_url in rows:
+    for job_id, title, institution_name, source_name, source_url, original_url, posted_at in rows:
         stats["candidates"] += 1
         source = Source(source_name, source_url, 0, "refresh")
         try:
@@ -747,8 +758,13 @@ def refresh_existing_jobs(
             log_error(conn, run_id, source, f"refresh {original_url}: {exc}")
             continue
 
-        deadline = extract_deadline(text)
+        deadline = extract_deadline(text, today)
         if deadline is None:
+            # Give the prune step the best evidence of the post's age: keep
+            # the earlier of the stored and the inferred posting date.
+            inferred = infer_posted_at(text, title, today)
+            if inferred and (posted_at is None or inferred < posted_at):
+                conn.execute("UPDATE jobs SET posted_at = ? WHERE job_id = ?", (inferred, job_id))
             stats["skipped"] += 1
             continue
 
@@ -775,6 +791,46 @@ def refresh_existing_jobs(
 def extract_posted_at(text: str) -> str | None:
     match = re.search(r"(?:등록일|작성일|게시일)\s*[:：]?\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})", text)
     return normalize_date(match.group(1)) if match else None
+
+
+ANY_DATE = re.compile(r"(20\d{2})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})")
+TITLE_YEAR = re.compile(r"(20\d{2})\s*(?:년|학년도|-|\s)")
+SEMESTER = re.compile(r"(봄|여름|가을|겨울)\s*(?:·\s*\S+\s*)?학기")
+SEMESTER_START = {"봄": 3, "여름": 6, "가을": 9, "겨울": 12}
+
+
+def infer_posted_at(text: str, title: str, today: dt.date) -> str | None:
+    """When a post went up, for boards that print no 작성일 label.
+
+    University boards keep years of notices, many without a deadline line we
+    can read; first-seen would make a 2017 notice look new. The latest full
+    date in the body bounds the post's age: if every date is past, the post
+    is at least that old. A future date means the notice still runs, so no
+    guess. A past year in the title ("2024학년도 겨울학기") counts too.
+    """
+    labeled = extract_posted_at(text)
+    if labeled:
+        return labeled
+    # "2026학년도 여름학기 강사 모집" seen in October: that term has started,
+    # so its hiring is over even though the year is this year.
+    title_year = TITLE_YEAR.search(title)
+    term = SEMESTER.search(title)
+    if term and title_year and int(title_year.group(1)) == today.year:
+        start = dt.date(today.year, SEMESTER_START[term.group(1)], 1)
+        if today >= start:
+            return (start - dt.timedelta(days=1)).isoformat()
+    dates = []
+    for year, month, day in ANY_DATE.findall(strip_site_chrome(text)):
+        try:
+            dates.append(dt.date(int(year), int(month), int(day)))
+        except ValueError:
+            continue
+    if dates and max(dates) > today:
+        return None
+    evidence = [max(dates)] if dates else []
+    if title_year and int(title_year.group(1)) < today.year:
+        evidence.append(dt.date(int(title_year.group(1)), 12, 31))
+    return min(evidence).isoformat() if evidence else None
 
 
 def normalize_date(value: str) -> str:
@@ -987,6 +1043,17 @@ def timestamp_to_date(value: str | None) -> str | None:
     if timestamp <= 0:
         return None
     return dt.datetime.fromtimestamp(timestamp, dt.UTC).date().isoformat()
+
+
+def is_closed_url(conn: sqlite3.Connection, url: str) -> bool:
+    return conn.execute("SELECT 1 FROM closed_urls WHERE url = ?", (url,)).fetchone() is not None
+
+
+def mark_closed_url(conn: sqlite3.Connection, url: str, deadline: str | None) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO closed_urls (url, deadline, checked_at) VALUES (?, ?, ?)",
+        (url, deadline, utc_now()),
+    )
 
 
 def job_exists_for_url(conn: sqlite3.Connection, url: str) -> bool:
@@ -1258,7 +1325,7 @@ def collect_seed_urls(
 ) -> dict[str, int]:
     stats = {"candidates": 0, "saved": 0, "updated": 0, "skipped": 0, "failed": 0}
     for source in seed_sources:
-        if job_exists_for_url(conn, source.url):
+        if job_exists_for_url(conn, source.url) or (active_only and is_closed_url(conn, source.url)):
             continue
         try:
             if source.body_hint is not None:
@@ -1278,8 +1345,9 @@ def collect_seed_urls(
                 continue
 
             deadline = source.deadline_hint or extract_deadline(text, today)
-            posted_at = source.posted_at_hint or extract_posted_at(text)
+            posted_at = source.posted_at_hint or infer_posted_at(text, title, today)
             if active_only and not is_live_job(deadline, posted_at, None, today):
+                mark_closed_url(conn, source.url, deadline)
                 stats["skipped"] += 1
                 continue
             # Never fall back to the source's own name: geocoding would then
@@ -1376,6 +1444,8 @@ def collect_discovery_sources(
     return stats
 
 
+TEACHING_ROLE = re.compile(r"강사|교원|교사|교수|튜터|선생님|lecturer|instructor|teacher|tutor|faculty|professor", re.I)
+ATTACHMENT_LINK = re.compile(r"fileDownload|download\.do|/download\b|\.(?:hwp|hwpx|pdf|docx?|xlsx?|zip)(?:$|[?#])", re.I)
 POST_ID_PARAM = re.compile(r"(?:^|&)(?:uid|idx|seq|nttId|nttSn|articleNo|wr_id|bbs_idx|boardNo|no|id)=\d+", re.I)
 
 
@@ -1412,7 +1482,14 @@ def discover_generic_links(
             parsed_link = urllib.parse.urlparse(absolute)
             if parsed_link.path == list_path and not POST_ID_PARAM.search(parsed_link.query):
                 continue
+            # Attachment links ("…공고.hwp") repeat the post title but are files.
+            if ATTACHMENT_LINK.search(absolute):
+                continue
             if not is_relevant(f"{link_text} {href}", include_terms, hiring_terms, []):
+                continue
+            # "모집" also matches student intakes and staff hiring; a posting
+            # for us names a teaching role.
+            if not TEACHING_ROLE.search(link_text):
                 continue
             items.append(
                 Source(

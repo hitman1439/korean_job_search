@@ -175,6 +175,59 @@ class SourceParserTests(unittest.TestCase):
             cj.fetch_url = original
         self.assertEqual([i.url for i in items], ["https://example.org/board/?mod=document&uid=623"])
 
+    def test_posted_at_inferred_from_dates_and_title_year(self):
+        old = "2024학년도 겨울학기 한국어 교사 모집 공고 접수 2024.10.01 ~ 2024.10.15 문의"
+        self.assertEqual(cj.infer_posted_at(old, "2024학년도 겨울학기 한국어 교사 모집 공고", TODAY), "2024-10-15")
+        self.assertEqual(cj.infer_posted_at("내용은 첨부 참조", "2017년 가을학기 한국어 강사 모집", TODAY), "2017-12-31")
+        # A date still ahead means the notice is running: no guess.
+        self.assertIsNone(cj.infer_posted_at("근무 2026.12.01 ~ 2027.02.28", "겨울학기 강사 모집", TODAY))
+        self.assertEqual(cj.infer_posted_at("작성일 2026-10-20 본문", "강사 모집", TODAY), "2026-10-20")
+
+    def test_started_term_means_closed(self):
+        self.assertEqual(cj.infer_posted_at("본문", "2026학년도 여름학기 한국어 강사 초빙 공고", TODAY), "2026-05-31")
+        self.assertEqual(cj.infer_posted_at("본문", "2026년도 가을학기 한국어 강사 모집", TODAY), "2026-08-31")
+        # Winter term starts in December: an October call is still open.
+        self.assertIsNone(cj.infer_posted_at("본문", "2026년 겨울학기 한국어 강사 모집공고", TODAY))
+
+    def test_generic_links_need_a_teaching_role(self):
+        board = (
+            '<a href="/b/?uid=1">2025년도 한국어 정규과정 모집요강</a>'
+            '<a href="/b/?uid=2">「계약직 직원」채용 공고 (한국어 문화교육원)</a>'
+            '<a href="/b/?uid=3">한국어 문화교육원 한국어 교사 모집 공고</a>'
+        )
+        source = cj.DiscoverySource("test", "https://example.org/b/", 70, "generic_links")
+        original = cj.fetch_url
+        cj.fetch_url = lambda url, timeout=20: board
+        try:
+            items = cj.discover_generic_links(source, ["한국어"], ["모집", "채용"])
+        finally:
+            cj.fetch_url = original
+        self.assertEqual([i.url for i in items], ["https://example.org/b/?uid=3"])
+
+    def test_attachment_links_are_not_postings(self):
+        self.assertTrue(cj.ATTACHMENT_LINK.search("https://www.yu.ac.kr/main/intro/yu-news.do?mode=fileDownload&articleNo=1"))
+        self.assertTrue(cj.ATTACHMENT_LINK.search("https://x.ac.kr/files/한국어강사 모집 공고.hwp"))
+        self.assertFalse(cj.ATTACHMENT_LINK.search("https://x.ac.kr/bbs/kr/1/2/artclView.do"))
+
+    def test_closed_posts_are_not_reopened(self):
+        conn = cj.init_db(Path(":memory:"))
+        fetched = []
+        original = cj.fetch_url
+
+        def fake_fetch(url, timeout=20):
+            fetched.append(url)
+            return "<h1>한국어 강사 모집</h1> 접수기간: 2026.09.01 ~ 2026.09.10"
+
+        cj.fetch_url = fake_fetch
+        try:
+            source = cj.Source("board", "https://x.ac.kr/post/1", 80, "discovered_url")
+            for _ in range(2):
+                cj.collect_seed_urls(conn, 1, [source], ["한국어"], ["모집"], [], TODAY, True)
+        finally:
+            cj.fetch_url = original
+        self.assertEqual(fetched, ["https://x.ac.kr/post/1"])
+        conn.close()
+
 
 class DatabaseTests(unittest.TestCase):
     def setUp(self):

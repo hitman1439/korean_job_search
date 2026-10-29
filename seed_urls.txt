@@ -1,5 +1,5 @@
 # url,source_name,confidence_score,kind,title_hint,institution_hint,location_hint,deadline_hint
-https://www.ksif.or.kr/cop/bbs/selectBoardList.do?bbsId=BBSMSTR_000000000001&ctgryCode=A00005&menuNo=30101100&nttId=92600529&pageIndex=1&useAt=Y,세종학당재단 채용정보,90,official,2026년 세종학당재단 하반기 무기계약직 일반계약직 채용 공고,세종학당재단,서울,
+# retired (직원 채용, 강사 공고 아님): https://www.ksif.or.kr/cop/bbs/selectBoardList.do?bbsId=BBSMSTR_000000000001&ctgryCode=A00005&menuNo=30101100&nttId=92600529&pageIndex=1&useAt=Y,세종학당재단 채용정보,90,official,2026년 세종학당재단 하반기 무기계약직 일반계약직 채용 공고,세종학당재단,서울,
 https://www.hansung.edu/hansung/6172/subview.do?enc=Zm5jdDF8QEB8JTJGYmJzJTJGaGFuc3VuZyUyRjIxMjclMkYyMjE5NDUlMkZhcnRjbFZpZXcuZG8lM0Y%3D,한성대학교 언어교육센터,90,university,한성대학교 언어교육센터 한국어과정 강사 모집,한성대학교 언어교육센터,서울,
 https://interlang.dongguk.edu/bbs/board.php?bo_table=interlang5_1&wr_id=696,동국대학교 한국어교육원,90,university,2026학년도 봄 학기 한국어교육원 한국어 강사 채용 공고,동국대학교 한국어교육원,서울,2026-02-01
 # retired (진학프로 재게시): https://www.jinhakpro.com/recruit/43398,진학프로,75,job_board,2026년 하반기 2차 세종학당 국외 파견 한국어 교원 선발,세종학당재단,서울,2026-06-19
