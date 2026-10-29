@@ -130,9 +130,20 @@ class BuildTests(unittest.TestCase):
             self.assertNotIn("resume.html", page)
             self.assertNotIn("demo.html", page)
         self.assertNotIn("모의수업이 있는 공고예요", job)
-        # The free alert is offered on every job page instead.
-        self.assertIn('href="../index.html#alert"', job)
-        self.assertIn("새 공고 알림을 켜 두세요", job)
+        self.assertIn("이 브라우저에만", job)
+        self.assertIn('data-toggle="saved"', self.index)
+
+    def test_alert_hidden_until_it_can_store_sign_ups(self):
+        job = self.job_page("아주대 강사 모집")
+        for page in (self.index, job):
+            self.assertNotIn("#alert", page)
+            self.assertNotIn("알림 받기", page)
+            self.assertNotIn("data-alert-form", page)
+        out = Path(self.tmp.name) / "site_alerts"
+        bs.build(self.db, out, {**self.config, "alert_endpoint": "https://alerts.example/new"}, TODAY, BUILT_AT)
+        index = (out / "index.html").read_text(encoding="utf-8")
+        self.assertIn("data-alert-form", index)
+        self.assertIn('href="index.html#alert">알림 받기', index)
 
     def test_job_page_holds_everything_and_never_names_the_board(self):
         files = Path(self.tmp.name) / "files"

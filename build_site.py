@@ -456,7 +456,7 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
 </head>
 <body{body_attrs}>
 {private_bar}
-{header(root, active, services_on(config))}
+{header(root, active, services_on(config), alerts_on(config))}
 {body}
 {footer(root)}
 <script>window.SITE = {json_for_script(site_config)};</script>
@@ -473,7 +473,13 @@ def services_on(config: dict) -> bool:
     return bool(config.get("services") or config.get("private"))
 
 
-def header(root: str, active: str, with_services: bool = False) -> str:
+def alerts_on(config: dict) -> bool:
+    """The job alert stays hidden until ALERT_ENDPOINT stores sign-ups: a form
+    that keeps nothing would promise mail that never comes."""
+    return bool(config.get("alert_endpoint"))
+
+
+def header(root: str, active: str, with_services: bool = False, with_alerts: bool = False) -> str:
     links = [("jobs", f"{root}index.html", "채용공고")]
     if with_services:
         links += [
@@ -486,7 +492,7 @@ def header(root: str, active: str, with_services: bool = False) -> str:
     return f"""<header class="top"><div class="wrap">
 <a class="logo" href="{root}index.html">{SITE_NAME}</a>
 <nav class="nav" aria-label="주요 메뉴">{nav}</nav>
-<a class="btn btn-soft" href="{root}index.html#alert">알림 받기</a>
+{f'<a class="btn btn-soft" href="{root}index.html#alert">알림 받기</a>' if with_alerts else ""}
 </div></header>"""
 
 
@@ -553,6 +559,15 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 <div class="countries">{country_cards or '<p class="fine">지금 열린 해외 공고가 없어요.</p>'}</div>
 </div>""" if show_overseas else ""
     services = service_blocks(config, "")
+    alert_section = """<section id="alert" class="callout alert-box" aria-labelledby="alertTitle">
+<h2 id="alertTitle">지금 고른 조건 그대로<br>새 공고를 알려 드릴게요</h2>
+<p class="desc"><span data-filter-summary>전체</span> · 새 공고와 마감 3일 전에만, 일주일에 두 번 이하로 보내요.</p>
+<form class="alert-form" data-alert-form>
+<label><span class="sr-only">이메일</span><input type="email" name="email" required placeholder="이메일 주소" autocomplete="email"></label>
+<button type="submit" class="btn btn-primary">알림 받기</button>
+</form>
+<p class="alert-done" data-alert-done role="status" hidden></p>
+</section>""" if alerts_on(config) else ""
     body = f"""<main class="wrap" data-board>
 <section class="hero" aria-labelledby="headline">
 <div>
@@ -563,6 +578,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 <div class="seg" role="group" aria-label="근무 형태">{scope_buttons}</div>
 <button type="button" class="toggle" data-toggle="newcomer" aria-pressed="false">신입 가능</button>
 <button type="button" class="toggle" data-toggle="demo" aria-pressed="false">모의수업 있음</button>
+<button type="button" class="toggle" data-toggle="saved" aria-pressed="false">저장한 공고 <span data-saved-count></span></button>
 <label class="search"><span class="sr-only">기관명이나 지역 검색</span><input type="search" data-search-input placeholder="기관명, 지역으로 찾기"></label>
 </div>
 </section>
@@ -572,10 +588,6 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 <div class="map-box" data-view="map">
 <div id="map"></div>
 <p class="map-note">지도를 불러오는 중이에요</p>
-<div class="map-card" hidden>
-<div class="grow"><span class="badge"></span><p class="t"></p><p class="o"></p></div>
-<a class="btn btn-primary" href="#">자세히 보기</a>
-</div>
 </div>
 {countries_view}
 <div class="alt-view" data-view="online" hidden>
@@ -586,21 +598,14 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 
 <section class="list-panel" aria-labelledby="listTitle">
 <div class="panel-head"><h2 id="listTitle">마감 가까운 순</h2><span data-count>{len(jobs)}개</span></div>
-<div class="empty" data-empty hidden><p>조건에 맞는 공고가 아직 없어요</p><p>알림을 켜 두면 올라오는 대로 알려 드려요.</p></div>
+<p class="local-note" data-saved-note hidden>저장한 공고와 지원 표시는 <strong>이 브라우저에만</strong> 남아요. 다른 기기나 다른 브라우저에서는 보이지 않고, 방문 기록·쿠키를 지우면 사라져요.</p>
+<div class="empty" data-empty hidden><p data-empty-title>조건에 맞는 공고가 아직 없어요</p><p data-empty-desc>{"알림을 켜 두면 올라오는 대로 알려 드려요." if alerts_on(config) else "다른 조건으로 찾아보세요."}</p></div>
 <ul class="jobs">{"".join(rows)}</ul>
 </section>
 </div>
 
 <div class="row">
-<section id="alert" class="callout alert-box" aria-labelledby="alertTitle">
-<h2 id="alertTitle">지금 고른 조건 그대로<br>새 공고를 알려 드릴게요</h2>
-<p class="desc"><span data-filter-summary>전체</span> · 새 공고와 마감 3일 전에만, 일주일에 두 번 이하로 보내요.</p>
-<form class="alert-form" data-alert-form>
-<label><span class="sr-only">이메일</span><input type="email" name="email" required placeholder="이메일 주소" autocomplete="email"></label>
-<button type="submit" class="btn btn-primary">알림 받기</button>
-</form>
-<p class="alert-done" data-alert-done role="status" hidden></p>
-</section>
+{alert_section}
 {services}
 {ad_slot(config, "display", "광고")}
 </div>
@@ -689,16 +694,19 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
 <p class="prose">{e(job.get('summary') or '자세한 내용은 첨부된 공고문을 확인해 주세요.')}</p></section>"""
     mentoring = SERVICE_LINKS["mentoring"]
     # After "지원했어요": with services, prepare for the demo lesson; without,
-    # keep the person coming back with the free job alert.
+    # point to the alert once it runs, else to the other jobs.
     if services_on(config):
         applied_text = "모의수업 연락이 오기 전에 교안을 미리 준비해 두세요."
         applied_link = (
             f'<a class="btn btn-dark" href="{e(mentoring)}">리허설 일정 보기</a>' if mentoring
             else f'<a class="btn btn-dark" href="{root}demo.html">교안 준비하기</a>'
         )
-    else:
+    elif alerts_on(config):
         applied_text = "다른 공고도 놓치지 않게 새 공고 알림을 켜 두세요."
         applied_link = f'<a class="btn btn-dark" href="{root}index.html#alert">알림 받기</a>'
+    else:
+        applied_text = "근처의 다른 공고도 함께 살펴보세요."
+        applied_link = f'<a class="btn btn-dark" href="{root}index.html">다른 공고 보기</a>'
 
     near = nearby_jobs(job, jobs)
     near_items = "".join(
@@ -715,7 +723,7 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
 <h2 id="sideAlertTitle">이런 공고가 올라오면<br>바로 알려 드릴게요</h2>
 <p class="desc">원하는 지역과 조건으로 새 공고와 마감 3일 전 소식을 받아 보세요.</p>
 <a class="btn btn-primary" href="{root}index.html#alert">알림 받기</a></section>"""
-    side = [alert_block, near_block]
+    side = [alert_block if alerts_on(config) else "", near_block]
     if mentoring and services_on(config):
         side.insert(0, f"""<section class="callout" aria-labelledby="mentorTitle"><p class="kicker">1:1 커리어 멘토링</p>
 <h2 id="mentorTitle">면접 날짜가 잡혔다면<br>시강 리허설부터</h2>
@@ -744,6 +752,7 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
 <div class="apply-row">
 <button type="button" class="btn btn-gray btn-lg" data-applied>지원했어요</button>
 <button type="button" class="btn btn-gray btn-lg" data-save aria-pressed="false">저장</button></div>
+<p class="local-note">저장과 지원 표시는 로그인 없이 <strong>이 브라우저에만</strong> 남아요. 다른 기기에서는 보이지 않고, 방문 기록·쿠키를 지우면 사라져요. 저장한 공고는 첫 화면의 <strong>저장한 공고</strong>에서 모아 볼 수 있어요.</p>
 <div class="applied-note" data-applied-note role="status" hidden><p><strong>지원 완료, 수고했어요.</strong> {applied_text}</p>
 {applied_link}</div></section>
 </div>

@@ -93,12 +93,11 @@
 
   function initBoard(board) {
     var rows = Array.prototype.slice.call(board.querySelectorAll(".job-row"));
-    var state = { scope: "all", newcomer: false, demo: false, q: "", selected: null };
+    var state = { scope: "all", newcomer: false, demo: false, saved: false, q: "", selected: null };
     var map = null;
     var clusterer = null;
     var overlays = {};
     var popup = null;
-    var card = board.querySelector(".map-card");
     var mapBox = board.querySelector(".map-box");
 
     function rowJob(row) {
@@ -124,6 +123,7 @@
       return (state.scope === "all" || job.scope === state.scope) &&
         (!state.newcomer || job.newcomer) &&
         (!state.demo || job.demo) &&
+        (!state.saved || readStore("savedJobs").indexOf(job.id) !== -1) &&
         (!state.q || job.search.indexOf(state.q) !== -1);
     }
 
@@ -134,12 +134,46 @@
       if (el) el.hidden = hidden;
     }
 
+    // Saved and applied marks live in this browser only (localStorage).
+    function markRows() {
+      var saved = readStore("savedJobs");
+      var applied = readStore("appliedJobs");
+      jobs.forEach(function (job) {
+        var title = job.row.querySelector(".job-title");
+        var marks = job.row.querySelector(".marks");
+        if (!marks) {
+          marks = document.createElement("span");
+          marks.className = "marks";
+          title.parentNode.insertBefore(marks, title);
+        }
+        marks.textContent = "";
+        if (applied.indexOf(job.id) !== -1) marks.appendChild(el("span", "mark applied", "지원함"));
+        if (saved.indexOf(job.id) !== -1) marks.appendChild(el("span", "mark", "저장됨"));
+      });
+      var count = board.querySelector("[data-saved-count]");
+      if (count) count.textContent = saved.length ? String(saved.length) : "";
+    }
+
     function apply() {
       if (popup) closePopup();
       var visible = jobs.filter(matches);
       jobs.forEach(function (job) { job.row.hidden = visible.indexOf(job) === -1; });
       board.querySelector("[data-count]").textContent = visible.length + "개";
       board.querySelector("[data-empty]").hidden = visible.length !== 0;
+      markRows();
+      setHidden("[data-saved-note]", !state.saved);
+      var emptyTitle = board.querySelector("[data-empty-title]");
+      var emptyDesc = board.querySelector("[data-empty-desc]");
+      if (emptyTitle && emptyDesc) {
+        if (!emptyDesc.hasAttribute("data-default")) {
+          emptyDesc.setAttribute("data-default", emptyDesc.textContent);
+          emptyTitle.setAttribute("data-default", emptyTitle.textContent);
+        }
+        emptyTitle.textContent = state.saved ? "저장한 공고가 아직 없어요" : emptyTitle.getAttribute("data-default");
+        emptyDesc.textContent = state.saved
+          ? "공고 상세에서 '저장'을 누르면 여기 모여요. 이 브라우저에만 남아요."
+          : emptyDesc.getAttribute("data-default");
+      }
 
       var showMap = state.scope === "all" || state.scope === "domestic";
       // The countries view exists only in the private build.
@@ -171,6 +205,7 @@
         var parts = [{ all: "전체", domestic: "국내", overseas: "해외", online: "온라인" }[state.scope]];
         if (state.newcomer) parts.push("신입 가능");
         if (state.demo) parts.push("모의수업 있음");
+        if (state.saved) parts.push("저장한 공고");
         summary.textContent = parts.join(" · ");
       }
     }
@@ -186,17 +221,13 @@
         if (pin) pin.setAttribute("aria-pressed", on ? "true" : "false");
         if (overlays[job.id]) overlays[job.id].setZIndex(on ? 3 : 1);
       });
-      if (!card) return;
-      if (!chosen || !hasPlace(chosen)) { card.hidden = true; return; }
-      var b = badgeFor(chosen.deadline);
-      var badge = card.querySelector(".badge");
-      badge.textContent = b.text;
-      badge.className = "badge" + (b.cls ? " " + b.cls : "");
-      card.querySelector(".t").textContent = chosen.title;
-      card.querySelector(".o").textContent = chosen.org;
-      card.querySelector("a").setAttribute("href", chosen.url);
-      card.hidden = false;
-      if (pan && map && overlays[chosen.id]) map.panTo(overlays[chosen.id].getPosition());
+      if (!pan || !chosen || !map || !overlays[chosen.id]) return;
+      // Picked from the list: show its bubble, zooming in first if the pin
+      // is folded into a count bubble.
+      var pos = overlays[chosen.id].getPosition();
+      if (!overlays[chosen.id].getMap()) map.setLevel(Math.min(map.getLevel(), 4), { anchor: pos });
+      map.panTo(pos);
+      jobPopup(chosen);
     }
 
     // Speech bubble over the map: one job for a pin, a list for a count bubble.
@@ -211,9 +242,16 @@
     }
     // Any press outside the bubble closes it: the map, a pin, the list, the
     // page. A pin or count bubble then opens its own bubble on the click.
+    var downAt = null;
     document.addEventListener("pointerdown", function (ev) {
+      downAt = { x: ev.clientX, y: ev.clientY };
       if (popup && !popup.getContent().contains(ev.target)) closePopup();
     }, true);
+    // Pins and count bubbles let drags through to the map, so a click that
+    // ends a drag must not open anything.
+    function isTap(ev) {
+      return !downAt || Math.abs(ev.clientX - downAt.x) + Math.abs(ev.clientY - downAt.y) < 8;
+    }
     function openPopup(position, content) {
       closePopup();
       var box = el("div", "map-pop");
@@ -330,6 +368,9 @@
           averageCenter: true,
           minLevel: 1,
           disableClickZoom: true,
+          // Not clickable, so a drag that starts on a count bubble still pans
+          // the map; taps are handled on the bubble's element below.
+          clickable: false,
           gridSize: 56,
           styles: [{
             width: "48px", height: "48px", lineHeight: "48px", borderRadius: "24px",
@@ -344,17 +385,21 @@
           pin.textContent = pinText(job.deadline);
           pin.setAttribute("aria-label", job.org + ", " + badgeFor(job.deadline).text);
           pin.setAttribute("aria-pressed", "false");
-          pin.addEventListener("click", function () { select(job.id, false); jobPopup(job); });
+          pin.addEventListener("click", function (ev) {
+            if (!isTap(ev)) return;
+            select(job.id, false);
+            jobPopup(job);
+          });
           overlays[job.id] = new kakao.maps.CustomOverlay({
             position: new kakao.maps.LatLng(job.lat, job.lng),
             content: pin,
             yAnchor: 1,
-            clickable: true
+            clickable: false
           });
         });
         // A count bubble zooms in until its jobs separate into single pins.
         // Jobs at the very same spot never separate, so those get the list.
-        kakao.maps.event.addListener(clusterer, "clusterclick", function (cluster) {
+        function onCluster(cluster) {
           closePopup();
           var markers = cluster.getMarkers();
           var first = markers[0].getPosition();
@@ -366,8 +411,20 @@
           var bounds = new kakao.maps.LatLngBounds();
           markers.forEach(function (m) { bounds.extend(m.getPosition()); });
           map.setBounds(bounds, 80, 80, 80, 80);
+        }
+        kakao.maps.event.addListener(clusterer, "clustered", function (clusters) {
+          clusters.forEach(function (cluster) {
+            var node = cluster.getClusterMarker().getContent();
+            if (!node || !node.addEventListener) return;
+            node.kjCluster = cluster;
+            if (node.kjWired) return;
+            node.kjWired = true;
+            node.style.cursor = "pointer";
+            node.addEventListener("click", function (ev) {
+              if (isTap(ev)) onCluster(node.kjCluster);
+            });
+          });
         });
-        kakao.maps.event.addListener(map, "click", closePopup);
         mapBox.querySelector(".map-note").hidden = true;
         apply();
       }).catch(function () {
@@ -377,6 +434,8 @@
       showMapNote(mapBox, "지도에 표시할 국내 공고가 아직 없어요.");
     }
     apply();
+    // Coming back from a job page (back button) must show what was saved there.
+    window.addEventListener("pageshow", function (ev) { if (ev.persisted) apply(); });
   }
 
   // --- job page ----------------------------------------------------------
@@ -430,7 +489,7 @@
   if (jobId && saveBtn) {
     var paint = function (on) {
       saveBtn.setAttribute("aria-pressed", on ? "true" : "false");
-      saveBtn.textContent = on ? "저장했어요" : "저장";
+      saveBtn.textContent = on ? "저장했어요 (이 브라우저)" : "저장";
     };
     paint(readStore("savedJobs").indexOf(jobId) !== -1);
     saveBtn.addEventListener("click", function () {

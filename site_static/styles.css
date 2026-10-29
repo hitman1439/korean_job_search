@@ -106,15 +106,6 @@ button, input, select { font: inherit; }
 .map-box { position: relative; flex: 1; min-height: max(600px, calc(100vh - 220px)); border-radius: var(--radius); overflow: hidden; background: #eef1f4; }
 #map { position: absolute; inset: 0; }
 .map-note { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; color: var(--text-4); font-size: 15px; }
-.map-card {
-  position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 5;
-  display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center;
-  padding: 18px 20px; background: #fff; border-radius: 18px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
-}
-.map-card[hidden] { display: none; }
-.map-card .grow { flex: 1 1 240px; min-width: 0; }
-.map-card .t { margin-top: 8px; font-size: 17px; font-weight: 600; line-height: 1.4; }
-.map-card .o { font-size: 14px; color: var(--text-4); }
 .pin {
   min-width: 44px; min-height: 36px; padding: 0 12px; border-radius: 999px; cursor: pointer;
   background: #fff; color: var(--blue); border: 2px solid var(--blue);
@@ -172,6 +163,12 @@ button, input, select { font: inherit; }
 }
 .job-row .go:hover { background: var(--blue-soft); color: var(--blue); }
 .job-title { display: block; margin-top: 8px; font-size: 16px; font-weight: 600; line-height: 1.45; }
+.marks { display: flex; gap: 6px; }
+.marks:not(:empty) { margin-top: 6px; }
+.mark { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: var(--blue-soft); color: var(--blue); }
+.mark.applied { background: #e8f7ee; color: #0a7a3d; }
+.local-note { margin: 12px 0 0; font-size: 14px; line-height: 1.6; color: var(--text-4); }
+.list-panel .local-note { margin: 8px 12px 4px; padding: 10px 12px; border-radius: 12px; background: var(--fill); }
 .job-org { display: block; margin-top: 2px; font-size: 14px; color: var(--text-4); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip { font-size: 13px; padding: 4px 10px; border-radius: 8px; background: var(--fill); color: var(--text-3); }
