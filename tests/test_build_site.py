@@ -92,6 +92,7 @@ class BuildTests(unittest.TestCase):
         self.assertIn('data-scope-btn="overseas"', index)
         self.assertIn('<meta name="robots" content="noindex, nofollow">', index)
         self.assertIn("비공개 미리보기", index)
+        self.assertTrue((private_out / "resume.html").exists())
         self.assertFalse((private_out / "sitemap.xml").exists())
         self.assertEqual((private_out / "robots.txt").read_text(encoding="utf-8"), "User-agent: *\nDisallow: /\n")
 
@@ -112,7 +113,6 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(data["validThrough"], "2026-11-06T23:59:59+09:00")
         self.assertEqual(data["jobLocation"]["address"]["addressCountry"], "KR")
         self.assertIn("data-mini-map", page)
-        self.assertIn("모의수업이 있는 공고예요", page)
 
     def test_map_rows(self):
         self.assertEqual(self.stats["on_map"], 1)
@@ -120,16 +120,31 @@ class BuildTests(unittest.TestCase):
 
     def test_sitemap_and_canonical(self):
         sitemap = (self.out / "sitemap.xml").read_text(encoding="utf-8")
-        self.assertEqual(sitemap.count("<url>"), 5)
+        self.assertEqual(sitemap.count("<url>"), 3)
         self.assertIn('<link rel="canonical" href="https://jobs.example/index.html">', self.index)
 
-    def test_resume_service_page_and_links(self):
-        page = (self.out / "resume.html").read_text(encoding="utf-8")
-        self.assertIn('data-kind="resume"', page)
-        self.assertIn('aria-current="page">이력서·자소서 첨삭', page)
-        # Every page's menu and every job page's sidebar lead to it.
-        self.assertIn('href="resume.html"', self.index)
-        self.assertIn('href="../resume.html"', self.job_page("아주대 강사 모집"))
+    def test_public_site_is_the_free_board_only(self):
+        job = self.job_page("아주대 강사 모집")
+        self.assertFalse((self.out / "resume.html").exists())
+        self.assertFalse((self.out / "demo.html").exists())
+        for page in (self.index, job):
+            self.assertNotIn("resume.html", page)
+            self.assertNotIn("demo.html", page)
+        self.assertNotIn("모의수업이 있는 공고예요", job)
+        # The free alert is offered on every job page instead.
+        self.assertIn('href="../index.html#alert"', job)
+        self.assertIn("새 공고 알림을 켜 두세요", job)
+
+    def test_services_appear_when_launched(self):
+        out = Path(self.tmp.name) / "site_services"
+        bs.build(self.db, out, {**self.config, "services": True}, TODAY, BUILT_AT)
+        resume = (out / "resume.html").read_text(encoding="utf-8")
+        self.assertIn('data-kind="resume"', resume)
+        self.assertIn('aria-current="page">이력서·자소서 첨삭', resume)
+        job = next(p.read_text(encoding="utf-8") for p in (out / "jobs").glob("*.html")
+                   if "아주대 강사 모집" in p.read_text(encoding="utf-8"))
+        self.assertIn('href="../resume.html"', job)
+        self.assertIn("모의수업이 있는 공고예요", job)
 
     def test_kakao_key_reaches_page_config(self):
         self.assertIn('window.SITE = {"kakaoKey": "KEY"', self.index)

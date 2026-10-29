@@ -215,7 +215,8 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
     private = config.get("private")
     private_head = '<meta name="robots" content="noindex, nofollow">' if private else ""
     private_bar = (
-        '<div class="private-bar" role="note">비공개 미리보기 · 해외 공고 포함 · 배포하지 마세요</div>' if private else ""
+        '<div class="private-bar" role="note">비공개 미리보기 · 해외 공고와 준비 중인 서비스 포함 · 배포하지 마세요</div>'
+        if private else ""
     )
     return f"""<!doctype html>
 <html lang="ko">
@@ -236,7 +237,7 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
 </head>
 <body{body_attrs}>
 {private_bar}
-{header(root, active)}
+{header(root, active, services_on(config))}
 {body}
 {footer(root)}
 <script>window.SITE = {json_for_script(site_config)};</script>
@@ -246,12 +247,20 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
 """
 
 
-def header(root: str, active: str) -> str:
-    links = [
-        ("jobs", f"{root}index.html", "채용공고"),
-        ("resume", f"{root}resume.html", "이력서·자소서 첨삭"),
-        ("demo", f"{root}demo.html", "시강 교안 AI"),
-    ]
+def services_on(config: dict) -> bool:
+    """Paid services (첨삭, 시강 교안 AI) are not launched yet: the public site
+    shows only the free job board. --with-services turns them on; the private
+    build always shows them so they can be worked on."""
+    return bool(config.get("services") or config.get("private"))
+
+
+def header(root: str, active: str, with_services: bool = False) -> str:
+    links = [("jobs", f"{root}index.html", "채용공고")]
+    if with_services:
+        links += [
+            ("resume", f"{root}resume.html", "이력서·자소서 첨삭"),
+            ("demo", f"{root}demo.html", "시강 교안 AI"),
+        ]
     nav = "".join(
         f'<a href="{href}"{" aria-current=\"page\"" if key == active else ""}>{label}</a>' for key, href, label in links
     )
@@ -383,6 +392,8 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 
 
 def service_blocks(config: dict, root: str) -> str:
+    if not services_on(config):
+        return ""
     blocks = []
     if SERVICE_LINKS["ebook"]:
         blocks.append(f"""<section class="callout service" aria-labelledby="ebookTitle">
@@ -430,7 +441,8 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
 <ol class="steps"><li><span class="n">1</span>서류 심사</li>
 <li class="on"><span class="n">2</span><span>모의수업 <span class="hint">· 여기서 많이 갈려요</span></span></li>
 <li><span class="n">3</span>최종 합격</li></ol></section>"""
-        demo_cta = f"""<section class="cta-blue" aria-labelledby="demoTitle"><div class="grow">
+        if services_on(config):
+            demo_cta = f"""<section class="cta-blue" aria-labelledby="demoTitle"><div class="grow">
 <p class="kicker">모의수업이 있는 공고예요</p>
 <h2 id="demoTitle">시강 교안 초안,<br>3분이면 만들 수 있어요</h2>
 <p class="desc">수준과 문법만 고르면 돼요. 무료로 3번까지.</p></div>
@@ -442,9 +454,17 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
     )
     collected = (job.get("collected_at") or "")[:10].replace("-", ".")
     mentoring = SERVICE_LINKS["mentoring"]
-    applied_extra = (
-        f'<a class="btn btn-dark" href="{e(mentoring)}">리허설 일정 보기</a>' if mentoring else ""
-    )
+    # After "지원했어요": with services, prepare for the demo lesson; without,
+    # keep the person coming back with the free job alert.
+    if services_on(config):
+        applied_text = "모의수업 연락이 오기 전에 교안을 미리 준비해 두세요."
+        applied_link = (
+            f'<a class="btn btn-dark" href="{e(mentoring)}">리허설 일정 보기</a>' if mentoring
+            else f'<a class="btn btn-dark" href="{root}demo.html">교안 준비하기</a>'
+        )
+    else:
+        applied_text = "다른 공고도 놓치지 않게 새 공고 알림을 켜 두세요."
+        applied_link = f'<a class="btn btn-dark" href="{root}index.html#alert">알림 받기</a>'
 
     near = nearby_jobs(job, jobs)
     near_items = "".join(
@@ -456,8 +476,13 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
         f'<section class="callout" aria-labelledby="nearTitle"><h2 id="nearTitle">근처 공고</h2><ul class="side-list">{near_items}</ul></section>'
         if near_items else ""
     )
-    side = [near_block]
-    if mentoring:
+    # The free alert is what brings people back; every job page offers it.
+    alert_block = f"""<section class="callout" aria-labelledby="sideAlertTitle"><p class="kicker">무료 알림</p>
+<h2 id="sideAlertTitle">이런 공고가 올라오면<br>바로 알려 드릴게요</h2>
+<p class="desc">원하는 지역과 조건으로 새 공고와 마감 3일 전 소식을 받아 보세요.</p>
+<a class="btn btn-primary" href="{root}index.html#alert">알림 받기</a></section>"""
+    side = [alert_block, near_block]
+    if mentoring and services_on(config):
         side.insert(0, f"""<section class="callout" aria-labelledby="mentorTitle"><p class="kicker">1:1 커리어 멘토링</p>
 <h2 id="mentorTitle">면접 날짜가 잡혔다면<br>시강 리허설부터</h2>
 <p class="desc">현직 강사가 교안과 시연을 보고 고칠 점을 짚어 드려요.</p>
@@ -486,8 +511,8 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
 <div class="apply-row">{apply_link}
 <button type="button" class="btn btn-gray btn-lg" data-applied>지원했어요</button>
 <button type="button" class="btn btn-gray btn-lg" data-save aria-pressed="false">저장</button></div>
-<div class="applied-note" data-applied-note role="status" hidden><p><strong>지원 완료, 수고했어요.</strong> 모의수업 연락이 오기 전에 교안을 미리 준비해 두세요.</p>
-{applied_extra or f'<a class="btn btn-dark" href="{root}demo.html">교안 준비하기</a>'}</div>
+<div class="applied-note" data-applied-note role="status" hidden><p><strong>지원 완료, 수고했어요.</strong> {applied_text}</p>
+{applied_link}</div>
 <p class="fine">출처 {e(job.get('source_name'))} · {e(collected)} 수집</p></section>
 </div>
 <aside class="detail-side" aria-label="지원 준비">{"".join(side)}</aside>
@@ -634,7 +659,8 @@ def absolute(config: dict, path: str) -> str | None:
 def render_sitemap(jobs: list[dict], config: dict, today: dt.date) -> str | None:
     if not config.get("site_url"):
         return None
-    urls = ["index.html", "resume.html", "demo.html"] + [job["path"] for job in jobs]
+    service_pages = ["resume.html", "demo.html"] if services_on(config) else []
+    urls = ["index.html"] + service_pages + [job["path"] for job in jobs]
     entries = "".join(f"<url><loc>{e(absolute(config, u))}</loc><lastmod>{today.isoformat()}</lastmod></url>" for u in urls)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{entries}</urlset>\n'
 
@@ -665,8 +691,9 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
 
     write = lambda rel, text: (out_dir / rel).write_text(text, encoding="utf-8")
     write("index.html", render_index(jobs, config, collected_at))
-    write("demo.html", render_demo(config))
-    write("resume.html", render_resume(config))
+    if services_on(config):
+        write("demo.html", render_demo(config))
+        write("resume.html", render_resume(config))
     for job in jobs:
         write(job["path"], render_job(job, jobs, config, today))
     if config.get("private"):
@@ -694,6 +721,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Owner-only build with overseas jobs, marked noindex, written to site_private/ (never deploy it)",
     )
+    parser.add_argument(
+        "--with-services",
+        action="store_true",
+        help="Publish the not-yet-launched services (이력서·자소서 첨삭, 시강 교안 AI) on the public site",
+    )
     parser.add_argument("--secrets", default=str(collect_jobs.DEFAULT_SECRETS_FILE), help="KEY=value file")
     parser.add_argument("--approved-only", action="store_true", help="Publish only jobs a reviewer approved")
     parser.add_argument("--today", default=None, help="Reference date, YYYY-MM-DD")
@@ -711,6 +743,7 @@ def main() -> int:
         "alert_endpoint": os.environ.get("ALERT_ENDPOINT"),
         "adsense_client": None if args.private else os.environ.get("ADSENSE_CLIENT"),
         "private": args.private,
+        "services": args.with_services,
     }
     out = Path(args.out) if args.out else (PRIVATE_OUT if args.private else DEFAULT_OUT)
     stats = build(Path(args.db), out, config, today, now, args.approved_only)

@@ -174,6 +174,8 @@ python -m http.server 8765 --bind 127.0.0.1 -d site   # 미리보기: http://127
 
 공개 기준: `is_canonical = 1`(중복 묶음의 대표), `status`가 `rejected`가 아니고, 마감 전인 **국내·온라인** 공고. 검토자가 승인한 것만 올리려면 `--approved-only`.
 
+**아직 공개하지 않은 서비스**(이력서·자소서 첨삭 `resume.html`, 시강 교안 AI `demo.html`)는 공개 빌드에서 메뉴·페이지·안내 배너가 모두 빠지고, 대신 무료 새 공고 알림을 권합니다. 서비스를 열 때 `python build_site.py --with-services`로 켜면 됩니다. 비공개 빌드에는 항상 나옵니다.
+
 **해외 공고는 공개 사이트에 싣지 않습니다.** 수집은 계속하고, 운영자만 보는 비공개 빌드에서 봅니다.
 
 ```powershell
