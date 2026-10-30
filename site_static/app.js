@@ -390,9 +390,14 @@
       var bounds = new kakao.maps.LatLngBounds();
       bounds.extend(pos);
       near.slice(0, 5).forEach(function (job, i) {
-        if (i === 0 || distance(job) <= reach) bounds.extend(new kakao.maps.LatLng(job.lat, job.lng));
+        if (i !== 0 && distance(job) > reach) return;
+        // Each job and its mirror across the visitor, so the frame is
+        // centred on the visitor and still holds every job.
+        bounds.extend(new kakao.maps.LatLng(job.lat, job.lng));
+        bounds.extend(new kakao.maps.LatLng(2 * here.lat - job.lat, 2 * here.lng - job.lng));
       });
-      map.setBounds(bounds, 80, 80, 120, 80);
+      map.setBounds(bounds, 80, 80, 80, 80);
+      map.setCenter(pos);
       // A job next door would zoom to street level; keep the area readable.
       if (map.getLevel() < 4) map.setLevel(4, { anchor: pos });
     }
