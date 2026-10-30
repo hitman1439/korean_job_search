@@ -230,11 +230,14 @@
         if (overlays[job.id]) overlays[job.id].setZIndex(on ? 3 : 1);
       });
       if (!pan || !chosen || !map || !overlays[chosen.id]) return;
-      // Picked from the list: show its bubble, zooming in first if the pin
-      // is folded into a count bubble.
+      // Picked from the list: centre the map on it, zooming in (further if
+      // the pin is folded into a count bubble), then show its bubble. The
+      // move is instant: an animated panTo would be cut short by the bubble's
+      // own fit-inside-the-map pan right after it.
       var pos = overlays[chosen.id].getPosition();
-      if (!overlays[chosen.id].getMap()) map.setLevel(Math.min(map.getLevel(), 4), { anchor: pos });
-      map.panTo(pos);
+      var level = overlays[chosen.id].getMap() ? 6 : 4;
+      if (map.getLevel() > level) map.setLevel(level);
+      map.setCenter(pos);
       jobPopup(chosen);
     }
 
