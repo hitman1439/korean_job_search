@@ -2563,7 +2563,9 @@ def collect_saramin(
     return stats
 
 
-# 지역명만 담긴 location_text는 기관 검색이 실패했을 때만 쓰는 대략적인 보조 좌표다.
+# 예전에는 기관 검색이 실패하면 location_text의 시·도청을 보조 좌표로 찍었다. 그 지역명은
+# 게시판 운영 기관의 지역인 경우가 많아(남서울대 → 서울시청, 건양대 → 부산시청) 지금은
+# 쓰지 않고, 남아 있는 그런 좌표를 지우는 데만 쓴다.
 REGION_FALLBACK_QUERY = {
     "서울": "서울특별시청", "부산": "부산광역시청", "대구": "대구광역시청",
     "인천": "인천광역시청", "광주": "광주광역시청", "대전": "대전광역시청",
@@ -2656,14 +2658,22 @@ def parent_institution(name: str | None) -> str | None:
 def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
     """Fill in coordinates for saved jobs that do not have them yet.
 
-    Searches on the institution name, which is the most specific place name the
-    collector has; location_text only names a province and often reflects the
-    posting site's own office rather than the workplace, so it is a last resort.
+    Searches on the institution name, then its university. location_text is
+    never used: it often names the posting site's region, not the workplace,
+    and a pin on a city hall looks exact while being wrong. A job that only
+    has a region stays off the map.
     """
     stats = {"geocoded": 0, "unresolved": 0}
     rest_key = os.environ.get("KAKAO_REST_API_KEY")
     if not rest_key:
         return stats
+    # Drop pins an older run placed on a region's city hall; they are retried below.
+    fallbacks = sorted(set(REGION_FALLBACK_QUERY.values()))
+    conn.execute(
+        f"UPDATE jobs SET latitude = NULL, longitude = NULL, address = NULL, place_name = NULL "
+        f"WHERE place_name IN ({', '.join('?' for _ in fallbacks)})",
+        fallbacks,
+    )
 
     rows = conn.execute(
         """
@@ -2678,25 +2688,23 @@ def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
         if location in {"해외", "국외", "온라인", "재택"} or location in COUNTRY_NAMES:
             continue
         result = None
-        by_institution = False
         # A bare unit name ("가족센터") matches some other branch anywhere in the country.
         if institution and clean_text(institution) in GENERIC_INSTITUTION_NAMES:
             institution = None
         # Kakao often knows the university but not its language centre
         # ("숭실대학교 한국어교육원"), so the university alone comes next.
         parent = parent_institution(institution)
-        for query in (institution, parent, REGION_FALLBACK_QUERY.get(clean_text(location or ""))):
+        for query in (institution, parent):
             if not query:
                 continue
             result = geocode_query(conn, query, rest_key)
             if result:
-                by_institution = query in {institution, parent}
                 break
         if not result:
             stats["unresolved"] += 1
             continue
         # The institution's real address beats the region guessed from page text.
-        region = short_region(result["address"] or "") if by_institution else None
+        region = short_region(result["address"] or "")
         conn.execute(
             """
             UPDATE jobs

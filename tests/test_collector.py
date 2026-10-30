@@ -7,8 +7,11 @@ Text fixtures are trimmed from real collected pages.
 from __future__ import annotations
 
 import datetime as dt
+import os
 import sys
+import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -94,6 +97,32 @@ class LocationTests(unittest.TestCase):
     def test_region_from_geocoded_address(self):
         self.assertEqual(cj.short_region("경기 수원시 영통구 월드컵로 206"), "경기")
         self.assertEqual(cj.short_region("전북특별자치도 전주시 완산구"), "전북")
+
+
+class GeocodeTests(unittest.TestCase):
+    def test_university_replaces_city_hall_guess(self):
+        found = {"안양대학교": {"latitude": 37.39, "longitude": 126.92, "address": "경기 안양시 만안구 삼덕로 37",
+                             "place_name": "안양대학교 안양캠퍼스"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = cj.init_db(Path(tmp) / "jobs.sqlite3")
+            cj.save_job(conn, make_job(title="안양대 강사", institution_name="안양대학교 국제교류원",
+                                       location_text="서울", original_url="https://a.example/1"))
+            cj.save_job(conn, make_job(title="가족센터 강사", institution_name="가족센터",
+                                       location_text="서울", original_url="https://a.example/2"))
+            conn.execute("UPDATE jobs SET latitude = 37.56, longitude = 126.97, place_name = '서울특별시청'")
+            with mock.patch.dict(os.environ, {"KAKAO_REST_API_KEY": "k"}),                     mock.patch.object(cj, "geocode_query", lambda conn, q, key: found.get(q)):
+                stats = cj.geocode_jobs(conn)
+            rows = dict(conn.execute("SELECT title, place_name || '|' || location_text FROM jobs"))
+            conn.close()
+        self.assertEqual(stats, {"geocoded": 1, "unresolved": 1})
+        self.assertEqual(rows["안양대 강사"], "안양대학교 안양캠퍼스|경기")
+        # A region alone no longer puts a pin anywhere.
+        self.assertIsNone(rows["가족센터 강사"])
+
+    def test_parent_institution(self):
+        self.assertEqual(cj.parent_institution("부산외국어대학교 한국어문화교육원"), "부산외국어대학교")
+        self.assertIsNone(cj.parent_institution("경북대학교"))
+        self.assertIsNone(cj.parent_institution("강북구가족센터"))
 
 
 class InstitutionTests(unittest.TestCase):
