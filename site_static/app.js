@@ -115,6 +115,8 @@
         title: row.getAttribute("data-title"),
         org: row.getAttribute("data-org"),
         url: row.querySelector(".go").getAttribute("href"),
+        // Institution for 기관 평가; only the /test build sets it.
+        review: row.getAttribute("data-review") || "",
         chips: Array.prototype.map.call(row.querySelectorAll(".chip"), function (c) { return c.textContent; }),
         row: row
       };
@@ -331,6 +333,11 @@
       var go = el("a", "btn btn-primary", "자세히 보기");
       go.href = job.url;
       frag.appendChild(go);
+      if (job.review) {
+        var rate = el("a", "btn btn-review", "평가 보기");
+        rate.href = "rating.html?org=" + encodeURIComponent(job.review);
+        frag.appendChild(rate);
+      }
       openPopup(overlays[job.id].getPosition(), frag);
     }
     function clusterPopup(cluster) {
@@ -349,6 +356,11 @@
         go.href = job.url;
         li.appendChild(grow);
         li.appendChild(go);
+        if (job.review) {
+          var rate = el("a", "go review", "평가");
+          rate.href = "rating.html?org=" + encodeURIComponent(job.review);
+          li.appendChild(rate);
+        }
         list.appendChild(li);
       });
       frag.appendChild(list);

@@ -492,7 +492,7 @@ def header(root: str, active: str, with_services: bool = False, with_alerts: boo
            with_review: bool = False) -> str:
     links = [("jobs", f"{root}index.html", "채용공고")]
     if with_review:
-        links.append(("review", f"{root}review.html", "기관 평가"))
+        links.append(("review", f"{root}rating.html", "기관 평가"))
     if with_services:
         links += [
             ("resume", f"{root}resume.html", "이력서·자소서 첨삭"),
@@ -529,12 +529,13 @@ def posted_date(job: dict) -> str:
     return (job.get("posted_at") or job.get("first_seen_at") or "")[:10]
 
 
-def job_row(job: dict, root: str) -> str:
+def job_row(job: dict, root: str, review: bool = False) -> str:
     chips = "".join(f'<span class="chip">{e(c)}</span>' for c in job["chips"])
     search = " ".join(str(x) for x in (job.get("title"), job["org"], job["place"], job.get("location_text")) if x).lower()
     lat = job["latitude"] if job["has_place"] else ""
     lng = job["longitude"] if job["has_place"] else ""
-    return f"""<li class="job-row" data-id="{job['job_id']}" data-scope="{job['scope']}" data-newcomer="{1 if job.get('newcomer_ok') == 1 else 0}" data-demo="{1 if job.get('demo_lesson') == 1 else 0}" data-lat="{lat}" data-lng="{lng}" data-deadline="{e(job.get('deadline') or '')}" data-posted="{e(posted_date(job))}" data-name="{e(job['org'])}" data-title="{e(job.get('title'))}" data-org="{e(job['org'] + ' · ' + job['place'])}" data-search="{e(search)}">
+    review_attr = f' data-review="{e(job["institution_name"])}"' if review and job.get("institution_name") else ""
+    return f"""<li class="job-row" data-id="{job['job_id']}" data-scope="{job['scope']}" data-newcomer="{1 if job.get('newcomer_ok') == 1 else 0}" data-demo="{1 if job.get('demo_lesson') == 1 else 0}" data-lat="{lat}" data-lng="{lng}" data-deadline="{e(job.get('deadline') or '')}" data-posted="{e(posted_date(job))}" data-name="{e(job['org'])}" data-title="{e(job.get('title'))}" data-org="{e(job['org'] + ' · ' + job['place'])}" data-search="{e(search)}"{review_attr}>
 <button type="button" class="pick">
 <span class="badge {job['badge_class']}" data-badge="{e(job.get('deadline') or '')}">{e(job['badge'])}</span>
 <span class="job-title">{e(job.get('title'))}</span>
@@ -549,7 +550,7 @@ def job_row(job: dict, root: str) -> str:
 
 def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> str:
     counts = {scope: sum(1 for j in jobs if j["scope"] == scope) for scope in ("domestic", "overseas", "online")}
-    rows = [job_row(job, "") for job in jobs]
+    rows = [job_row(job, "", bool(config.get("test"))) for job in jobs]
     if len(rows) > 3:
         rows.insert(3, ad_slot(config, "infeed", "광고"))
     countries: dict[str, int] = {}
@@ -754,10 +755,12 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
 <a class="btn btn-dark" href="{e(mentoring)}">일정 고르기</a></section>""")
     side.append(service_blocks(config, root))
     if config.get("test") and job.get("institution_name"):
+        org = e(urllib.parse.quote(job["institution_name"]))
         side.insert(0, f"""<section class="callout" aria-labelledby="reviewTitle"><p class="kicker">기관 평가</p>
-<h2 id="reviewTitle">{e(job['org'])}에서<br>일해 본 적 있나요?</h2>
-<p class="desc">점수 몇 번만 누르면 돼요. 이름이나 경력은 묻지 않아요.</p>
-<a class="btn btn-primary" href="{root}review.html?org={e(urllib.parse.quote(job['org']))}">이 기관 평가하기</a></section>""")
+<h2 id="reviewTitle">{e(job['org'])},<br>일해 본 사람들은 어땠을까요?</h2>
+<p class="desc">현직·전직 강사들이 남긴 점수와 한마디를 볼 수 있어요.</p>
+<div class="apply-row"><a class="btn btn-review" href="{root}rating.html?org={org}">평가 보기</a>
+<a class="btn btn-line" href="{root}review.html?org={org}">나도 평가하기</a></div></section>""")
 
     body = f"""<main class="wrap">
 <a class="back" href="{root}index.html">‹ 지도로 돌아가기</a>
@@ -929,23 +932,27 @@ def review_orgs(conn: sqlite3.Connection) -> list[str]:
     return sorted((n for n in names if 1 < len(n) <= review_items.MAX_ORG), key=lambda n: (n.replace(" ", ""), n))
 
 
-def render_review(config: dict, orgs: list[str]) -> str:
-    """기관 평가 (test build only). review.js draws the steps from this data."""
+def review_page(config: dict, orgs: list[str], *, script: str, title: str, active: str) -> str:
+    """Shell for the two 기관 평가 pages (test build only); the script draws the rest."""
     data = {**review_items.page_data(), "orgs": orgs}
     body = f"""<main class="wrap review" data-review>
-<a class="back" href="index.html">‹ 공고 보러 가기</a>
-<div class="rv-head">
-<h1 class="title-xl">기관 평가</h1>
-<p class="rv-lead">이름, 경력, 근무 시기는 묻지 않아요. 아는 것만 누르고 나머지는 건너뛰어도 돼요.</p>
-</div>
-<ol class="rv-progress" data-progress aria-label="평가 단계"></ol>
-<section class="rv-step" data-step-box aria-live="polite"><p class="rv-note">평가 화면을 불러오는 중이에요. 자바스크립트가 꺼져 있으면 평가할 수 없어요.</p></section>
+<div data-review-box aria-live="polite"><p class="rv-note">불러오는 중이에요. 자바스크립트가 꺼져 있으면 볼 수 없어요.</p></div>
 <script type="application/json" id="reviewData">{json_for_script(data)}</script>
 </main>
-<script src="assets/review.js?v={asset_version('review.js')}" defer></script>"""
+<script src="assets/{script}?v={asset_version(script)}" defer></script>"""
     head = f'<link rel="stylesheet" href="assets/review.css?v={asset_version("review.css")}">'
-    return page(f"기관 평가 · {SITE_NAME}", "한국어 강사가 일해 본 기관을 평가해요.", body, root="", config=config,
-                canonical=None, active="review", extra_head=head)
+    return page(f"{title} · {SITE_NAME}", "한국어 강사가 일해 본 기관을 평가해요.", body, root="", config=config,
+                canonical=None, active=active, extra_head=head)
+
+
+def render_rating(config: dict, orgs: list[str]) -> str:
+    """One institution's results (?org=), or a search for one."""
+    return review_page(config, orgs, script="rating.js", title="기관 평가", active="review")
+
+
+def render_review(config: dict, orgs: list[str]) -> str:
+    """The form: area → statement → score, any of it, finished whenever."""
+    return review_page(config, orgs, script="review.js", title="나도 평가하기", active="review")
 
 
 def absolute(config: dict, path: str) -> str | None:
@@ -995,6 +1002,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
         write("demo.html", render_demo(config))
         write("resume.html", render_resume(config))
     if config.get("test"):
+        write("rating.html", render_rating(config, orgs))
         write("review.html", render_review(config, orgs))
     files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)
     for job in jobs:

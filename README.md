@@ -268,7 +268,10 @@ KAKAO_JS_KEY=JavaScript_키
 
 ## 관리자 전용 테스트 사이트 (`/test`)
 
-공개 사이트에 내보내기 전의 변경은 `/test` 아래에서 먼저 확인합니다. 지금 여기에만 있는 것: **큰 글씨**(`site_test_static/large.css`), **기관 평가**(`review.html`, 공고 상세의 "이 기관 평가하기").
+공개 사이트에 내보내기 전의 변경은 `/test` 아래에서 먼저 확인합니다. 지금 여기에만 있는 것:
+
+- **큰 글씨** (`site_test_static/large.css`)
+- **기관 평가**: 지도 말풍선의 주황색 "평가 보기"(공고 상세에도 있음) → `rating.html?org=…` 평가 결과(영역별 평균, 근무 조건, 후배에게 한마디) → "나도 평가하기" → `review.html?org=…`. 평가는 영역(1단계) → 문장(2단계) → 점수 1~5(3단계)로 들어가고, 점수를 고르면 문장 목록으로 돌아옵니다. 어느 단계에서든 아래의 "뒤로가기"·"완료"로 멈출 수 있고, 하나만 답해도 됩니다. 각 단계가 브라우저 기록이라 휴대폰의 뒤로 가기 동작도 "뒤로가기"와 같습니다.
 
 ```bash
 python3 build_site.py          # 공개 사이트 → site/
@@ -277,5 +280,5 @@ python3 build_site.py --test   # 테스트 사이트 → site_test/ (noindex, �
 
 - `serve.py`가 `/test/…` 요청을 `site_test/`에서 내보냅니다. **`secrets.env`의 `ADMIN_PASSWORD`(사용자명 `ADMIN_USER`, 기본 `admin`)로 HTTP 기본 인증**을 거쳐야 하고, 비밀번호가 없으면 `/test`는 404입니다. 응답에는 `Cache-Control: no-store, private`를 붙여 Cloudflare 같은 공유 캐시에 남지 않게 합니다. 공개 `robots.txt`도 `/test/`를 막습니다.
 - 평가 문항은 `review_items.py` 한 곳에 있습니다. 빌드가 페이지에 넣고, 서버가 같은 목록으로 검사합니다. 평가자에 대한 정보(역할·경력·시기·IP)는 묻지도 저장하지도 않고, 날짜도 **일 단위**로만 남깁니다(`reviews.sqlite3`).
-- 모인 평가 보기: `python3 serve.py --reviews`
+- 결과 페이지는 `GET /test/api/ratings?org=…`(문장별 합계·응답 수, 근무 조건 집계, 한마디와 작성 월)를 읽습니다. 모인 평가를 터미널에서 보려면 `python3 serve.py --reviews`
 - 큰 글씨를 공개 사이트에 반영할 때는 `large.css`의 규칙을 `site_static/styles.css`에 합치고 `page()`의 `large.css` 링크를 없애면 됩니다.

@@ -32,7 +32,7 @@ from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import review_items
 
@@ -110,12 +110,12 @@ def parse_save(body: bytes) -> tuple[str, int, bool] | None:
 def open_reviews(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path, timeout=10)
     conn.execute("PRAGMA journal_mode=WAL")
+    # `ratings`, not the first try's `reviews` table, which held a different shape.
     conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS reviews (
+        CREATE TABLE IF NOT EXISTS ratings (
             id INTEGER PRIMARY KEY,
             org TEXT NOT NULL,
-            overall INTEGER NOT NULL,
             data TEXT NOT NULL,
             created_on TEXT NOT NULL
         )
@@ -128,10 +128,20 @@ def record_review(conn: sqlite3.Connection, review: dict) -> None:
     # The day only: a time stamp could single out who sent it.
     today = dt.datetime.now(dt.timezone.utc).date().isoformat()
     conn.execute(
-        "INSERT INTO reviews (org, overall, data, created_on) VALUES (?, ?, ?, ?)",
-        (review["org"], review["overall"], json.dumps(review, ensure_ascii=False), today),
+        "INSERT INTO ratings (org, data, created_on) VALUES (?, ?, ?)",
+        (review["org"], json.dumps(review, ensure_ascii=False), today),
     )
     conn.commit()
+
+
+def org_reviews(conn: sqlite3.Connection, org: str) -> list[dict]:
+    rows = conn.execute("SELECT data, created_on FROM ratings WHERE org = ? ORDER BY id", (org,)).fetchall()
+    # Pages show the month only, for the same reason the day is all that is kept.
+    return [{**json.loads(data), "on": day[:7]} for data, day in rows]
+
+
+def org_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    return dict(conn.execute("SELECT org, COUNT(*) FROM ratings GROUP BY org").fetchall())
 
 
 def load_admin(secrets: Path) -> tuple[str, str] | None:
@@ -214,8 +224,27 @@ class Handler(SimpleHTTPRequestHandler):
         return True
 
     def do_GET(self) -> None:
-        if self.admin_gate():
-            super().do_GET()
+        if not self.admin_gate():
+            return
+        url = urlsplit(self.path)
+        if url.path == TEST_PREFIX + "/api/ratings":
+            self.get_ratings(parse_qs(url.query).get("org", [""])[0].strip())
+            return
+        super().do_GET()
+
+    def get_ratings(self, org: str) -> None:
+        """One institution's totals with ?org=, else how many reviews each one has."""
+        conn = open_reviews(self.reviews_path)
+        try:
+            data = review_items.summarize(org_reviews(conn, org)) if org else {"orgs": org_counts(conn)}
+        finally:
+            conn.close()
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_HEAD(self) -> None:
         if self.admin_gate():
@@ -310,25 +339,20 @@ def report_reviews(reviews_path: Path) -> int:
         print("no reviews yet (reviews.sqlite3 does not exist)")
         return 0
     conn = open_reviews(reviews_path)
-    rows = conn.execute("SELECT org, data FROM reviews ORDER BY org, id").fetchall()
-    conn.close()
-    by_org: dict[str, list[dict]] = {}
-    for org, data in rows:
-        by_org.setdefault(org, []).append(json.loads(data))
-    chips = {key: chip for key, _, chip, _ in review_items.AREAS}
-    for org, reviews in sorted(by_org.items(), key=lambda kv: -len(kv[1])):
-        overall = sum(r["overall"] for r in reviews) / len(reviews)
-        print(f"{org}  평가 {len(reviews)}개 · 첫인상 {overall:.1f}")
+    counts = org_counts(conn)
+    for org in sorted(counts, key=lambda o: -counts[o]):
+        summary = review_items.summarize(org_reviews(conn, org))
+        print(f"{org}  평가 {summary['count']}개")
         areas = []
-        for key, chip in chips.items():
-            scores = [r["areas"][key] for r in reviews if key in r["areas"]]
+        for _, name, items in review_items.AREAS:
+            scores = [summary["items"][k] for k, _ in items if k in summary["items"]]
             if scores:
-                areas.append(f"{chip} {sum(scores) / len(scores):.1f}({len(scores)})")
+                areas.append(f"{name} {sum(s for s, _ in scores) / sum(n for _, n in scores):.1f}")
         if areas:
             print("  " + " · ".join(areas))
-        for r in reviews:
-            if r.get("comment"):
-                print(f"  - {r['comment'][:120]}")
+        for comment in summary["comments"]:
+            print(f"  - {comment['text'][:120]}")
+    conn.close()
     return 0
 
 

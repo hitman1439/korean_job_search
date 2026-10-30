@@ -59,21 +59,24 @@ class SaveCountTests(unittest.TestCase):
 
 
 class ReviewTests(unittest.TestCase):
-    GOOD = {"org": " 경희대학교 ", "overall": 4, "good": ["peers"], "bad": ["pay"], "areas": {"pay": 2},
-            "items": {"pay_ontime": 5}, "closing": {"stay": 4}, "facts": {"insurance": "가입"}, "comment": " 좋아요 "}
+    GOOD = {"org": " 경희대학교  국제캠퍼스 ", "items": {"pay_ontime": 5, "stay": 4},
+            "facts": {"insurance": "가입"}, "comment": " 좋아요 "}
 
     def test_clean_review_keeps_a_valid_review(self):
         review = review_items.clean_review(self.GOOD)
-        self.assertEqual(review["org"], "경희대학교")
+        self.assertEqual(review["org"], "경희대학교 국제캠퍼스")
         self.assertEqual(review["comment"], "좋아요")
-        self.assertEqual(review["areas"], {"pay": 2})
+        self.assertEqual(review["items"], {"pay_ontime": 5, "stay": 4})
 
-    def test_clean_review_needs_only_org_and_overall(self):
-        self.assertIsNotNone(review_items.clean_review({"org": "A대학", "overall": 3}))
+    def test_any_single_answer_is_a_review(self):
+        for answer in ({"items": {"stab_hours": 3}}, {"facts": {"contract": "1년"}}, {"comment": "한마디"}):
+            self.assertIsNotNone(review_items.clean_review({"org": "A대학", **answer}), answer)
+        self.assertIsNone(review_items.clean_review({"org": "A대학"}))
+        self.assertIsNone(review_items.clean_review({"org": "A대학", "comment": "   "}))
 
     def test_clean_review_rejects_bad_input(self):
-        for change in ({"org": ""}, {"overall": 0}, {"overall": True}, {"areas": {"pay": 6}},
-                       {"areas": {"nope": 3}}, {"items": {"pay_ontime": "5"}}, {"good": ["nope"]},
+        for change in ({"org": ""}, {"items": {"pay_ontime": 6}}, {"items": {"nope": 3}},
+                       {"items": {"pay_ontime": "5"}}, {"items": {"pay_ontime": True}},
                        {"facts": {"insurance": "모름"}}, {"comment": "x" * 1001}, {"org": "x" * 81}):
             self.assertIsNone(review_items.clean_review({**self.GOOD, **change}), change)
         self.assertIsNone(review_items.clean_review([]))
@@ -82,10 +85,23 @@ class ReviewTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             conn = serve.open_reviews(Path(tmp) / "reviews.sqlite3")
             serve.record_review(conn, review_items.clean_review(self.GOOD))
-            org, day = conn.execute("SELECT org, created_on FROM reviews").fetchone()
+            org, day = conn.execute("SELECT org, created_on FROM ratings").fetchone()
+            reviews = serve.org_reviews(conn, org)
             conn.close()
-        self.assertEqual(org, "경희대학교")
+        self.assertEqual(org, "경희대학교 국제캠퍼스")
         self.assertRegex(day, r"^\d{4}-\d{2}-\d{2}$")
+        self.assertRegex(reviews[0]["on"], r"^\d{4}-\d{2}$")
+
+    def test_summarize_adds_up_each_statement(self):
+        reviews = [
+            {"items": {"stay": 4, "pay_ontime": 2}, "facts": {"insurance": "가입"}, "comment": "", "on": "2026-09"},
+            {"items": {"stay": 2}, "facts": {"insurance": "가입"}, "comment": "좋아요", "on": "2026-10"},
+        ]
+        summary = review_items.summarize(reviews)
+        self.assertEqual(summary["count"], 2)
+        self.assertEqual(summary["items"], {"stay": [6, 2], "pay_ontime": [2, 1]})
+        self.assertEqual(summary["facts"], {"insurance": {"가입": 2}})
+        self.assertEqual(summary["comments"], [{"text": "좋아요", "on": "2026-10"}])
 
 
 class AdminGateTests(unittest.TestCase):
@@ -142,10 +158,21 @@ class AdminGateTests(unittest.TestCase):
         self.assertEqual(self.fetch("/test/../index.html", "pw")[:2], (200, "staging"))
 
     def test_review_post_needs_the_password(self):
-        body = json.dumps({"org": "A대학", "overall": 4}).encode()
+        body = json.dumps({"org": "A대학", "items": {"stay": 4}}).encode()
         self.assertEqual(self.fetch("/test/api/review", body=body)[0], 401)
         self.assertEqual(self.fetch("/test/api/review", "pw", body)[0], 204)
         self.assertEqual(self.fetch("/test/api/review", "pw", b'{"org": "A"}')[0], 400)
+
+    def test_ratings_api_returns_one_institutions_totals(self):
+        body = json.dumps({"org": "B대학", "items": {"stay": 5}, "comment": "좋아요"}).encode()
+        self.fetch("/test/api/review", "pw", body)
+        self.assertEqual(self.fetch("/test/api/ratings?org=B%EB%8C%80%ED%95%99")[0], 401)
+        status, text, _ = self.fetch("/test/api/ratings?org=B%EB%8C%80%ED%95%99", "pw")
+        data = json.loads(text)
+        self.assertEqual((status, data["count"], data["items"]["stay"]), (200, 1, [5, 1]))
+        self.assertEqual(data["comments"][0]["text"], "좋아요")
+        status, text, _ = self.fetch("/test/api/ratings", "pw")
+        self.assertEqual(json.loads(text)["orgs"]["B대학"], 1)
 
     def test_no_password_set_means_no_test(self):
         self.handler.admin = None

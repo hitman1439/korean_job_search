@@ -98,3 +98,10 @@ body { line-height: 1.5; }
 @media (max-width: 480px) {
   .facts div { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* 기관 평가 entry points (test build only): orange so it reads apart from 자세히 보기. */
+.btn-review { background: #d9480f; color: #fff; }
+.btn-review:hover { background: #b83d0c; color: #fff; }
+.map-pop .btn + .btn { margin-top: 8px; }
+.map-pop li .go.review { background: #d9480f; }
+.map-pop li .go.review:hover { background: #b83d0c; }
