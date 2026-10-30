@@ -93,7 +93,7 @@
 
   function initBoard(board) {
     var rows = Array.prototype.slice.call(board.querySelectorAll(".job-row"));
-    var state = { scope: "all", newcomer: false, demo: false, saved: false, q: "", selected: null };
+    var state = { scope: "all", newcomer: false, demo: false, saved: false, q: "", selected: null, sort: "deadline" };
     var map = null;
     var clusterer = null;
     var overlays = {};
@@ -109,6 +109,8 @@
         lat: parseFloat(row.getAttribute("data-lat")),
         lng: parseFloat(row.getAttribute("data-lng")),
         deadline: row.getAttribute("data-deadline"),
+        posted: row.getAttribute("data-posted") || "",
+        name: row.getAttribute("data-name") || "",
         search: row.getAttribute("data-search") || "",
         title: row.getAttribute("data-title"),
         org: row.getAttribute("data-org"),
@@ -118,6 +120,8 @@
       };
     }
     var jobs = rows.map(rowJob);
+    // The build already lists jobs soonest deadline first.
+    jobs.forEach(function (job, i) { job.order = i; });
 
     function matches(job) {
       return (state.scope === "all" || job.scope === state.scope) &&
@@ -322,6 +326,105 @@
       openPopup(cluster.getCenter(), frag);
     }
 
+    // --- sorting ---------------------------------------------------------
+    var list = board.querySelector(".jobs");
+    var sortNote = board.querySelector("[data-sort-note]");
+    // The visitor's position, asked for only when they pick 가까운순 and
+    // kept in this page alone.
+    var here = null;
+    var hereDot = null;
+
+    function km(a, b) {
+      var rad = Math.PI / 180;
+      var dLat = (b.lat - a.lat) * rad;
+      var dLng = (b.lng - a.lng) * rad;
+      var h = Math.pow(Math.sin(dLat / 2), 2) +
+        Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.pow(Math.sin(dLng / 2), 2);
+      return 12742 * Math.asin(Math.sqrt(h));
+    }
+    function distance(job) { return here && hasPlace(job) ? km(here, job) : Infinity; }
+    // Ties (and online jobs, which have no place) fall back to the deadline order.
+    var sorters = {
+      deadline: function (a, b) { return a.order - b.order; },
+      newest: function (a, b) { return b.posted.localeCompare(a.posted) || b.id - a.id; },
+      name: function (a, b) { return a.name.localeCompare(b.name, "ko") || a.order - b.order; },
+      near: function (a, b) { return (distance(a) - distance(b)) || a.order - b.order; }
+    };
+
+    function sortNoteText(text) {
+      if (!sortNote) return;
+      sortNote.textContent = text || "";
+      sortNote.hidden = !text;
+    }
+
+    function showDistances(on) {
+      jobs.forEach(function (job) {
+        var tag = job.row.querySelector(".dist");
+        var d = on ? distance(job) : Infinity;
+        if (d === Infinity) { if (tag) tag.parentNode.removeChild(tag); return; }
+        if (!tag) {
+          tag = el("span", "dist", "");
+          var org = job.row.querySelector(".job-org");
+          org.parentNode.insertBefore(tag, org.nextSibling);
+        }
+        tag.textContent = "내 위치에서 " + (d < 10 ? d.toFixed(1) : Math.round(d)) + "km";
+      });
+    }
+
+    function showHere() {
+      if (!map || !here || hereDot) return;
+      var dot = el("span", "here-dot", "");
+      dot.setAttribute("aria-label", "내 위치");
+      hereDot = new kakao.maps.CustomOverlay({
+        position: new kakao.maps.LatLng(here.lat, here.lng), content: dot, zIndex: 2, clickable: false
+      });
+      hereDot.setMap(map);
+    }
+
+    function sortBy(key) {
+      state.sort = key;
+      jobs.sort(sorters[key]);
+      var ad = list.querySelector(".ad-slot");
+      jobs.forEach(function (job) { list.appendChild(job.row); });
+      if (ad && list.children[3]) list.insertBefore(ad, list.children[3]);
+      board.querySelectorAll("[data-sort]").forEach(function (b) {
+        b.setAttribute("aria-pressed", b.getAttribute("data-sort") === key ? "true" : "false");
+      });
+      showDistances(key === "near");
+      if (key !== "near") sortNoteText("");
+      // 가까운순 is not remembered, so a later visit never opens with a location prompt.
+      try { localStorage.setItem("jobSort", key === "near" ? "deadline" : key); } catch (e) { /* not kept */ }
+      list.scrollTop = 0;
+      apply();
+    }
+
+    function askHere(done) {
+      if (here) { done(true); return; }
+      if (!navigator.geolocation) { done(false, "이 브라우저는 위치 확인을 지원하지 않아요."); return; }
+      sortNoteText("내 위치를 확인하는 중이에요…");
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        here = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        showHere();
+        done(true);
+      }, function (err) {
+        done(false, err.code === 1
+          ? "위치 권한이 꺼져 있어서 가까운 순으로 볼 수 없어요. 주소창 옆 자물쇠 아이콘에서 위치를 허용해 주세요."
+          : "지금은 위치를 알 수 없어요. 잠시 뒤에 다시 눌러 주세요.");
+      }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 });
+    }
+
+    board.querySelectorAll("[data-sort]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var key = btn.getAttribute("data-sort");
+        if (key !== "near") { sortBy(key); return; }
+        askHere(function (ok, why) {
+          if (!ok) { sortNoteText(why); return; }
+          sortBy("near");
+          sortNoteText("내 위치에서 가까운 순이에요. 위치는 이 화면에서만 쓰고 저장하지 않아요. 온라인 공고는 맨 뒤에 있어요.");
+        });
+      });
+    });
+
     board.querySelectorAll("[data-scope-btn]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         state.scope = btn.getAttribute("data-scope-btn");
@@ -397,6 +500,7 @@
             clickable: false
           });
         });
+        showHere();
         // A count bubble zooms in until its jobs separate into single pins.
         // Jobs at the very same spot never separate, so those get the list.
         function onCluster(cluster) {
@@ -433,7 +537,10 @@
     } else if (mapBox) {
       showMapNote(mapBox, "지도에 표시할 국내 공고가 아직 없어요.");
     }
-    apply();
+    var lastSort = null;
+    try { lastSort = localStorage.getItem("jobSort"); } catch (e) { lastSort = null; }
+    if (list && lastSort && lastSort !== "deadline" && lastSort !== "near" && sorters[lastSort]) sortBy(lastSort);
+    else apply();
     // Coming back from a job page (back button) must show what was saved there.
     window.addEventListener("pageshow", function (ev) { if (ev.persisted) apply(); });
   }
@@ -484,6 +591,33 @@
     });
   }
 
+  // How many browsers saved each job is counted by serve.py. The browser is
+  // known only by a random id made here, so nothing about the visitor is sent.
+  function clientId() {
+    try {
+      var id = localStorage.getItem("cid");
+      if (!id) {
+        var bytes = new Uint8Array(16);
+        if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+        else for (var i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+        id = Array.prototype.map.call(bytes, function (b) { return (b < 16 ? "0" : "") + b.toString(16); }).join("");
+        localStorage.setItem("cid", id);
+      }
+      return id;
+    } catch (e) { return null; }
+  }
+  function reportSave(id, on) {
+    var cid = clientId();
+    if (!cid || !window.fetch) return;
+    // Under a plain static server (local preview) this just fails quietly.
+    fetch("/api/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ job: id, client: cid, on: on }),
+      keepalive: true
+    }).catch(function () { /* not counted */ });
+  }
+
   var jobId = document.body.getAttribute("data-job-id");
   var saveBtn = document.querySelector("[data-save]");
   if (jobId && saveBtn) {
@@ -496,6 +630,7 @@
       var on = saveBtn.getAttribute("aria-pressed") !== "true";
       toggleStore("savedJobs", jobId, on);
       paint(on);
+      reportSave(jobId, on);
     });
   }
   var appliedBtn = document.querySelector("[data-applied]");

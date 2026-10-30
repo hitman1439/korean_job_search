@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 from typing import Callable
 
 LLM_MODEL = "claude-opus-5-5"
@@ -337,7 +338,9 @@ def normalize_llm_fields(data: dict) -> dict:
 def make_extractor(backend: str) -> Extractor | None:
     """The extraction function for a backend, or None when it cannot run here."""
     if backend == "claude-code":
-        claude = shutil.which("claude")
+        # The native installer puts it in ~/.local/bin, which cron's PATH lacks.
+        local = Path.home() / ".local" / "bin" / "claude"
+        claude = shutil.which("claude") or (str(local) if local.is_file() else None)
         if not claude:
             print("llm fields skipped: the `claude` CLI is not on PATH", file=sys.stderr)
             return None

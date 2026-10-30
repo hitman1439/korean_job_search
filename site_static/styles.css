@@ -167,6 +167,18 @@ button, input, select { font: inherit; }
 .marks:not(:empty) { margin-top: 6px; }
 .mark { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: var(--blue-soft); color: var(--blue); }
 .mark.applied { background: #e8f7ee; color: #0a7a3d; }
+.sort-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 2px; }
+.sort-bar button {
+  min-height: 36px; padding: 0 12px; border-radius: 10px; cursor: pointer;
+  background: #fff; color: var(--text-3); border: 1px solid #d1d6db; font-size: 14px; font-weight: 600;
+}
+.sort-bar button[aria-pressed="true"] { background: var(--text); color: #fff; border-color: var(--text); }
+.sort-note { margin: 8px 12px 0; font-size: 13px; line-height: 1.5; color: var(--text-4); }
+.dist { display: block; margin-top: 2px; font-size: 13px; font-weight: 600; color: var(--blue); }
+.here-dot {
+  display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--blue);
+  border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(27, 100, 218, 0.25);
+}
 .local-note { margin: 12px 0 0; font-size: 14px; line-height: 1.6; color: var(--text-4); }
 .list-panel .local-note { margin: 8px 12px 4px; padding: 10px 12px; border-radius: 12px; background: var(--fill); }
 .job-org { display: block; margin-top: 2px; font-size: 14px; color: var(--text-4); }

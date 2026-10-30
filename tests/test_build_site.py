@@ -205,6 +205,10 @@ class BuildTests(unittest.TestCase):
         self.assertIn('href="../resume.html"', job)
         self.assertIn("모의수업이 있는 공고예요", job)
 
+    def test_rows_carry_sort_keys(self):
+        self.assertIn('data-sort="near"', self.index)
+        self.assertRegex(self.index, r'data-posted="\d{4}-\d{2}-\d{2}" data-name="[^"]+"')
+
     def test_kakao_key_reaches_page_config(self):
         self.assertIn('window.SITE = {"kakaoKey": "KEY"', self.index)
 

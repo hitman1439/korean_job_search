@@ -5,6 +5,7 @@ __pycache__/
 jobs.sqlite3
 jobs.sqlite3-shm
 jobs.sqlite3-wal
+stats.sqlite3*
 files/
 
 # Scratch/investigation files

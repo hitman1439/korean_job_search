@@ -513,12 +513,16 @@ def ad_slot(config: dict, kind: str, label: str) -> str:
     return f'<{tag} class="ad-slot {kind}" aria-label="광고">{label}</{tag}>'
 
 
+def posted_date(job: dict) -> str:
+    return (job.get("posted_at") or job.get("first_seen_at") or "")[:10]
+
+
 def job_row(job: dict, root: str) -> str:
     chips = "".join(f'<span class="chip">{e(c)}</span>' for c in job["chips"])
     search = " ".join(str(x) for x in (job.get("title"), job["org"], job["place"], job.get("location_text")) if x).lower()
     lat = job["latitude"] if job["has_place"] else ""
     lng = job["longitude"] if job["has_place"] else ""
-    return f"""<li class="job-row" data-id="{job['job_id']}" data-scope="{job['scope']}" data-newcomer="{1 if job.get('newcomer_ok') == 1 else 0}" data-demo="{1 if job.get('demo_lesson') == 1 else 0}" data-lat="{lat}" data-lng="{lng}" data-deadline="{e(job.get('deadline') or '')}" data-title="{e(job.get('title'))}" data-org="{e(job['org'] + ' · ' + job['place'])}" data-search="{e(search)}">
+    return f"""<li class="job-row" data-id="{job['job_id']}" data-scope="{job['scope']}" data-newcomer="{1 if job.get('newcomer_ok') == 1 else 0}" data-demo="{1 if job.get('demo_lesson') == 1 else 0}" data-lat="{lat}" data-lng="{lng}" data-deadline="{e(job.get('deadline') or '')}" data-posted="{e(posted_date(job))}" data-name="{e(job['org'])}" data-title="{e(job.get('title'))}" data-org="{e(job['org'] + ' · ' + job['place'])}" data-search="{e(search)}">
 <button type="button" class="pick">
 <span class="badge {job['badge_class']}" data-badge="{e(job.get('deadline') or '')}">{e(job['badge'])}</span>
 <span class="job-title">{e(job.get('title'))}</span>
@@ -597,7 +601,14 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 </section>
 
 <section class="list-panel" aria-labelledby="listTitle">
-<div class="panel-head"><h2 id="listTitle">마감 가까운 순</h2><span data-count>{len(jobs)}개</span></div>
+<div class="panel-head"><h2 id="listTitle">공고 목록</h2><span data-count>{len(jobs)}개</span></div>
+<div class="sort-bar" role="group" aria-label="정렬">
+<button type="button" data-sort="deadline" aria-pressed="true">마감순</button>
+<button type="button" data-sort="newest" aria-pressed="false">최신순</button>
+<button type="button" data-sort="name" aria-pressed="false">가나다순</button>
+<button type="button" data-sort="near" aria-pressed="false">가까운순</button>
+</div>
+<p class="sort-note" data-sort-note role="status" hidden></p>
 <p class="local-note" data-saved-note hidden>저장한 공고와 지원 표시는 <strong>이 브라우저에만</strong> 남아요. 다른 기기나 다른 브라우저에서는 보이지 않고, 방문 기록·쿠키를 지우면 사라져요.</p>
 <div class="empty" data-empty hidden><p data-empty-title>조건에 맞는 공고가 아직 없어요</p><p data-empty-desc>{"알림을 켜 두면 올라오는 대로 알려 드려요." if alerts_on(config) else "다른 조건으로 찾아보세요."}</p></div>
 <ul class="jobs">{"".join(rows)}</ul>
@@ -768,7 +779,7 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
 
 def job_posting(job: dict, config: dict) -> dict:
     """schema.org JobPosting for Google's job search. The description is our own summary."""
-    posted = (job.get("posted_at") or job.get("first_seen_at") or "")[:10]
+    posted = posted_date(job)
     data = {
         "@context": "https://schema.org/",
         "@type": "JobPosting",
@@ -998,6 +1009,12 @@ def main() -> int:
         "ad_slots": args.ad_slots,
     }
     out = Path(args.out) if args.out else (PRIVATE_OUT if args.private else DEFAULT_OUT)
+    # The DB is collected data, not in git: a fresh checkout has none.
+    if not Path(args.db).is_file():
+        print(f"error: no database at {Path(args.db).resolve()}\n"
+              "  Run python collect_jobs.py first, or copy jobs.sqlite3 (and files/) from the machine that collected.",
+              file=sys.stderr)
+        return 1
     stats = build(Path(args.db), out, config, today, now, args.approved_only)
     print(" ".join(f"{k}={v}" for k, v in stats.items()) + f" out={out.resolve()}")
     if not config["site_url"]:
