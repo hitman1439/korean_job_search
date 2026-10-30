@@ -92,6 +92,21 @@ class ReviewTests(unittest.TestCase):
         self.assertRegex(day, r"^\d{4}-\d{2}-\d{2}$")
         self.assertRegex(reviews[0]["on"], r"^\d{4}-\d{2}$")
 
+    def test_story_asks_every_statement_and_fact_once(self):
+        asked = [q[:2] for scene in review_items.STORY for q in scene["core"] + scene["more"]]
+        self.assertEqual(len(asked), len(set(asked)))
+        self.assertEqual({k for kind, k in asked if kind == "item"}, review_items.ITEM_KEYS)
+        self.assertEqual({k for kind, k in asked if kind == "fact"}, set(review_items.FACT_OPTIONS))
+        for scene in review_items.STORY:
+            self.assertTrue(scene["core"], scene["key"])
+            for q in scene["core"] + scene["more"]:
+                if q[0] == "item":
+                    scores = [s for _, s in q[3]]
+                    # The page marks a past answer by its score, so no two may share one.
+                    self.assertEqual(len(scores), len(set(scores)), q[1])
+                    self.assertTrue(all(1 <= s <= 5 for s in scores), q[1])
+        self.assertEqual(set(review_items.AREA_TYPES), {key for key, _, _ in review_items.AREAS})
+
     def test_summarize_adds_up_each_statement(self):
         reviews = [
             {"items": {"stay": 4, "pay_ontime": 2}, "facts": {"insurance": "가입"}, "comment": "", "on": "2026-09"},

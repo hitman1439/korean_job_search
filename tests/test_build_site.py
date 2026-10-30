@@ -164,6 +164,7 @@ class BuildTests(unittest.TestCase):
         data = json.loads(re.search(r'<script type="application/json" id="reviewData">(.*?)</script>', review, re.S)[1])
         self.assertIn("세종학당재단", data["orgs"])
         self.assertEqual(data["areas"][0]["key"], "overall")
+        self.assertEqual(data["story"][0]["title"], "출근길")
         job = next(p.read_text(encoding="utf-8") for p in (out / "jobs").glob("*.html")
                    if "세종학당재단" in p.read_text(encoding="utf-8"))
         self.assertIn("../rating.html?org=%EC%84%B8%EC%A2%85", job)
