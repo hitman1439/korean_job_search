@@ -202,7 +202,11 @@
         // Pins close together (several boards in Seoul) merge into one count bubble.
         clusterer.clear();
         clusterer.addMarkers(shown);
-        if (showMap) { map.relayout(); if (shown.length) map.setBounds(bounds, 60, 60, 160, 60); }
+        if (showMap) {
+          map.relayout();
+          if (state.sort === "near" && here) fitNear(visible);
+          else if (shown.length) map.setBounds(bounds, 60, 60, 160, 60);
+        }
       }
       var summary = board.querySelector("[data-filter-summary]");
       if (summary) {
@@ -369,6 +373,28 @@
         }
         tag.textContent = "내 위치에서 " + (d < 10 ? d.toFixed(1) : Math.round(d)) + "km";
       });
+    }
+
+    // 가까운순: frame the visitor and the nearest few jobs. More jobs are
+    // added only while they stay within a few times the nearest distance, so
+    // one far job does not zoom the map out to the whole country.
+    function fitNear(visible) {
+      var pos = new kakao.maps.LatLng(here.lat, here.lng);
+      var near = visible.filter(hasPlace).sort(function (a, b) { return distance(a) - distance(b); });
+      if (!near.length) {
+        if (map.getLevel() > 6) map.setLevel(6);
+        map.setCenter(pos);
+        return;
+      }
+      var reach = Math.max(distance(near[0]) * 3, 10);
+      var bounds = new kakao.maps.LatLngBounds();
+      bounds.extend(pos);
+      near.slice(0, 5).forEach(function (job, i) {
+        if (i === 0 || distance(job) <= reach) bounds.extend(new kakao.maps.LatLng(job.lat, job.lng));
+      });
+      map.setBounds(bounds, 80, 80, 120, 80);
+      // A job next door would zoom to street level; keep the area readable.
+      if (map.getLevel() < 4) map.setLevel(4, { anchor: pos });
     }
 
     function showHere() {
