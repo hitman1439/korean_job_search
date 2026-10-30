@@ -398,7 +398,8 @@
       apply();
     }
 
-    function askHere(done) {
+    // say() shows progress where the visitor clicked (list or map).
+    function askHere(done, say) {
       if (here) { done(true); return; }
       if (!navigator.geolocation) { done(false, "이 브라우저는 위치 확인을 지원하지 않아요."); return; }
       // Browsers refuse location on plain http (other than localhost).
@@ -406,7 +407,7 @@
         done(false, "보안 연결이 아니라서 위치를 쓸 수 없어요. https://korean-job-helper.com 으로 열어 주세요.");
         return;
       }
-      sortNoteText("내 위치를 확인하는 중이에요…");
+      (say || sortNoteText)("내 위치를 확인하는 중이에요…");
       var deviceOff = "브라우저는 위치를 허용했지만 기기의 위치 서비스가 꺼져 있어요. " +
         "Windows는 설정 > 개인 정보 및 보안 > 위치, 휴대폰은 설정의 위치(GPS)를 켜고, 브라우저 앱에도 위치 권한을 준 뒤 다시 눌러 주세요.";
       navigator.geolocation.getCurrentPosition(function (pos) {
@@ -416,7 +417,7 @@
       }, function (err) {
         if (err.code === 3) { done(false, "위치를 찾는 데 시간이 너무 걸렸어요. 잠시 뒤에 다시 눌러 주세요."); return; }
         if (err.code === 2) { done(false, deviceOff); return; }
-        var blocked = "위치 권한이 꺼져 있어서 가까운 순으로 볼 수 없어요. 주소창 옆 자물쇠 아이콘에서 위치를 허용해 주세요. " +
+        var blocked = "위치 권한이 꺼져 있어서 내 위치를 쓸 수 없어요. 주소창 옆 자물쇠 아이콘에서 위치를 허용해 주세요. " +
           "카카오톡·인스타그램 안에서 열었다면 Chrome이나 Safari로 열어 주세요.";
         // A refusal while the site itself is allowed comes from the device
         // (OS location off, or the browser app has no location access).
@@ -425,6 +426,35 @@
           done(false, status.state === "granted" ? deviceOff : blocked);
         }, function () { done(false, blocked); });
       }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 });
+    }
+
+    // "내 위치" on the map: mark the visitor and zoom in around them.
+    var hereNote = null;
+    function hereNoteText(text) {
+      if (!hereNote) return;
+      hereNote.textContent = text || "";
+      hereNote.hidden = !text;
+    }
+    function addHereButton() {
+      var btn = el("button", "here-btn", "내 위치");
+      btn.type = "button";
+      hereNote = el("p", "here-note", "");
+      hereNote.setAttribute("role", "status");
+      hereNote.hidden = true;
+      btn.addEventListener("click", function () {
+        btn.disabled = true;
+        askHere(function (ok, why) {
+          btn.disabled = false;
+          if (!ok) { hereNoteText(why); return; }
+          hereNoteText("");
+          closePopup();
+          var pos = new kakao.maps.LatLng(here.lat, here.lng);
+          if (map.getLevel() > 6) map.setLevel(6, { anchor: pos });
+          map.panTo(pos);
+        }, hereNoteText);
+      });
+      mapBox.appendChild(hereNote);
+      mapBox.appendChild(btn);
     }
 
     board.querySelectorAll("[data-sort]").forEach(function (btn) {
@@ -515,6 +545,7 @@
           });
         });
         showHere();
+        addHereButton();
         // A count bubble zooms in until its jobs separate into single pins.
         // Jobs at the very same spot never separate, so those get the list.
         function onCluster(cluster) {

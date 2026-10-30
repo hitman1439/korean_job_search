@@ -179,6 +179,18 @@ button, input, select { font: inherit; }
   display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--blue);
   border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(27, 100, 218, 0.25);
 }
+.here-btn {
+  position: absolute; right: 16px; bottom: 28px; z-index: 5; min-height: 44px; padding: 0 16px;
+  border: 0; border-radius: 22px; background: #fff; color: var(--text); font-size: 15px; font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); cursor: pointer;
+}
+.here-btn::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; background: var(--blue); vertical-align: 1px; }
+.here-btn:disabled { color: var(--text-4); cursor: wait; }
+.here-note {
+  position: absolute; right: 16px; bottom: 84px; left: 16px; z-index: 5; max-width: 360px; margin: 0 0 0 auto;
+  padding: 10px 12px; border-radius: 12px; background: #fff; color: var(--text-2); font-size: 13px; line-height: 1.5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
 .local-note { margin: 12px 0 0; font-size: 14px; line-height: 1.6; color: var(--text-4); }
 .list-panel .local-note { margin: 8px 12px 4px; padding: 10px 12px; border-radius: 12px; background: var(--fill); }
 .job-org { display: block; margin-top: 2px; font-size: 14px; color: var(--text-4); }
