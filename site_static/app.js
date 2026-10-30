@@ -229,7 +229,14 @@
         if (pin) pin.setAttribute("aria-pressed", on ? "true" : "false");
         if (overlays[job.id]) overlays[job.id].setZIndex(on ? 3 : 1);
       });
-      if (!pan || !chosen || !map || !overlays[chosen.id]) return;
+      if (!pan || !chosen || !map) return;
+      if (!overlays[chosen.id]) {
+        closePopup();
+        mapToast(chosen.scope === "online"
+          ? "온라인·재택 공고라 지도에 표시할 곳이 없어요. '자세히'에서 내용을 확인하세요."
+          : "이 공고는 근무지 위치를 아직 확인하지 못해 지도에 없어요. '자세히'에서 내용을 확인하세요.");
+        return;
+      }
       // Picked from the list: centre the map on it, zooming in (further if
       // the pin is folded into a count bubble), then show its bubble. The
       // move is instant: an animated panTo would be cut short by the bubble's
@@ -239,6 +246,21 @@
       if (map.getLevel() > level) map.setLevel(level);
       map.setCenter(pos);
       jobPopup(chosen);
+    }
+
+    var toast = null;
+    var toastTimer = null;
+    function mapToast(text) {
+      if (!mapBox) return;
+      if (!toast) {
+        toast = el("p", "map-toast", "");
+        toast.setAttribute("role", "status");
+        mapBox.appendChild(toast);
+      }
+      toast.textContent = text;
+      toast.hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.hidden = true; }, 4000);
     }
 
     // Speech bubble over the map: one job for a pin, a list for a count bubble.

@@ -2647,6 +2647,12 @@ def geocode_query(conn: sqlite3.Connection, query: str, rest_key: str) -> dict |
     return result
 
 
+def parent_institution(name: str | None) -> str | None:
+    """'부산외국어대학교 한국어문화교육원' -> '부산외국어대학교'; None when there is no unit to drop."""
+    match = re.match(r"(\S+?(?:대학교|대학))(?:\([^)]*\))?\s+\S", clean_text(name or ""))
+    return match.group(1) if match else None
+
+
 def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
     """Fill in coordinates for saved jobs that do not have them yet.
 
@@ -2676,12 +2682,15 @@ def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
         # A bare unit name ("가족센터") matches some other branch anywhere in the country.
         if institution and clean_text(institution) in GENERIC_INSTITUTION_NAMES:
             institution = None
-        for query in (institution, REGION_FALLBACK_QUERY.get(clean_text(location or ""))):
+        # Kakao often knows the university but not its language centre
+        # ("숭실대학교 한국어교육원"), so the university alone comes next.
+        parent = parent_institution(institution)
+        for query in (institution, parent, REGION_FALLBACK_QUERY.get(clean_text(location or ""))):
             if not query:
                 continue
             result = geocode_query(conn, query, rest_key)
             if result:
-                by_institution = query == institution
+                by_institution = query in {institution, parent}
                 break
         if not result:
             stats["unresolved"] += 1
