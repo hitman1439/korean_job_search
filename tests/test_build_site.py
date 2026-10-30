@@ -133,6 +133,33 @@ class BuildTests(unittest.TestCase):
         self.assertIn("이 브라우저에만", job)
         self.assertIn('data-toggle="saved"', self.index)
 
+    def test_public_site_has_no_test_parts(self):
+        job = self.job_page("아주대 강사 모집")
+        self.assertFalse((self.out / "review.html").exists())
+        self.assertFalse((self.out / "assets" / "large.css").exists())
+        for page in (self.index, job):
+            self.assertNotIn("large.css", page)
+            self.assertNotIn("review.html", page)
+        self.assertIn("Disallow: /test/", (self.out / "robots.txt").read_text(encoding="utf-8"))
+
+    def test_test_build_adds_large_type_and_review(self):
+        out = Path(self.tmp.name) / "site_test"
+        bs.build(self.db, out, {**self.config, "test": True}, TODAY, BUILT_AT)
+        index = (out / "index.html").read_text(encoding="utf-8")
+        self.assertIn("assets/large.css?v=", index)
+        self.assertIn('<meta name="robots" content="noindex, nofollow">', index)
+        self.assertIn("관리자만 볼 수 있어요", index)
+        self.assertIn('href="review.html"', index)
+        self.assertEqual((out / "robots.txt").read_text(encoding="utf-8"), "User-agent: *\nDisallow: /\n")
+        review = (out / "review.html").read_text(encoding="utf-8")
+        data = json.loads(re.search(r'<script type="application/json" id="reviewData">(.*?)</script>', review, re.S)[1])
+        self.assertIn("세종학당재단", data["orgs"])
+        self.assertEqual(len(data["areas"]), 12)
+        self.assertTrue((out / "assets" / "review.js").is_file())
+        job = next(p.read_text(encoding="utf-8") for p in (out / "jobs").glob("*.html")
+                   if "세종학당재단" in p.read_text(encoding="utf-8"))
+        self.assertIn("../review.html?org=%EC%84%B8%EC%A2%85", job)
+
     def test_alert_hidden_until_it_can_store_sign_ups(self):
         job = self.job_page("아주대 강사 모집")
         for page in (self.index, job):

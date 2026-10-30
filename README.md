@@ -265,3 +265,17 @@ KAKAO_JS_KEY=JavaScript_키
 ## 데이터 모델
 
 테이블과 컬럼은 `DATA_MODEL.md`를 보세요.
+
+## 관리자 전용 테스트 사이트 (`/test`)
+
+공개 사이트에 내보내기 전의 변경은 `/test` 아래에서 먼저 확인합니다. 지금 여기에만 있는 것: **큰 글씨**(`site_test_static/large.css`), **기관 평가**(`review.html`, 공고 상세의 "이 기관 평가하기").
+
+```bash
+python3 build_site.py          # 공개 사이트 → site/
+python3 build_site.py --test   # 테스트 사이트 → site_test/ (noindex, 상단에 "테스트 페이지" 표시)
+```
+
+- `serve.py`가 `/test/…` 요청을 `site_test/`에서 내보냅니다. **`secrets.env`의 `ADMIN_PASSWORD`(사용자명 `ADMIN_USER`, 기본 `admin`)로 HTTP 기본 인증**을 거쳐야 하고, 비밀번호가 없으면 `/test`는 404입니다. 응답에는 `Cache-Control: no-store, private`를 붙여 Cloudflare 같은 공유 캐시에 남지 않게 합니다. 공개 `robots.txt`도 `/test/`를 막습니다.
+- 평가 문항은 `review_items.py` 한 곳에 있습니다. 빌드가 페이지에 넣고, 서버가 같은 목록으로 검사합니다. 평가자에 대한 정보(역할·경력·시기·IP)는 묻지도 저장하지도 않고, 날짜도 **일 단위**로만 남깁니다(`reviews.sqlite3`).
+- 모인 평가 보기: `python3 serve.py --reviews`
+- 큰 글씨를 공개 사이트에 반영할 때는 `large.css`의 규칙을 `site_static/styles.css`에 합치고 `page()`의 `large.css` 링크를 없애면 됩니다.

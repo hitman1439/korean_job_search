@@ -26,12 +26,17 @@ import urllib.parse
 from pathlib import Path
 
 import collect_jobs
+import review_items
 
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "site_static"
 DEFAULT_OUT = ROOT / "site"
 # Owner-only build that also shows overseas jobs. Gitignored; never deploy it.
 PRIVATE_OUT = ROOT / "site_private"
+# Admin-only staging (/test on the live server, see serve.py): changes are
+# tried here before they reach the public site.
+TEST_STATIC_DIR = ROOT / "site_test_static"
+TEST_OUT = ROOT / "site_test"
 KST = dt.timezone(dt.timedelta(hours=9))
 
 SITE_NAME = "한국어강사 채용판"
@@ -420,7 +425,8 @@ def nearby_jobs(job: dict, jobs: list[dict], limit: int = 3, radius_km: float = 
 @functools.cache
 def asset_version(name: str) -> str:
     """A short hash of a static file, so browsers fetch it again after it changes."""
-    return hashlib.sha256((STATIC_DIR / name).read_bytes()).hexdigest()[:10]
+    path = STATIC_DIR / name if (STATIC_DIR / name).is_file() else TEST_STATIC_DIR / name
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:10]
 
 
 def page(title: str, description: str, body: str, *, root: str, config: dict, canonical: str | None,
@@ -432,11 +438,13 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
     )
     site_config = {"kakaoKey": config.get("kakao_js_key") or "", "alertEndpoint": config.get("alert_endpoint") or ""}
     private = config.get("private")
-    private_head = '<meta name="robots" content="noindex, nofollow">' if private else ""
+    test = config.get("test")
+    private_head = '<meta name="robots" content="noindex, nofollow">' if private or test else ""
     private_bar = (
         '<div class="private-bar" role="note">비공개 미리보기 · 해외 공고와 준비 중인 서비스 포함 · 배포하지 마세요</div>'
-        if private else ""
+        if private else '<div class="private-bar" role="note">테스트 페이지 · 관리자만 볼 수 있어요</div>' if test else ""
     )
+    test_css = f'<link rel="stylesheet" href="{root}assets/large.css?v={asset_version("large.css")}">' if test else ""
     return f"""<!doctype html>
 <html lang="ko">
 <head>
@@ -450,13 +458,14 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
 <meta property="og:type" content="website">
 <link rel="stylesheet" href="{FONT_CSS}">
 <link rel="stylesheet" href="{root}assets/styles.css?v={asset_version('styles.css')}">
+{test_css}
 {head_ads}
 {private_head}
 {extra_head}
 </head>
 <body{body_attrs}>
 {private_bar}
-{header(root, active, services_on(config), alerts_on(config))}
+{header(root, active, services_on(config), alerts_on(config), bool(test))}
 {body}
 {footer(root)}
 <script>window.SITE = {json_for_script(site_config)};</script>
@@ -479,8 +488,11 @@ def alerts_on(config: dict) -> bool:
     return bool(config.get("alert_endpoint"))
 
 
-def header(root: str, active: str, with_services: bool = False, with_alerts: bool = False) -> str:
+def header(root: str, active: str, with_services: bool = False, with_alerts: bool = False,
+           with_review: bool = False) -> str:
     links = [("jobs", f"{root}index.html", "채용공고")]
+    if with_review:
+        links.append(("review", f"{root}review.html", "기관 평가"))
     if with_services:
         links += [
             ("resume", f"{root}resume.html", "이력서·자소서 첨삭"),
@@ -741,6 +753,11 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
 <p class="desc">현직 강사가 교안과 시연을 보고 고칠 점을 짚어 드려요.</p>
 <a class="btn btn-dark" href="{e(mentoring)}">일정 고르기</a></section>""")
     side.append(service_blocks(config, root))
+    if config.get("test") and job.get("institution_name"):
+        side.insert(0, f"""<section class="callout" aria-labelledby="reviewTitle"><p class="kicker">기관 평가</p>
+<h2 id="reviewTitle">{e(job['org'])}에서<br>일해 본 적 있나요?</h2>
+<p class="desc">점수 몇 번만 누르면 돼요. 이름이나 경력은 묻지 않아요.</p>
+<a class="btn btn-primary" href="{root}review.html?org={e(urllib.parse.quote(job['org']))}">이 기관 평가하기</a></section>""")
 
     body = f"""<main class="wrap">
 <a class="back" href="{root}index.html">‹ 지도로 돌아가기</a>
@@ -877,8 +894,8 @@ def render_demo(config: dict) -> str:
 <a class="back" href="index.html">‹ 공고 보러 가기</a>
 <div class="demo">
 <section class="demo-form" aria-labelledby="demoHead">
-<div><h1 id="demoHead" class="title-xl" style="font-size: clamp(28px, 3.4vw, 34px)">모의수업 교안,<br>초안부터 같이 잡아 볼게요</h1>
-<p class="fine" style="font-size: 15px">가입 없이 3번까지 무료예요.</p></div>
+<div><h1 id="demoHead" class="title-xl demo-head">모의수업 교안,<br>초안부터 같이 잡아 볼게요</h1>
+<p class="fine demo-free">가입 없이 3번까지 무료예요.</p></div>
 <div role="group" aria-labelledby="levelLabel"><span id="levelLabel" class="label">학습자 수준</span>
 <div class="grid3">{options("level", ["초급 1", "초급 2", "중급 1", "중급 2", "고급 1", "고급 2"], "초급 2")}</div></div>
 <label><span class="label">가르칠 문법이나 주제</span><input class="field" type="text" data-topic value="-(으)ㄹ 수 있다/없다"></label>
@@ -903,6 +920,34 @@ def render_demo(config: dict) -> str:
                 root="", config=config, canonical=absolute(config, "demo.html"), active="demo")
 
 
+def review_orgs(conn: sqlite3.Connection) -> list[str]:
+    """Every institution the collector has seen, for the review page's search."""
+    names = {
+        " ".join(name.split())
+        for (name,) in conn.execute("SELECT DISTINCT institution_name FROM jobs WHERE institution_name IS NOT NULL")
+    }
+    return sorted((n for n in names if 1 < len(n) <= review_items.MAX_ORG), key=lambda n: (n.replace(" ", ""), n))
+
+
+def render_review(config: dict, orgs: list[str]) -> str:
+    """기관 평가 (test build only). review.js draws the steps from this data."""
+    data = {**review_items.page_data(), "orgs": orgs}
+    body = f"""<main class="wrap review" data-review>
+<a class="back" href="index.html">‹ 공고 보러 가기</a>
+<div class="rv-head">
+<h1 class="title-xl">기관 평가</h1>
+<p class="rv-lead">이름, 경력, 근무 시기는 묻지 않아요. 아는 것만 누르고 나머지는 건너뛰어도 돼요.</p>
+</div>
+<ol class="rv-progress" data-progress aria-label="평가 단계"></ol>
+<section class="rv-step" data-step-box aria-live="polite"><p class="rv-note">평가 화면을 불러오는 중이에요. 자바스크립트가 꺼져 있으면 평가할 수 없어요.</p></section>
+<script type="application/json" id="reviewData">{json_for_script(data)}</script>
+</main>
+<script src="assets/review.js?v={asset_version('review.js')}" defer></script>"""
+    head = f'<link rel="stylesheet" href="assets/review.css?v={asset_version("review.css")}">'
+    return page(f"기관 평가 · {SITE_NAME}", "한국어 강사가 일해 본 기관을 평가해요.", body, root="", config=config,
+                canonical=None, active="review", extra_head=head)
+
+
 def absolute(config: dict, path: str) -> str | None:
     base = config.get("site_url")
     return f"{base.rstrip('/')}/{path}" if base else None
@@ -919,7 +964,7 @@ def render_sitemap(jobs: list[dict], config: dict, today: dt.date) -> str | None
 
 def render_robots(config: dict) -> str:
     sitemap = absolute(config, "sitemap.xml")
-    return "User-agent: *\nAllow: /\n" + (f"Sitemap: {sitemap}\n" if sitemap else "")
+    return "User-agent: *\nAllow: /\nDisallow: /test/\n" + (f"Sitemap: {sitemap}\n" if sitemap else "")
 
 
 # --- build -------------------------------------------------------------------
@@ -930,6 +975,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     try:
         jobs = load_jobs(conn, today, approved_only, include_overseas=bool(config.get("private")))
         last_run = conn.execute("SELECT MAX(finished_at) FROM collection_runs").fetchone()[0]
+        orgs = review_orgs(conn) if config.get("test") else []
     finally:
         conn.close()
     # "새로 모았어요" reports the last finished collection, not when the HTML was written.
@@ -940,12 +986,16 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
         shutil.rmtree(out_dir)
     (out_dir / "jobs").mkdir(parents=True)
     shutil.copytree(STATIC_DIR, out_dir / "assets")
+    if config.get("test"):
+        shutil.copytree(TEST_STATIC_DIR, out_dir / "assets", dirs_exist_ok=True)
 
     write = lambda rel, text: (out_dir / rel).write_text(text, encoding="utf-8")
     write("index.html", render_index(jobs, config, collected_at))
     if services_on(config):
         write("demo.html", render_demo(config))
         write("resume.html", render_resume(config))
+    if config.get("test"):
+        write("review.html", render_review(config, orgs))
     files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)
     for job in jobs:
         job["files"] = [(name, rel) for name, rel in job["files"] if (files_dir / rel).is_file()]
@@ -953,7 +1003,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
             (out_dir / "files" / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(files_dir / rel, out_dir / "files" / rel)
         write(job["path"], render_job(job, jobs, config, today))
-    if config.get("private"):
+    if config.get("private") or config.get("test"):
         write("robots.txt", "User-agent: *\nDisallow: /\n")
     else:
         sitemap = render_sitemap(jobs, config, today)
@@ -979,6 +1029,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Owner-only build with overseas jobs, marked noindex, written to site_private/ (never deploy it)",
     )
     parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Admin-only staging build (larger type, 기관 평가) written to site_test/; serve.py serves it at /test/",
+    )
+    parser.add_argument(
         "--ad-slots",
         action="store_true",
         help="Draw dashed boxes where ads would go (layout review only; no ads run yet)",
@@ -995,7 +1050,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.test and args.private:
+        parser.error("--test and --private are separate builds; pick one")
     collect_jobs.load_secrets_file(Path(args.secrets))
     now = dt.datetime.now(KST)
     today = dt.date.fromisoformat(args.today) if args.today else now.date()
@@ -1005,10 +1063,11 @@ def main() -> int:
         "alert_endpoint": os.environ.get("ALERT_ENDPOINT"),
         "adsense_client": None if args.private else os.environ.get("ADSENSE_CLIENT"),
         "private": args.private,
+        "test": args.test,
         "services": args.with_services,
         "ad_slots": args.ad_slots,
     }
-    out = Path(args.out) if args.out else (PRIVATE_OUT if args.private else DEFAULT_OUT)
+    out = Path(args.out) if args.out else (PRIVATE_OUT if args.private else TEST_OUT if args.test else DEFAULT_OUT)
     # The DB is collected data, not in git: a fresh checkout has none.
     if not Path(args.db).is_file():
         print(f"error: no database at {Path(args.db).resolve()}\n"
