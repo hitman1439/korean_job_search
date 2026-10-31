@@ -34,6 +34,9 @@
 .st-time { margin-top: 16px; font-size: 17px; color: var(--text-4); }
 .st-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 28px auto 0; max-width: 420px; }
 .st-actions .btn { width: 100%; }
+/* "아니요, 건너뛸게요" with where it leads on a second line. */
+.st-actions .st-skip-scene { flex-direction: column; gap: 2px; padding-block: 10px; min-height: 68px; }
+.st-next-scene { font-size: 16px; font-weight: 500; color: var(--text-4); }
 .st-later { display: inline-flex; align-items: center; min-height: 48px; font-size: 17px; color: var(--text-4); }
 
 .st-head { margin-top: 24px; }

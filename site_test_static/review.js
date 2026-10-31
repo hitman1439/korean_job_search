@@ -214,17 +214,23 @@
   function drawOffer() {
     var scene = STORY[pos.c];
     box.appendChild(sceneHeader(pos.c));
-    var mid = heading(null, "‘" + scene.title + "’, 조금 더 이야기해 볼까요?",
-      "질문이 " + scene.more.length + "개 더 있어요. 넘어가도 괜찮아요.");
+    // Name what the extra questions are about and where skipping leads, so both buttons read plainly.
+    var topics = scene.more.map(function (m) { return m.fact ? FACT[m.fact].label : itemText(m.item); }).join(", ");
+    var after = STORY[pos.c + 1] ? "다음 장면: ‘" + STORY[pos.c + 1].title + "’" : "다음: 마지막 ‘후배에게 쪽지’";
+    var mid = heading(null, topics + "도 알려 주실래요?",
+      "선택 질문 " + scene.more.length + "개예요. 답하지 않아도 평가에는 문제없어요.");
     var actions = el("div", "st-actions");
-    actions.appendChild(button("btn btn-primary btn-lg", "더 이야기할래요", function () {
+    actions.appendChild(button("btn btn-primary btn-lg", "네, " + topics + "도 답할게요", function () {
       answers.more[scene.key] = true;
       advance();
     }));
-    actions.appendChild(button("btn btn-line btn-lg", "다음 장면으로 ›", function () {
+    var skip = button("btn btn-line btn-lg st-skip-scene", null, function () {
       answers.more[scene.key] = false;
       advance();
-    }));
+    });
+    skip.appendChild(el("span", null, "아니요, 건너뛸게요"));
+    skip.appendChild(el("span", "st-next-scene", after));
+    actions.appendChild(skip);
     mid.appendChild(actions);
     box.appendChild(mid);
     box.appendChild(bottomBar("여기까지 할게요"));
