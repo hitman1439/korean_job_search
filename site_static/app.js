@@ -115,7 +115,7 @@
         title: row.getAttribute("data-title"),
         org: row.getAttribute("data-org"),
         url: row.querySelector(".go").getAttribute("href"),
-        // Institution for 기관 평가; only the /test build sets it.
+        // Institution for 근무 후기; only the /test build sets it.
         review: row.getAttribute("data-review") || "",
         chips: Array.prototype.map.call(row.querySelectorAll(".chip"), function (c) { return c.textContent; }),
         row: row
@@ -334,7 +334,7 @@
       go.href = job.url;
       frag.appendChild(go);
       if (job.review) {
-        var rate = el("a", "btn btn-review", "평가 보기");
+        var rate = el("a", "btn btn-review", "후기 보기");
         rate.href = "rating.html?org=" + encodeURIComponent(job.review);
         frag.appendChild(rate);
       }
@@ -357,7 +357,7 @@
         li.appendChild(grow);
         li.appendChild(go);
         if (job.review) {
-          var rate = el("a", "go review", "평가");
+          var rate = el("a", "go review", "후기");
           rate.href = "rating.html?org=" + encodeURIComponent(job.review);
           li.appendChild(rate);
         }

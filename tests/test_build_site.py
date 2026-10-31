@@ -153,7 +153,7 @@ class BuildTests(unittest.TestCase):
         self.assertIn('<meta name="robots" content="noindex, nofollow">', index)
         self.assertIn("관리자만 볼 수 있어요", index)
         self.assertIn('href="rating.html"', index)
-        # Rows carry the institution so the map bubble can offer 평가 보기.
+        # Rows carry the institution so the map bubble can offer 후기 보기.
         self.assertIn('data-review="세종학당재단"', index)
         self.assertEqual((out / "robots.txt").read_text(encoding="utf-8"), "User-agent: *\nDisallow: /\n")
         for name, script in (("rating.html", "rating.js"), ("review.html", "review.js")):

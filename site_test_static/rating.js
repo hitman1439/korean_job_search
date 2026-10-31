@@ -1,6 +1,6 @@
-/* 기관 평가 결과 (test build only). With ?org= it shows that institution's
+/* 근무 후기 결과 (test build only). With ?org= it shows that institution's
    averages, job facts and comments from /test/api/ratings; without, a search.
-   "나도 평가하기" leads to review.html for the same institution. */
+   "나도 후기 남기기" leads to review.html for the same institution. */
 (function () {
   "use strict";
 
@@ -33,7 +33,7 @@
   function failed(err) {
     var msg = err && err.message === "login"
       ? "관리자 로그인이 풀렸어요. 새로고침해서 다시 로그인해 주세요."
-      : "평가를 불러오지 못했어요. 잠시 후 새로고침해 주세요.";
+      : "후기를 불러오지 못했어요. 잠시 후 새로고침해 주세요.";
     box.appendChild(el("p", "rv-note", msg));
   }
 
@@ -49,7 +49,7 @@
   function search(counts) {
     box.appendChild(link("back", "‹ 지도로 돌아가기", "index.html"));
     var head = el("div", "rv-center");
-    head.appendChild(el("h1", "rv-q", "어느 기관의 평가를 볼까요?"));
+    head.appendChild(el("h1", "rv-q", "어느 기관의 근무 후기를 볼까요?"));
     head.appendChild(el("p", "rv-sub", "기관 이름이나 대학 이름 일부만 써도 찾아져요."));
     box.appendChild(head);
     var label = el("label", "search rv-search");
@@ -72,11 +72,11 @@
       names.filter(function (n) { return s ? squash(n).indexOf(s) !== -1 : counts[n]; }).slice(0, 10).forEach(function (n) {
         var li = el("li");
         var a = link("rv-org", n, "rating.html?org=" + q(n));
-        a.appendChild(el("span", "rv-org-count", counts[n] ? "평가 " + counts[n] + "개" : "평가 없음"));
+        a.appendChild(el("span", "rv-org-count", counts[n] ? "후기 " + counts[n] + "개" : "후기 없음"));
         li.appendChild(a);
         list.appendChild(li);
       });
-      if (!list.children.length && !s) list.appendChild(el("li", "rv-note", "아직 평가가 하나도 없어요. 기관을 찾아 첫 평가를 남겨 주세요."));
+      if (!list.children.length && !s) list.appendChild(el("li", "rv-note", "아직 후기가 하나도 없어요. 기관을 찾아 첫 후기를 남겨 주세요."));
     }
     input.addEventListener("input", update);
     update();
@@ -86,18 +86,18 @@
   function results(sum) {
     box.appendChild(link("back", "‹ 지도로 돌아가기", "index.html"));
     var head = el("div", "rt-head");
-    head.appendChild(el("p", "rv-kicker", "기관 평가"));
+    head.appendChild(el("p", "rv-kicker", "근무 후기"));
     head.appendChild(el("h1", "rv-q", org));
-    head.appendChild(el("p", "rv-sub", sum.count ? "평가 " + sum.count + "개 · 이름 없이 모였어요" : "아직 평가가 없어요"));
+    head.appendChild(el("p", "rv-sub", sum.count ? "후기 " + sum.count + "개 · 이름 없이 모였어요" : "아직 후기가 없어요"));
     var reviewHref = "review.html?org=" + q(org);
-    if (sum.count) head.appendChild(link("btn btn-primary btn-lg rt-cta", "나도 평가하기", reviewHref));
+    if (sum.count) head.appendChild(link("btn btn-primary btn-lg rt-cta", "나도 후기 남기기", reviewHref));
     box.appendChild(head);
 
     if (!sum.count) {
       var empty = el("div", "rt-empty");
-      empty.appendChild(el("p", "rt-empty-t", "이곳에서 일해 봤다면 첫 평가를 남겨 주세요."));
+      empty.appendChild(el("p", "rt-empty-t", "이곳에서 일해 봤다면 첫 후기를 남겨 주세요."));
       empty.appendChild(el("p", "rv-sub", "아는 것만 몇 개 눌러도 돼요. 이름이나 경력은 묻지 않아요."));
-      empty.appendChild(link("btn btn-primary btn-lg rt-cta", "나도 평가하기", reviewHref));
+      empty.appendChild(link("btn btn-primary btn-lg rt-cta", "나도 후기 남기기", reviewHref));
       box.appendChild(empty);
       return;
     }
@@ -171,13 +171,13 @@
 
     var foot = el("div", "rt-foot");
     foot.appendChild(el("p", "rv-sub", "이곳에서 일해 봤나요?"));
-    foot.appendChild(link("btn btn-primary btn-lg rt-cta", "나도 평가하기", reviewHref));
+    foot.appendChild(link("btn btn-primary btn-lg rt-cta", "나도 후기 남기기", reviewHref));
     box.appendChild(foot);
   }
 
   box.textContent = "";
   if (org) {
-    document.title = org + " 평가 · " + document.title;
+    document.title = org + " 근무 후기 · " + document.title;
     load("api/ratings?org=" + q(org)).then(results, failed);
   } else {
     load("api/ratings").then(function (data) { search(data.orgs || {}); }, failed);

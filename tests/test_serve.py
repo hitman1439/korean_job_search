@@ -1,4 +1,4 @@
-"""Tests for serve.py: the save counter, 기관 평가, and the admin-only /test."""
+"""Tests for serve.py: the save counter, 근무 후기, and the admin-only /test."""
 
 from __future__ import annotations
 

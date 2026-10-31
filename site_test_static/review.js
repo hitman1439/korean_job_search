@@ -1,8 +1,8 @@
-/* 나도 평가하기 (test build only). Two ways in, one set of answers:
-   - 이야기로 평가하기 (the default), told like a personality quiz: a guide,
+/* 나도 후기 남기기 (test build only). Two ways in, one set of answers:
+   - 이야기로 남기기 (the default), told like a personality quiz: a guide,
      then one working day in scenes (교무실 → 수업 → 수업 후 → 월급날 → 학기말).
      Each answer starts with its number, which is its score, from 1 to 5.
-   - 직접 평가하기: area → statement → 1-5.
+   - 점수로 바로 남기기: area → statement → 1-5.
    Nothing is required: skip anything, stop any time. Before anything is sent,
    내 답 확인 lists every statement with boxes 1-5 to change in place. Every
    screen is a history entry, so the phone's back gesture goes back one step.
@@ -140,20 +140,20 @@
   }
   function drawIntro() {
     var card = el("div", "st-intro");
-    card.appendChild(el("p", "rv-kicker", "나도 평가하기 · " + org));
-    card.appendChild(title("자, 이제 평가해 볼까요?"));
+    card.appendChild(el("p", "rv-kicker", "나도 후기 남기기 · " + org));
+    card.appendChild(title("자, 이제 후기를 남겨 볼까요?"));
     card.appendChild(el("p", "st-lead", "편한 방법을 고르세요."));
     var resume = answers.at && answers.at.s !== "intro" && answeredCount();
     if (resume) {
       var again = el("div", "st-actions");
-      again.appendChild(button("btn btn-primary btn-lg", "하던 평가 이어서 하기", function () { go(answers.at); }));
+      again.appendChild(button("btn btn-primary btn-lg", "쓰던 후기 이어서 하기", function () { go(answers.at); }));
       card.appendChild(again);
       card.appendChild(el("p", "st-time", "아래에서 고르면 처음부터 다시 시작해요."));
     }
     var modes = el("div", "st-modes");
-    modes.appendChild(modeCard("이야기로 평가하기", "일하던 하루를 따라가며 상황에 맞는 답을 골라요. 심리테스트처럼 가볍게.",
+    modes.appendChild(modeCard("이야기로 남기기", "일하던 하루를 따라가며 상황에 맞는 답을 골라요. 심리테스트처럼 가볍게.",
       "약 2분", "story", !resume));
-    modes.appendChild(modeCard("직접 평가하기", "급여, 분위기 같은 항목을 골라 문장마다 1~5점을 바로 매겨요.",
+    modes.appendChild(modeCard("점수로 바로 남기기", "급여, 분위기 같은 항목을 골라 문장마다 1~5점을 바로 매겨요.",
       "원하는 것만", "direct"));
     card.appendChild(modes);
     var how = el("ul", "st-how");
@@ -170,7 +170,7 @@
     box.appendChild(card);
   }
 
-  // --- 이야기로 평가하기 ----------------------------------------------------------------
+  // --- 이야기로 남기기 ----------------------------------------------------------------
   function sceneHeader(c) {
     var head = el("div", "st-head");
     head.appendChild(el("p", "st-scene-no", "장면 " + (c + 1) + " / " + STORY.length + " · " + STORY[c].title));
@@ -218,7 +218,7 @@
     var topics = scene.more.map(function (m) { return m.fact ? FACT[m.fact].label : itemText(m.item); }).join(", ");
     var after = STORY[pos.c + 1] ? "다음 장면: ‘" + STORY[pos.c + 1].title + "’" : "다음: 마지막 ‘후배에게 쪽지’";
     var mid = heading(null, topics + "도 알려 주실래요?",
-      "선택 질문 " + scene.more.length + "개예요. 답하지 않아도 평가에는 문제없어요.");
+      "선택 질문 " + scene.more.length + "개예요. 답하지 않아도 괜찮아요.");
     var actions = el("div", "st-actions");
     actions.appendChild(button("btn btn-primary btn-lg", "네, " + topics + "도 답할게요", function () {
       answers.more[scene.key] = true;
@@ -252,7 +252,7 @@
   function drawNote() {
     if (pos.edit) {
       // Opened from the direct list: write, then go back to it.
-      box.appendChild(heading("직접 평가하기", "후배에게 남기는 쪽지", "쓰거나 고치거나 지워도 돼요."));
+      box.appendChild(heading("점수로 바로 남기기", "후배에게 남기는 쪽지", "쓰거나 고치거나 지워도 돼요."));
       box.appendChild(noteBox());
       box.appendChild(backBar("‹ 돌아가기"));
       return;
@@ -268,7 +268,7 @@
     box.appendChild(actions);
   }
 
-  // --- 직접 평가하기: area → statement → 1-5 ------------------------------------------
+  // --- 점수로 바로 남기기: area → statement → 1-5 ------------------------------------------
   function directCard(name, done, total, onClick) {
     var b = button("rv-card" + (done ? " has" : ""), null, onClick);
     b.appendChild(el("span", "rv-card-name", name));
@@ -276,7 +276,7 @@
     return b;
   }
   function drawAreas() {
-    box.appendChild(heading("직접 평가하기 · " + org, "어떤 항목을 평가할까요?", "아는 항목만 골라 누르세요. 하나만 해도 돼요."));
+    box.appendChild(heading("점수로 바로 남기기 · " + org, "어떤 항목에 점수를 매길까요?", "아는 항목만 골라 누르세요. 하나만 해도 돼요."));
     var grid = el("div", "rv-cards");
     DATA.areas.forEach(function (a) {
       var done = a.items.filter(function (it) { return answers.items[it.key]; }).length;
@@ -291,7 +291,7 @@
   }
   function drawItems() {
     var facts = pos.area === "facts";
-    box.appendChild(heading("직접 평가하기", facts ? "근무 조건" : AREA[pos.area].name,
+    box.appendChild(heading("점수로 바로 남기기", facts ? "근무 조건" : AREA[pos.area].name,
       "누르면 점수를 고를 수 있어요. 모르는 건 건너뛰세요."));
     var list = el("div", "rv-list");
     var rows = facts
@@ -442,9 +442,9 @@
     card.appendChild(el("p", "rv-kicker", "당신이 기억하는 " + org + "은(는)"));
     card.appendChild(title(best && scores[best] >= 3.5 ? DATA.types[best][0] : "평범하지만 무난한 곳"));
     if (worst && worst !== best && scores[worst] <= 2.5) card.appendChild(el("p", "st-but", "다만, " + DATA.types[worst][1]));
-    card.appendChild(el("p", "rv-sub", "고른 답은 이름 없이 " + org + " 평가에 더해졌어요. 고마워요!"));
+    card.appendChild(el("p", "rv-sub", "고른 답은 이름 없이 " + org + " 근무 후기에 더해졌어요. 고마워요!"));
     var actions = el("div", "st-actions");
-    var see = el("a", "btn btn-primary btn-lg", "다른 사람들의 평가 보기");
+    var see = el("a", "btn btn-primary btn-lg", "다른 사람들의 후기 보기");
     see.href = ratingHref();
     var map = el("a", "btn btn-line btn-lg", "지도로 돌아가기");
     map.href = "index.html";
@@ -500,7 +500,7 @@
 
   // --- no institution yet: find one -----------------------------------------------------
   function drawSearch() {
-    box.appendChild(heading("나도 평가하기", "어느 기관을 평가할까요?", "기관 이름이나 대학 이름 일부만 써도 찾아져요."));
+    box.appendChild(heading("나도 후기 남기기", "어느 기관의 후기를 남길까요?", "기관 이름이나 대학 이름 일부만 써도 찾아져요."));
     var label = el("label", "search rv-search");
     label.appendChild(el("span", "sr-only", "기관 이름"));
     var input = el("input");
@@ -525,7 +525,7 @@
       var typed = input.value.trim();
       if (typed && !hits.some(function (h) { return squash(h) === s; })) {
         var li = el("li");
-        li.appendChild(button("rv-org add", "“" + typed + "”(으)로 평가하기", function () { pick(typed); }));
+        li.appendChild(button("rv-org add", "“" + typed + "” 후기 남기기", function () { pick(typed); }));
         list.appendChild(li);
       }
     });

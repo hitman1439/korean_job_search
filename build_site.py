@@ -492,7 +492,7 @@ def header(root: str, active: str, with_services: bool = False, with_alerts: boo
            with_review: bool = False) -> str:
     links = [("jobs", f"{root}index.html", "채용공고")]
     if with_review:
-        links.append(("review", f"{root}rating.html", "기관 평가"))
+        links.append(("review", f"{root}rating.html", "근무 후기"))
     if with_services:
         links += [
             ("resume", f"{root}resume.html", "이력서·자소서 첨삭"),
@@ -756,11 +756,11 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
     side.append(service_blocks(config, root))
     if config.get("test") and job.get("institution_name"):
         org = e(urllib.parse.quote(job["institution_name"]))
-        side.insert(0, f"""<section class="callout" aria-labelledby="reviewTitle"><p class="kicker">기관 평가</p>
+        side.insert(0, f"""<section class="callout" aria-labelledby="reviewTitle"><p class="kicker">근무 후기</p>
 <h2 id="reviewTitle">{e(job['org'])},<br>일해 본 사람들은 어땠을까요?</h2>
 <p class="desc">현직·전직 강사들이 남긴 점수와 한마디를 볼 수 있어요.</p>
-<div class="apply-row"><a class="btn btn-review" href="{root}rating.html?org={org}">평가 보기</a>
-<a class="btn btn-line" href="{root}review.html?org={org}">나도 평가하기</a></div></section>""")
+<div class="apply-row"><a class="btn btn-review" href="{root}rating.html?org={org}">후기 보기</a>
+<a class="btn btn-line" href="{root}review.html?org={org}">나도 후기 남기기</a></div></section>""")
 
     body = f"""<main class="wrap">
 <a class="back" href="{root}index.html">‹ 지도로 돌아가기</a>
@@ -933,7 +933,7 @@ def review_orgs(conn: sqlite3.Connection) -> list[str]:
 
 
 def review_page(config: dict, orgs: list[str], *, script: str, title: str, active: str) -> str:
-    """Shell for the two 기관 평가 pages (test build only); the script draws the rest."""
+    """Shell for the two 근무 후기 pages (test build only); the script draws the rest."""
     data = {**review_items.page_data(), "orgs": orgs}
     body = f"""<main class="wrap review" data-review>
 <div data-review-box aria-live="polite"><p class="rv-note">불러오는 중이에요. 자바스크립트가 꺼져 있으면 볼 수 없어요.</p></div>
@@ -941,18 +941,18 @@ def review_page(config: dict, orgs: list[str], *, script: str, title: str, activ
 </main>
 <script src="assets/{script}?v={asset_version(script)}" defer></script>"""
     head = f'<link rel="stylesheet" href="assets/review.css?v={asset_version("review.css")}">'
-    return page(f"{title} · {SITE_NAME}", "한국어 강사가 일해 본 기관을 평가해요.", body, root="", config=config,
+    return page(f"{title} · {SITE_NAME}", "한국어 강사들이 일해 본 기관의 근무 후기를 모았어요.", body, root="", config=config,
                 canonical=None, active=active, extra_head=head)
 
 
 def render_rating(config: dict, orgs: list[str]) -> str:
     """One institution's results (?org=), or a search for one."""
-    return review_page(config, orgs, script="rating.js", title="기관 평가", active="review")
+    return review_page(config, orgs, script="rating.js", title="근무 후기", active="review")
 
 
 def render_review(config: dict, orgs: list[str]) -> str:
     """The form: area → statement → score, any of it, finished whenever."""
-    return review_page(config, orgs, script="review.js", title="나도 평가하기", active="review")
+    return review_page(config, orgs, script="review.js", title="나도 후기 남기기", active="review")
 
 
 def absolute(config: dict, path: str) -> str | None:
@@ -1039,7 +1039,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--test",
         action="store_true",
-        help="Admin-only staging build (larger type, 기관 평가) written to site_test/; serve.py serves it at /test/",
+        help="Admin-only staging build (larger type, 근무 후기) written to site_test/; serve.py serves it at /test/",
     )
     parser.add_argument(
         "--ad-slots",

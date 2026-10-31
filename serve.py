@@ -13,7 +13,7 @@ secrets.env. Without a password set, /test does not exist. Reviews sent from
 
   python serve.py                      # serve site/ on 127.0.0.1:8080
   python serve.py --report             # print save counts per job
-  python serve.py --reviews            # print 기관 평가 per institution
+  python serve.py --reviews            # print 근무 후기 per institution
 """
 
 from __future__ import annotations
@@ -342,7 +342,7 @@ def report_reviews(reviews_path: Path) -> int:
     counts = org_counts(conn)
     for org in sorted(counts, key=lambda o: -counts[o]):
         summary = review_items.summarize(org_reviews(conn, org))
-        print(f"{org}  평가 {summary['count']}개")
+        print(f"{org}  후기 {summary['count']}개")
         areas = []
         for _, name, items in review_items.AREAS:
             scores = [summary["items"][k] for k, _ in items if k in summary["items"]]
@@ -364,10 +364,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--stats", default=str(DEFAULT_STATS), help="Save-count database")
     parser.add_argument("--db", default=str(DEFAULT_JOBS), help="Jobs database, for titles in --report")
     parser.add_argument("--test-site", default=str(DEFAULT_TEST), help="Admin-only staging build served at /test/")
-    parser.add_argument("--reviews-db", default=str(DEFAULT_REVIEWS), help="기관 평가 database")
+    parser.add_argument("--reviews-db", default=str(DEFAULT_REVIEWS), help="근무 후기 database")
     parser.add_argument("--secrets", default=str(DEFAULT_SECRETS), help="KEY=value file with ADMIN_PASSWORD")
     parser.add_argument("--report", action="store_true", help="Print save counts and exit")
-    parser.add_argument("--reviews", action="store_true", help="Print 기관 평가 per institution and exit")
+    parser.add_argument("--reviews", action="store_true", help="Print 근무 후기 per institution and exit")
     args = parser.parse_args(argv)
 
     if args.report:
