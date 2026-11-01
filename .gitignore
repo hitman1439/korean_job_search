@@ -20,3 +20,9 @@ secrets.env
 site/
 site_private/
 site_test/
+# pi_collect.sh: folders mid-swap and the run lock
+site.new/
+site.old/
+site_test.new/
+site_test.old/
+.collect.lock

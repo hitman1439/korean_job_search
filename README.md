@@ -155,6 +155,23 @@ $env:SARAMIN_ACCESS_KEY="발급받은_access_key"
 python collect_jobs.py --saramin-count 50
 ```
 
+### Pi에서 매시간 자동 수집
+
+Pi에서는 systemd 타이머가 매시간(0~5분 사이 무작위로) 한 번씩 `pi_collect.sh`를 실행합니다. 이 스크립트는 수집 → 공개 사이트 빌드(`site/`) → 테스트 사이트 빌드(`site_test/`) 순서로 돕니다. `collect_jobs.py`가 `secrets.env`를 직접 읽기 때문에, 키(사람인·네이버 등)도 그대로 적용됩니다.
+
+```bash
+bash pi_install_collect_timer.sh                          # 설치 (한 번만, 고친 뒤 다시 실행해도 됨)
+systemctl list-timers korean-jobs-collect.timer           # 다음 실행 시각
+journalctl -u korean-jobs-collect -n 50                   # 최근 실행 기록
+sudo systemctl start korean-jobs-collect                  # 지금 한 번 실행
+sudo systemctl disable --now korean-jobs-collect.timer    # 자동 수집 끄기
+```
+
+- 수집이 길어져도 두 번이 겹쳐 돌지 않습니다(`flock`). 앞 실행이 아직 돌고 있으면 그 시각의 실행은 건너뜁니다.
+- 사이트는 새 폴더에 빌드한 뒤 한 번에 바꿔 넣어서, `serve.py`가 빌드 도중의 반쯤 빈 사이트를 내보내지 않습니다.
+- 일부 출처만 실패하면(종료 코드 2) 그래도 빌드합니다. 수집 자체가 죽으면 빌드하지 않고 마지막 정상 사이트를 그대로 둡니다.
+- 코드를 바꾼 뒤에는 Pi에서 `git pull`만 하면 다음 실행부터 반영됩니다. 자동 `git pull`은 하지 않습니다.
+
 ## 공개 사이트 (`build_site.py`)
 
 수집한 DB로 공개용 정적 사이트를 만듭니다. 서버가 필요 없어서 Cloudflare Pages, GitHub Pages, Netlify 같은 정적 호스팅에 `site/` 폴더를 그대로 올리면 됩니다.
