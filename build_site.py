@@ -490,10 +490,9 @@ def alerts_on(config: dict) -> bool:
 
 def header(root: str, active: str, with_services: bool = False, with_alerts: bool = False,
            with_review: bool = False) -> str:
-    links = [("jobs", f"{root}index.html", "채용공고")]
+    links = [("jobs", f"{root}index.html", "채용공고"), ("pay", f"{root}pay.html", "실수령 계산기")]
     if with_review:
         links.append(("review", f"{root}rating.html", "근무 후기"))
-        links.append(("pay", f"{root}pay.html", "실수령 계산기"))
     if with_services:
         links += [
             ("resume", f"{root}resume.html", "이력서·자소서 첨삭"),
@@ -677,7 +676,7 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
         ("문의", job.get("contact")),
         ("지원 사항", job.get("benefits")),
     ]
-    pay = pay_query(job) if config.get("test") else None
+    pay = pay_query(job)
     pay_link = f' <a class="pay-link" href="{root}pay.html?{e(pay)}">실수령 계산</a>' if pay else ""
     fact_rows = "".join(
         f"<div><dt>{e(k)}</dt><dd>{e(v)}{pay_link if k == '강의료' else ''}</dd></div>" for k, v in facts if v
@@ -1022,7 +1021,7 @@ def render_pay(config: dict) -> str:
 <script src="assets/pay.js?v=""" + asset_version("pay.js") + """" defer></script>"""
     head = f'<link rel="stylesheet" href="assets/pay.css?v={asset_version("pay.css")}">'
     return page(f"강사료 실수령 계산기 · {SITE_NAME}", "한국어 강사 강사료의 한 달 실수령액을 프리랜서(3.3%)와 4대보험 근로자로 비교해 보세요.",
-                body, root="", config=config, canonical=None, active="pay", extra_head=head)
+                body, root="", config=config, canonical=absolute(config, "pay.html"), active="pay", extra_head=head)
 
 
 def absolute(config: dict, path: str) -> str | None:
@@ -1034,7 +1033,7 @@ def render_sitemap(jobs: list[dict], config: dict, today: dt.date) -> str | None
     if not config.get("site_url"):
         return None
     service_pages = ["resume.html", "demo.html"] if services_on(config) else []
-    urls = ["index.html"] + service_pages + [job["path"] for job in jobs]
+    urls = ["index.html", "pay.html"] + service_pages + [job["path"] for job in jobs]
     entries = "".join(f"<url><loc>{e(absolute(config, u))}</loc><lastmod>{today.isoformat()}</lastmod></url>" for u in urls)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{entries}</urlset>\n'
 
@@ -1068,13 +1067,13 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
 
     write = lambda rel, text: (out_dir / rel).write_text(text, encoding="utf-8")
     write("index.html", render_index(jobs, config, collected_at))
+    write("pay.html", render_pay(config))
     if services_on(config):
         write("demo.html", render_demo(config))
         write("resume.html", render_resume(config))
     if config.get("test"):
         write("rating.html", render_rating(config, orgs))
         write("review.html", render_review(config, orgs))
-        write("pay.html", render_pay(config))
     files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)
     for job in jobs:
         job["files"] = [(name, rel) for name, rel in job["files"] if (files_dir / rel).is_file()]

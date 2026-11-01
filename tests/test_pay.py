@@ -1,4 +1,4 @@
-"""Tests for the 강사료 실수령 계산기 math (site_test_static/pay.js), run under node.
+"""Tests for the 강사료 실수령 계산기 math (site_static/pay.js), run under node.
 
 Run from the project root:  python -m unittest discover -s tests
 """
@@ -11,7 +11,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-PAY_JS = Path(__file__).resolve().parent.parent / "site_test_static" / "pay.js"
+PAY_JS = Path(__file__).resolve().parent.parent / "site_static" / "pay.js"
 NODE = shutil.which("node")
 
 

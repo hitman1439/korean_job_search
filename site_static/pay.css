@@ -1,4 +1,4 @@
-/* 강사료 실수령 계산기 (test build only): inputs, one contract at a time,
+/* 강사료 실수령 계산기 (pay.html): inputs, one contract at a time,
    and two big numbers (한 주, 한 달). What gets deducted stays folded. */
 .pay { max-width: 720px; padding-bottom: 48px; }
 .pay .title-xl { margin-top: 8px; }

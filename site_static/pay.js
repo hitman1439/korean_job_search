@@ -1,4 +1,4 @@
-/* 강사료 실수령 계산기 (test build only: pay.html).
+/* 강사료 실수령 계산기 (pay.html).
 
    PayCalc.calc(rate, hours, unit) compares one month of take-home pay under
    the two usual contracts for a Korean-language lecturer:

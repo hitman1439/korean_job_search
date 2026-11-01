@@ -120,7 +120,8 @@ class BuildTests(unittest.TestCase):
 
     def test_sitemap_and_canonical(self):
         sitemap = (self.out / "sitemap.xml").read_text(encoding="utf-8")
-        self.assertEqual(sitemap.count("<url>"), 3)
+        self.assertEqual(sitemap.count("<url>"), 4)
+        self.assertIn("<loc>https://jobs.example/pay.html</loc>", sitemap)
         self.assertIn('<link rel="canonical" href="https://jobs.example/index.html">', self.index)
 
     def test_public_site_is_the_free_board_only(self):
@@ -171,26 +172,22 @@ class BuildTests(unittest.TestCase):
         self.assertIn("../rating.html?org=%EC%84%B8%EC%A2%85", job)
         self.assertIn("../review.html?org=%EC%84%B8%EC%A2%85", job)
 
-    def test_pay_calculator_in_test_build_only(self):
+    def test_pay_calculator_is_public(self):
         conn = sqlite3.connect(self.db)
         conn.execute("UPDATE jobs SET salary_text = '시간당 35,000원 (박사 40,000원)', work_hours = '주 12시간 이내' "
                      "WHERE title = '아주대 강사 모집'")
         conn.commit()
         conn.close()
         bs.build(self.db, self.out, self.config, TODAY, BUILT_AT)
-        self.assertFalse((self.out / "pay.html").exists())
-        self.assertNotIn("pay.html", self.job_page("아주대 강사 모집"))
-
-        out = Path(self.tmp.name) / "site_test"
-        bs.build(self.db, out, {**self.config, "test": True}, TODAY, BUILT_AT)
-        pay = (out / "pay.html").read_text(encoding="utf-8")
+        pay = (self.out / "pay.html").read_text(encoding="utf-8")
         self.assertIn("assets/pay.js?v=", pay)
         self.assertIn("assets/pay.css?v=", pay)
-        self.assertTrue((out / "assets" / "pay.js").is_file())
-        self.assertIn('href="pay.html"', (out / "index.html").read_text(encoding="utf-8"))
-        job = next(p.read_text(encoding="utf-8") for p in (out / "jobs").glob("*.html")
-                   if "아주대 강사 모집" in p.read_text(encoding="utf-8"))
-        self.assertIn('href="../pay.html?rate=35000&amp;hours=12&amp;from=', job)
+        self.assertIn('<link rel="canonical" href="https://jobs.example/pay.html">', pay)
+        self.assertNotIn("noindex", pay)
+        self.assertNotIn("관리자만 볼 수 있어요", pay)
+        self.assertTrue((self.out / "assets" / "pay.js").is_file())
+        self.assertIn('href="pay.html"', (self.out / "index.html").read_text(encoding="utf-8"))
+        self.assertIn('href="../pay.html?rate=35000&amp;hours=12&amp;from=', self.job_page("아주대 강사 모집"))
 
     def test_pay_query_needs_an_hourly_fee_in_won(self):
         job = {"scope": "domestic", "org": "가나대"}
