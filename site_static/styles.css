@@ -248,6 +248,7 @@ button, input, select { font: inherit; }
 .facts div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 20px; padding: 12px 0; align-items: baseline; }
 .facts dt { font-size: 16px; color: var(--text-4); }
 .facts dd { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.55; text-align: left; overflow-wrap: anywhere; }
+.facts dd .pay-link { margin-left: 8px; font-size: 15px; font-weight: 600; color: var(--blue); white-space: nowrap; }
 .prose { margin-top: 10px; max-width: 72ch; font-size: 16px; line-height: 1.8; color: var(--text-2); }
 .detail { max-width: 1440px; }
 .fine { margin-top: 12px; font-size: 13px; color: var(--text-4); line-height: 1.6; }

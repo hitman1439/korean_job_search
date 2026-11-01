@@ -493,6 +493,7 @@ def header(root: str, active: str, with_services: bool = False, with_alerts: boo
     links = [("jobs", f"{root}index.html", "채용공고")]
     if with_review:
         links.append(("review", f"{root}rating.html", "근무 후기"))
+        links.append(("pay", f"{root}pay.html", "실수령 계산기"))
     if with_services:
         links += [
             ("resume", f"{root}resume.html", "이력서·자소서 첨삭"),
@@ -676,7 +677,11 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
         ("문의", job.get("contact")),
         ("지원 사항", job.get("benefits")),
     ]
-    fact_rows = "".join(f"<div><dt>{e(k)}</dt><dd>{e(v)}</dd></div>" for k, v in facts if v)
+    pay = pay_query(job) if config.get("test") else None
+    pay_link = f' <a class="pay-link" href="{root}pay.html?{e(pay)}">실수령 계산</a>' if pay else ""
+    fact_rows = "".join(
+        f"<div><dt>{e(k)}</dt><dd>{e(v)}{pay_link if k == '강의료' else ''}</dd></div>" for k, v in facts if v
+    )
     chips = "".join(f'<span class="chip">{e(c)}</span>' for c in job["chips"])
 
     map_section = ""
@@ -955,6 +960,69 @@ def render_review(config: dict, orgs: list[str]) -> str:
     return review_page(config, orgs, script="review.js", title="나도 후기 남기기", active="review")
 
 
+RATE_RE = re.compile(r"(\d{1,3}(?:,\d{3})+|\d{4,6})\s*원")
+WEEKLY_HOURS_RE = re.compile(r"주\s*(\d{1,2}(?:\.\d)?)\s*시간")
+
+
+def pay_query(job: dict) -> str | None:
+    """?rate=&hours=&from= for the 실수령 계산기, when the notice names an hourly
+    fee in won (the first one, if it lists several). Weekly hours are added
+    only when the notice states them as 주 N시간."""
+    salary = job.get("salary_text") or ""
+    if job["scope"] == "overseas" or not re.search(r"시간|시급", salary):
+        return None
+    rate = next((n for n in (int(m.replace(",", "")) for m in RATE_RE.findall(salary)) if 10_000 <= n <= 200_000), None)
+    if rate is None:
+        return None
+    query = {"rate": rate}
+    hours = WEEKLY_HOURS_RE.search(job.get("work_hours") or "")
+    if hours and 0 < float(hours[1]) <= 60:
+        query["hours"] = hours[1]
+    query["from"] = job["org"]
+    return urllib.parse.urlencode(query)
+
+
+def render_pay(config: dict) -> str:
+    """강사료 실수령 계산기: hourly fee × weekly hours → one month's take-home
+    pay as a freelancer (3.3%) and as an employee (4대보험). The math lives in
+    pay.js, which tests run under node."""
+    body = """<main class="wrap pay" data-pay>
+<a class="back" href="index.html">‹ 공고 보러 가기</a>
+<h1 class="title-xl">강사료, 실제로 얼마 받을까요?</h1>
+<p class="pay-sub">시간당 강사료와 주당 시수를 넣으면 한 달 실수령액을 계약 형태별로 비교해 드려요.</p>
+<p class="pay-from" data-from hidden><strong></strong> 공고의 강사료로 채웠어요. 고쳐서 계산해 보세요.</p>
+<div class="pay-inputs">
+<label><span class="label">시간당 강사료</span>
+<span class="pay-field"><input class="field" type="text" inputmode="numeric" autocomplete="off" data-rate value="35,000"><span class="unit">원</span></span></label>
+<label><span class="label">주당 시수</span>
+<span class="pay-field"><input class="field" type="text" inputmode="decimal" autocomplete="off" data-hours value="12"><span class="unit">시간</span></span></label>
+</div>
+<section data-out aria-live="polite">
+<p class="pay-gross">한 달 세전 <strong data-gross></strong> <span>(월 평균 <span data-month-hours></span>시간 · 한 달을 4.33주로 계산)</span></p>
+<div class="pay-cards">
+<div class="pay-card" data-card="freelance"><h2>프리랜서 <span>3.3% 떼는 경우</span></h2>
+<p class="pay-net" data-net></p><dl class="pay-items" data-items></dl>
+<p class="fine">5월 종합소득세 신고로 정산해요. 지역가입자 건강보험료는 따로 내야 할 수 있어요.</p></div>
+<div class="pay-card" data-card="employee"><h2>근로자 <span>4대보험 가입</span></h2>
+<p class="pay-net" data-net></p><dl class="pay-items" data-items></dl>
+<p class="fine">소득세는 1인 가구 기준 어림값이에요. 실제 원천징수액과 조금 다를 수 있고, 연말정산으로 정산해요.</p></div>
+</div>
+<p class="pay-warn" data-under60 hidden>한 달 근무가 60시간 미만이면 보통 국민연금·건강보험·고용보험 가입 대상이 아니에요. 이 경우 근로자라도 소득세만 떼는 경우가 많아요.</p>
+</section>
+<section class="pay-notes"><h2>알아 두면 좋아요</h2>
+<ul>
+<li><strong>주휴수당</strong>은 계산에 넣지 않았어요. 근로자로 주 15시간 이상 일하면 받을 수 있어요.</li>
+<li>하루짜리 특강처럼 일회성 강의료는 <strong>기타소득(8.8%)</strong>으로 처리되기도 해요.</li>
+<li>방학처럼 수업이 없는 달은 수입이 없을 수 있어요. 계약서의 지급 기준을 꼭 확인하세요.</li>
+<li>보험료율은 2026년 기준이에요(국민연금 9.5%, 건강보험 7.19%, 장기요양 건강보험료의 13.14%, 고용보험 0.9%). 근로자가 내는 몫(절반)만 계산했어요.</li>
+</ul></section>
+</main>
+<script src="assets/pay.js?v=""" + asset_version("pay.js") + """" defer></script>"""
+    head = f'<link rel="stylesheet" href="assets/pay.css?v={asset_version("pay.css")}">'
+    return page(f"강사료 실수령 계산기 · {SITE_NAME}", "한국어 강사 강사료의 한 달 실수령액을 프리랜서(3.3%)와 4대보험 근로자로 비교해 보세요.",
+                body, root="", config=config, canonical=None, active="pay", extra_head=head)
+
+
 def absolute(config: dict, path: str) -> str | None:
     base = config.get("site_url")
     return f"{base.rstrip('/')}/{path}" if base else None
@@ -1004,6 +1072,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     if config.get("test"):
         write("rating.html", render_rating(config, orgs))
         write("review.html", render_review(config, orgs))
+        write("pay.html", render_pay(config))
     files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)
     for job in jobs:
         job["files"] = [(name, rel) for name, rel in job["files"] if (files_dir / rel).is_file()]

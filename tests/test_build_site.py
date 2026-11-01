@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -169,6 +170,37 @@ class BuildTests(unittest.TestCase):
                    if "세종학당재단" in p.read_text(encoding="utf-8"))
         self.assertIn("../rating.html?org=%EC%84%B8%EC%A2%85", job)
         self.assertIn("../review.html?org=%EC%84%B8%EC%A2%85", job)
+
+    def test_pay_calculator_in_test_build_only(self):
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE jobs SET salary_text = '시간당 35,000원 (박사 40,000원)', work_hours = '주 12시간 이내' "
+                     "WHERE title = '아주대 강사 모집'")
+        conn.commit()
+        conn.close()
+        bs.build(self.db, self.out, self.config, TODAY, BUILT_AT)
+        self.assertFalse((self.out / "pay.html").exists())
+        self.assertNotIn("pay.html", self.job_page("아주대 강사 모집"))
+
+        out = Path(self.tmp.name) / "site_test"
+        bs.build(self.db, out, {**self.config, "test": True}, TODAY, BUILT_AT)
+        pay = (out / "pay.html").read_text(encoding="utf-8")
+        self.assertIn("assets/pay.js?v=", pay)
+        self.assertIn("assets/pay.css?v=", pay)
+        self.assertTrue((out / "assets" / "pay.js").is_file())
+        self.assertIn('href="pay.html"', (out / "index.html").read_text(encoding="utf-8"))
+        job = next(p.read_text(encoding="utf-8") for p in (out / "jobs").glob("*.html")
+                   if "아주대 강사 모집" in p.read_text(encoding="utf-8"))
+        self.assertIn('href="../pay.html?rate=35000&amp;hours=12&amp;from=', job)
+
+    def test_pay_query_needs_an_hourly_fee_in_won(self):
+        job = {"scope": "domestic", "org": "가나대"}
+        self.assertEqual(bs.pay_query({**job, "salary_text": "시급 40,000원/35,000원", "work_hours": "주 8시간"}),
+                         "rate=40000&hours=8&from=%EA%B0%80%EB%82%98%EB%8C%80")
+        self.assertEqual(bs.pay_query({**job, "salary_text": "시간당 32,000원"}), "rate=32000&from=%EA%B0%80%EB%82%98%EB%8C%80")
+        self.assertIsNone(bs.pay_query({**job, "salary_text": "월 2,000,000원"}))
+        self.assertIsNone(bs.pay_query({**job, "salary_text": "시간당 강의료 (금액 미기재)"}))
+        self.assertIsNone(bs.pay_query({**job, "salary_text": "시간당 $82"}))
+        self.assertIsNone(bs.pay_query({"scope": "overseas", "org": "x", "salary_text": "시간당 35,000원"}))
 
     def test_alert_hidden_until_it_can_store_sign_ups(self):
         job = self.job_page("아주대 강사 모집")
