@@ -317,3 +317,22 @@ button, input, select { font: inherit; }
 .plan .step span { font-size: 14px; color: var(--blue); font-weight: 600; }
 .plan .body { flex: 1 1 300px; min-width: 0; font-size: 16px; line-height: 1.7; color: var(--text-2); }
 .plan .say { margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: #fff; font-size: 15px; line-height: 1.6; }
+
+/* Job page side box: 실수령 계산 at this notice's hourly fee (pay.js) */
+.pay-mini h2 { margin-bottom: 14px; }
+.pm-rate { font-size: 15px; color: var(--text-3); }
+.pm-rate strong { color: var(--text); }
+.pm-rates { display: flex; flex-wrap: wrap; gap: 6px; }
+.pm-rates button { min-height: 40px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: #fff; color: var(--text-3); font-size: 15px; font-weight: 600; cursor: pointer; }
+.pm-rates button[aria-pressed="true"] { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); }
+.pm-hours { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; font-size: 15px; font-weight: 600; color: var(--text-2); }
+.pm-field { display: inline-flex; align-items: center; gap: 6px; font-weight: 400; color: var(--text-4); }
+.pm-field input { width: 96px; min-height: 48px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 12px; background: #fff; font-size: 18px; font-weight: 600; color: var(--text); text-align: right; }
+.pm-out { margin: 14px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.pm-out div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 12px; background: #fff; }
+.pm-out dt { font-size: 15px; color: var(--text-3); }
+.pm-out dd { margin: 0; display: flex; flex-direction: column; align-items: flex-end; }
+.pm-out strong { font-size: 22px; font-weight: 700; color: var(--blue); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pm-out dd span { font-size: 13px; color: var(--text-4); font-variant-numeric: tabular-nums; }
+.pm-note { margin-top: 10px; font-size: 13px; line-height: 1.5; color: var(--text-4); }
+.pm-more { display: inline-flex; align-items: center; min-height: 44px; font-size: 15px; font-weight: 600; color: var(--blue); text-decoration: none; }

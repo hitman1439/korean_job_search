@@ -187,7 +187,16 @@ class BuildTests(unittest.TestCase):
         self.assertNotIn("관리자만 볼 수 있어요", pay)
         self.assertTrue((self.out / "assets" / "pay.js").is_file())
         self.assertIn('href="pay.html"', (self.out / "index.html").read_text(encoding="utf-8"))
-        self.assertIn('href="../pay.html?rate=35000&amp;hours=12&amp;from=', self.job_page("아주대 강사 모집"))
+        job = self.job_page("아주대 강사 모집")
+        self.assertIn('href="../pay.html?rate=35000&amp;hours=12&amp;from=', job)
+        # Side box: both fees to pick from, the notice's weekly hours filled in.
+        self.assertIn('data-pay-mini data-rate="35000"', job)
+        self.assertIn('data-mini-rate="40000" aria-pressed="false">40,000원</button>', job)
+        self.assertIn('value="12" data-mini-hours', job)
+        self.assertIn('../assets/pay.js?v=', job)
+        other = self.job_page("세종학당재단")
+        self.assertNotIn("data-pay-mini", other)
+        self.assertNotIn("pay.js", other)
 
     def test_pay_query_needs_an_hourly_fee_in_won(self):
         job = {"scope": "domestic", "org": "가나대"}
@@ -198,6 +207,9 @@ class BuildTests(unittest.TestCase):
         self.assertIsNone(bs.pay_query({**job, "salary_text": "시간당 강의료 (금액 미기재)"}))
         self.assertIsNone(bs.pay_query({**job, "salary_text": "시간당 $82"}))
         self.assertIsNone(bs.pay_query({"scope": "overseas", "org": "x", "salary_text": "시간당 35,000원"}))
+        self.assertEqual(bs.hourly_rates({**job, "salary_text": "시간당 박사 45,000원 / 석사 40,000원 / 학사 37,000원"}),
+                         [45000, 40000, 37000])
+        self.assertEqual(bs.hourly_rates({**job, "salary_text": "시급 35,000원(화목), 35,000원(월수금)"}), [35000])
 
     def test_alert_hidden_until_it_can_store_sign_ups(self):
         job = self.job_page("아주대 강사 모집")

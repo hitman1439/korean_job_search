@@ -132,6 +132,39 @@
 
   // --- the page ------------------------------------------------------------
   if (typeof document === "undefined") return;
+  // --- the job page's side box: 주당 시수 → 주급·월급 at this notice's fee --
+  var mini = document.querySelector("[data-pay-mini]");
+  if (mini) {
+    var miniRate = Number(mini.getAttribute("data-rate"));
+    var miniHours = mini.querySelector("[data-mini-hours]");
+    var miniWon = function (n) { return n.toLocaleString("ko-KR") + "원"; };
+    var miniUpdate = function () {
+      var h = Number(String(miniHours.value).replace(/[^\d.]/g, "")) || 0;
+      var r = calc(miniRate, h, "week");
+      mini.querySelector("[data-mini-out]").hidden = r.gross <= 0;
+      mini.querySelector("[data-mini-week]").textContent = miniWon(r.freelance.weekNet);
+      mini.querySelector("[data-mini-week-gross]").textContent = miniWon(r.weekGross);
+      mini.querySelector("[data-mini-month]").textContent = miniWon(r.freelance.net);
+      mini.querySelector("[data-mini-month-gross]").textContent = miniWon(r.gross);
+      var q = new URLSearchParams({ rate: String(miniRate) });
+      if (h) q.set("hours", String(h));
+      q.set("from", mini.getAttribute("data-from"));
+      var more = mini.querySelector("[data-mini-more]");
+      more.href = more.getAttribute("href").split("?")[0] + "?" + q.toString();
+    };
+    mini.querySelectorAll("[data-mini-rate]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        miniRate = Number(btn.getAttribute("data-mini-rate"));
+        mini.querySelectorAll("[data-mini-rate]").forEach(function (b) {
+          b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+        });
+        miniUpdate();
+      });
+    });
+    miniHours.addEventListener("input", miniUpdate);
+    miniUpdate();
+  }
+
   var box = document.querySelector("[data-pay]");
   if (!box) return;
 

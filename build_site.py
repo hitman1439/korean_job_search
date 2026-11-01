@@ -766,6 +766,8 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
 <div class="apply-row"><a class="btn btn-review" href="{root}rating.html?org={org}">후기 보기</a>
 <a class="btn btn-line" href="{root}review.html?org={org}">나도 후기 남기기</a></div></section>""")
 
+    side.insert(0, pay_box(job, root))
+
     body = f"""<main class="wrap">
 <a class="back" href="{root}index.html">‹ 지도로 돌아가기</a>
 <div class="detail">
@@ -963,22 +965,66 @@ RATE_RE = re.compile(r"(\d{1,3}(?:,\d{3})+|\d{4,6})\s*원")
 WEEKLY_HOURS_RE = re.compile(r"주\s*(\d{1,2}(?:\.\d)?)\s*시간")
 
 
-def pay_query(job: dict) -> str | None:
-    """?rate=&hours=&from= for the 실수령 계산기, when the notice names an hourly
-    fee in won (the first one, if it lists several). Weekly hours are added
-    only when the notice states them as 주 N시간."""
+def hourly_rates(job: dict) -> list[int]:
+    """The hourly fees in won a domestic notice names (박사·석사·학사 or 경력별
+    may list several), in the notice's order, at most four."""
     salary = job.get("salary_text") or ""
     if job["scope"] == "overseas" or not re.search(r"시간|시급", salary):
-        return None
-    rate = next((n for n in (int(m.replace(",", "")) for m in RATE_RE.findall(salary)) if 10_000 <= n <= 200_000), None)
-    if rate is None:
-        return None
-    query = {"rate": rate}
+        return []
+    rates: list[int] = []
+    for n in (int(m.replace(",", "")) for m in RATE_RE.findall(salary)):
+        if 10_000 <= n <= 200_000 and n not in rates:
+            rates.append(n)
+    return rates[:4]
+
+
+def weekly_hours(job: dict) -> str | None:
+    """주 N시간 from the notice's working hours, when it says so."""
     hours = WEEKLY_HOURS_RE.search(job.get("work_hours") or "")
-    if hours and 0 < float(hours[1]) <= 60:
-        query["hours"] = hours[1]
+    return hours[1] if hours and 0 < float(hours[1]) <= 60 else None
+
+
+def pay_query(job: dict) -> str | None:
+    """?rate=&hours=&from= for the 실수령 계산기, when the notice names an hourly
+    fee in won (the first one, if it lists several)."""
+    rates = hourly_rates(job)
+    if not rates:
+        return None
+    query: dict[str, object] = {"rate": rates[0]}
+    if weekly_hours(job):
+        query["hours"] = weekly_hours(job)
     query["from"] = job["org"]
     return urllib.parse.urlencode(query)
+
+
+def pay_box(job: dict, root: str) -> str:
+    """The job page's side calculator: 주당 시수 × this notice's hourly fee →
+    주급 and 월급, take-home at 3.3% and before tax. pay.js fills it in."""
+    rates = hourly_rates(job)
+    if not rates:
+        return ""
+    if len(rates) > 1:
+        buttons = "".join(
+            f'<button type="button" data-mini-rate="{r}" aria-pressed="{"true" if i == 0 else "false"}">{r:,}원</button>'
+            for i, r in enumerate(rates)
+        )
+        rate_html = f'<div class="pm-rates" role="group" aria-label="시급 고르기">{buttons}</div>'
+    else:
+        rate_html = f'<p class="pm-rate">시급 <strong>{rates[0]:,}원</strong></p>'
+    hours = weekly_hours(job) or ""
+    return f"""<section class="callout pay-mini" data-pay-mini data-rate="{rates[0]}" data-from="{e(job['org'])}" aria-labelledby="payMiniTitle">
+<p class="kicker">실수령 계산</p>
+<h2 id="payMiniTitle">이 공고 시급이면<br>얼마 받을까요?</h2>
+{rate_html}
+<label class="pm-hours"><span>주당 시수</span><span class="pm-field"><input type="text" inputmode="decimal" autocomplete="off" placeholder="예: 12" value="{e(hours)}" data-mini-hours><span>시간</span></span></label>
+<dl class="pm-out" data-mini-out hidden>
+<div><dt>주급</dt><dd><strong data-mini-week></strong><span>세전 <span data-mini-week-gross></span></span></dd></div>
+<div><dt>월급</dt><dd><strong data-mini-month></strong><span>세전 <span data-mini-month-gross></span></span></dd></div>
+</dl>
+<p class="pm-note">실수령은 3.3% 떼는 프리랜서 기준이에요. 한 달은 4.33주로 계산해요.</p>
+<a class="pm-more" href="{root}pay.html?{e(pay_query(job))}" data-mini-more>4대보험·공제 내역 자세히 보기 ›</a>
+</section>
+<script src="{root}assets/pay.js?v={asset_version('pay.js')}" defer></script>"""
 
 
 def render_pay(config: dict) -> str:
