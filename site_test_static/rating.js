@@ -1,5 +1,8 @@
 /* 근무 후기 결과 (test build only). With ?org= it shows that institution's
    averages, job facts and comments from /test/api/ratings; without, a search.
+   The page states nothing itself: scores are "응답자 체감 평균", the site
+   does not vouch for them, and nothing shows until enough reviews are in
+   (an admin preview is offered while the page lives under /test).
    "나도 후기 남기기" leads to review.html for the same institution. */
 (function () {
   "use strict";
@@ -8,7 +11,9 @@
   if (!root) return;
   var DATA = JSON.parse(document.getElementById("reviewData").textContent);
   var box = root.querySelector("[data-review-box]");
-  var org = (new URLSearchParams(location.search).get("org") || "").trim();
+  var params = new URLSearchParams(location.search);
+  var org = (params.get("org") || "").trim();
+  var preview = params.get("preview") === "1";
 
   function el(tag, cls, text) {
     var node = document.createElement(tag);
@@ -99,8 +104,32 @@
       empty.appendChild(el("p", "rv-sub", "아는 것만 몇 개 눌러도 돼요. 이름이나 경력은 묻지 않아요."));
       empty.appendChild(link("btn btn-primary btn-lg rt-cta", "나도 후기 남기기", reviewHref));
       box.appendChild(empty);
+      box.appendChild(policyFoot());
       return;
     }
+    // Too few reviews would point at their writers: keep the scores closed.
+    if (!sum.public && !preview) {
+      var wait = el("div", "rt-empty");
+      wait.appendChild(el("p", "rt-empty-t", "후기가 " + sum.min + "개 이상 모이면 공개돼요."));
+      wait.appendChild(el("p", "rv-sub", "지금은 " + sum.count + "개예요. 적은 수로는 작성자가 짐작될 수 있어 아직 보여 드리지 않아요."));
+      wait.appendChild(link("btn btn-primary btn-lg rt-cta", "나도 후기 남기기", reviewHref));
+      // /test is admin-only, so the operator can still look at what would show.
+      var peek = el("a", "st-later", "관리자 미리보기");
+      peek.href = "rating.html?org=" + q(org) + "&preview=1";
+      wait.appendChild(el("br"));
+      wait.appendChild(peek);
+      box.appendChild(wait);
+      box.appendChild(policyFoot());
+      return;
+    }
+    if (!sum.public) {
+      box.appendChild(el("p", "rt-preview", "관리자 미리보기 · 후기가 " + sum.min + "개 미만이라 공개 화면에서는 보이지 않아요." +
+        (sum.pending ? " 검토 대기 중인 한마디 " + sum.pending + "개 (python3 serve.py --pending)" : "")));
+    } else if (preview && sum.pending) {
+      box.appendChild(el("p", "rt-preview", "검토 대기 중인 한마디 " + sum.pending + "개 (python3 serve.py --pending)"));
+    }
+    box.appendChild(el("p", "rt-disclaimer",
+      "아래 점수는 응답자들이 각자 느낀 정도를 모은 체감 평균이에요. 사이트가 사실을 확인하거나 보증하는 내용이 아니에요."));
 
     var areas = el("div", "rt-areas");
     DATA.areas.forEach(function (a) {
@@ -115,7 +144,7 @@
       head.appendChild(el("span", "rt-name", a.name));
       head.appendChild(el("strong", "rt-avg", (total / n).toFixed(1)));
       head.appendChild(bar(total / n));
-      head.appendChild(el("span", "rt-n", "답 " + n + "개 · 눌러서 자세히"));
+      head.appendChild(el("span", "rt-n", "응답자 체감 평균 · 답 " + n + "개 · 눌러서 자세히"));
       card.appendChild(head);
       var list = el("ul", "rt-items");
       a.items.forEach(function (it) {
@@ -137,14 +166,14 @@
       areas.appendChild(card);
     });
     if (areas.children.length) {
-      box.appendChild(el("h2", "rt-title", "영역별 점수"));
-      box.appendChild(el("p", "rv-sub", "5점에 가까울수록 좋아요."));
+      box.appendChild(el("h2", "rt-title", "영역별 체감 점수"));
+      box.appendChild(el("p", "rv-sub", "응답자 체감 평균이에요. 5점에 가까울수록 만족했다는 뜻이에요."));
       box.appendChild(areas);
     }
 
     var facts = DATA.facts.filter(function (f) { return sum.facts[f.key]; });
     if (facts.length) {
-      box.appendChild(el("h2", "rt-title", "근무 조건"));
+      box.appendChild(el("h2", "rt-title", "근무 조건 (응답자가 고른 범위)"));
       var dl = el("dl", "rt-facts");
       facts.forEach(function (f) {
         var row = el("div");
@@ -159,11 +188,11 @@
 
     if (sum.comments.length) {
       box.appendChild(el("h2", "rt-title", "후배에게 한마디"));
+      box.appendChild(el("p", "rv-sub", "운영자가 게시 기준을 확인한 한마디만 보여요. 작성자 개인의 의견이에요."));
       var ul = el("ul", "rt-comments");
-      sum.comments.forEach(function (c) {
+      sum.comments.forEach(function (text) {
         var li = el("li");
-        li.appendChild(el("p", null, c.text));
-        li.appendChild(el("span", "rt-n", c.on.replace("-", "년 ") + "월"));
+        li.appendChild(el("p", null, text));
         ul.appendChild(li);
       });
       box.appendChild(ul);
@@ -173,6 +202,17 @@
     foot.appendChild(el("p", "rv-sub", "이곳에서 일해 봤나요?"));
     foot.appendChild(link("btn btn-primary btn-lg rt-cta", "나도 후기 남기기", reviewHref));
     box.appendChild(foot);
+    box.appendChild(policyFoot());
+  }
+
+  // The way to ask for a takedown sits under every result.
+  function policyFoot() {
+    var foot = el("p", "rt-policy");
+    foot.appendChild(document.createTextNode("후기 때문에 권리를 침해당했다면 "));
+    foot.appendChild(link(null, "삭제·임시조치를 요청", "review-policy.html#takedown"));
+    foot.appendChild(document.createTextNode("할 수 있어요. · "));
+    foot.appendChild(link(null, "후기 운영 정책", "review-policy.html"));
+    return foot;
   }
 
   box.textContent = "";

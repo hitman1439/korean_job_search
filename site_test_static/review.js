@@ -4,7 +4,8 @@
      Each answer starts with its number, which is its score, from 1 to 5.
    - 점수로 바로 남기기: area → statement → 1-5.
    Nothing is required: skip anything, stop any time. Before anything is sent,
-   내 답 확인 lists every statement with boxes 1-5 to change in place. Every
+   내 답 확인 lists every statement with boxes 1-5 to change in place, and
+   sending needs the pledge (직접 경험, 본인 책임). Every
    screen is a history entry, so the phone's back gesture goes back one step.
    A draft stays in this browser. */
 (function () {
@@ -28,7 +29,21 @@
   });
 
   // --- answers, kept per institution until sent ---------------------------------
-  function draftKey() { return "review-draft-v4:" + org; }
+  function draftKey() { return "review-draft-v5:" + org; }
+  // Set after sending, so a second review from the same browser gets a gentle note.
+  function sentKey() { return "review-sent:" + org; }
+  function sentBefore() {
+    try { return localStorage.getItem(sentKey()); } catch (e) { return null; }
+  }
+  function markSent() {
+    try { localStorage.setItem(sentKey(), "1"); } catch (e) { /* private mode */ }
+  }
+  function policyLink(text) {
+    var a = el("a", "rv-policy", text || "후기 운영 정책");
+    a.href = "review-policy.html";
+    a.target = "_blank";
+    return a;
+  }
   function blank() { return { items: {}, facts: {}, comment: "", more: {}, at: null, mode: "story" }; }
   function loadDraft() {
     try { return JSON.parse(localStorage.getItem(draftKey()) || "null") || blank(); } catch (e) { return blank(); }
@@ -143,6 +158,9 @@
     card.appendChild(el("p", "rv-kicker", "나도 후기 남기기 · " + org));
     card.appendChild(title("자, 이제 후기를 남겨 볼까요?"));
     card.appendChild(el("p", "st-lead", "편한 방법을 고르세요."));
+    if (sentBefore()) {
+      card.appendChild(el("p", "st-again", "이 브라우저에서 이미 " + org + " 후기를 남겼어요. 같은 기관에는 한 번만 남겨 주세요."));
+    }
     var resume = answers.at && answers.at.s !== "intro" && answeredCount();
     if (resume) {
       var again = el("div", "st-actions");
@@ -160,8 +178,12 @@
     ["정답도 필수 질문도 없어요. 모르는 건 넘어가세요.",
      "언제든 멈출 수 있고, 그때까지 고른 것만 반영돼요.",
      "보내기 전에 내 답을 모두 확인하고 고칠 수 있어요.",
-     "이름도 경력도 묻지 않아요."].forEach(function (t) { how.appendChild(el("li", null, t)); });
+     "이름이나 경력은 묻지 않고, 이 사이트는 접속 IP도 남기지 않아요.",
+     "점수는 내가 느낀 정도를 묻는 거예요. 사실을 증명할 필요는 없어요."].forEach(function (t) { how.appendChild(el("li", null, t)); });
     card.appendChild(how);
+    var pol = el("p", "st-time");
+    pol.appendChild(policyLink("후기 운영 정책 보기"));
+    card.appendChild(pol);
     var later = el("a", "st-later", "다음에 할게요");
     later.href = ratingHref();
     var foot = el("div", "st-actions");
@@ -247,7 +269,18 @@
     text.value = answers.comment;
     text.addEventListener("input", function () { answers.comment = text.value; saveDraft(); });
     label.appendChild(text);
-    return label;
+    var wrap = el("div", "rv-note-wrap");
+    wrap.appendChild(label);
+    var rules = el("div", "rv-rules");
+    rules.appendChild(el("p", "rv-rules-head", "한마디는 운영자가 확인한 뒤 공개돼요. 이런 내용은 공개하지 않아요:"));
+    var list = el("ul");
+    ["실명이나 직함(원장·주임 등)처럼 특정한 사람을 알아볼 수 있는 내용",
+     "범죄나 법 위반을 단정하는 내용 (겪은 일이라면 관계 기관에 신고해 주세요)",
+     "학생의 국적·출신에 대한 비하나 일반화, 욕설·비하 표현"].forEach(function (t) { list.appendChild(el("li", null, t)); });
+    rules.appendChild(list);
+    rules.appendChild(policyLink("게시 기준 자세히 보기"));
+    wrap.appendChild(rules);
+    return wrap;
   }
   function drawNote() {
     if (pos.edit) {
@@ -370,8 +403,27 @@
     note.appendChild(el("h2", "ck-title", "후배에게 쪽지"));
     note.appendChild(noteBox());
     box.appendChild(note);
+    var pledge = el("label", "ck-pledge");
+    var tick = el("input");
+    tick.type = "checkbox";
+    tick.checked = !!answers.pledge;
+    pledge.appendChild(tick);
+    var words = el("span");
+    words.appendChild(el("strong", null, "직접 경험한 내용만 답했어요."));
+    words.appendChild(document.createTextNode(" 사실과 다른 내용에 대한 책임은 작성한 저에게 있다는 데 동의해요. "));
+    words.appendChild(policyLink());
+    pledge.appendChild(words);
+    box.appendChild(pledge);
     var actions = el("div", "st-actions");
-    actions.appendChild(button("btn btn-primary btn-lg ck-send", "이대로 보내기", send));
+    var sendBtn = button("btn btn-primary btn-lg ck-send", "이대로 보내기", send);
+    function syncPledge() {
+      answers.pledge = tick.checked;
+      saveDraft();
+      sendBtn.disabled = !tick.checked;
+    }
+    tick.addEventListener("change", syncPledge);
+    sendBtn.disabled = !tick.checked;
+    actions.appendChild(sendBtn);
     actions.appendChild(button("btn btn-line btn-lg", "‹ 이전", function () { history.back(); }));
     box.appendChild(actions);
     var status = el("p", "rv-status");
@@ -443,6 +495,7 @@
     card.appendChild(title(best && scores[best] >= 3.5 ? DATA.types[best][0] : "평범하지만 무난한 곳"));
     if (worst && worst !== best && scores[worst] <= 2.5) card.appendChild(el("p", "st-but", "다만, " + DATA.types[worst][1]));
     card.appendChild(el("p", "rv-sub", "고른 답은 이름 없이 " + org + " 근무 후기에 더해졌어요. 고마워요!"));
+    if (sent.comment.trim()) card.appendChild(el("p", "rv-sub", "남긴 한마디는 운영자가 게시 기준을 확인한 뒤 공개돼요."));
     var actions = el("div", "st-actions");
     var see = el("a", "btn btn-primary btn-lg", "다른 사람들의 후기 보기");
     see.href = ratingHref();
@@ -470,19 +523,24 @@
       status.textContent = "고른 답이 없어요. 숫자를 하나라도 체크하거나 쪽지를 남겨 주세요.";
       return;
     }
+    if (!answers.pledge) {
+      status.textContent = "보내기 전에 위의 약속에 체크해 주세요.";
+      return;
+    }
     var buttons = box.querySelectorAll("button");
     Array.prototype.forEach.call(buttons, function (b) { b.disabled = true; });
     status.textContent = "보내는 중이에요…";
     fetch("api/review", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ org: org, items: answers.items, facts: answers.facts, comment: answers.comment }),
+      body: JSON.stringify({ org: org, items: answers.items, facts: answers.facts, comment: answers.comment, pledge: true }),
       credentials: "same-origin"
     }).then(function (res) {
       if (res.ok) {
         sent = answers;
         answers = blank();
         dropDraft();
+        markSent();
         pos = { s: "result" };
         history.replaceState(pos, "");
         render(true);

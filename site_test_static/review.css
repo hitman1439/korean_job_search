@@ -209,3 +209,32 @@
   .rv-score .w { font-size: 14px; }
   .rt-facts div { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Legal safeguards: posting rules, pledge, notices, the policy page */
+.st-again { margin: 16px auto 0; max-width: 560px; padding: 12px 16px; border-radius: 14px; background: var(--warm-soft); font-size: 17px; line-height: 1.6; color: #4a2a00; }
+.rv-policy { font-size: 17px; font-weight: 600; color: var(--blue); }
+.rv-note-wrap .rv-comment { margin-top: 20px; }
+.rv-rules { margin-top: 10px; padding: 14px 18px; border-radius: 14px; background: var(--soft); text-align: left; }
+.rv-rules-head { font-size: 16px; font-weight: 600; color: var(--text-2); line-height: 1.6; }
+.rv-rules ul { margin: 6px 0 8px; padding-left: 20px; }
+.rv-rules li { font-size: 16px; line-height: 1.6; color: var(--text-3); }
+.ck-pledge {
+  display: flex; gap: 14px; align-items: flex-start; margin-top: 32px; padding: 18px 20px;
+  border: 2px solid var(--blue); border-radius: 18px; background: var(--blue-soft); cursor: pointer;
+}
+.ck-pledge input { flex: 0 0 auto; width: 28px; height: 28px; margin: 2px 0 0; accent-color: var(--blue); cursor: pointer; }
+.ck-pledge span { font-size: 18px; line-height: 1.6; color: var(--text); }
+.ck-send:disabled { background: #b0b8c1; cursor: not-allowed; }
+.rt-disclaimer { margin-top: 24px; padding: 14px 18px; border-radius: 14px; background: var(--soft); font-size: 17px; line-height: 1.6; color: var(--text-3); }
+.rt-preview { margin-top: 24px; padding: 12px 16px; border-radius: 14px; background: var(--warm-soft); font-size: 16px; line-height: 1.6; color: #4a2a00; }
+.rt-policy { margin-top: 32px; font-size: 16px; line-height: 1.7; color: var(--text-4); text-align: center; }
+.rt-policy a { color: var(--text-3); font-weight: 600; }
+
+.policy .title-xl { margin-top: 12px; }
+.pol-sec { margin-top: 36px; }
+.pol-sec h2 { font-size: 22px; font-weight: 700; }
+.pol-sec p, .pol-sec li { font-size: 18px; line-height: 1.75; color: var(--text-2); }
+.pol-sec p { margin-top: 10px; }
+.pol-sec ul, .pol-sec ol { margin: 10px 0 0; padding-left: 24px; }
+.pol-sec li + li { margin-top: 6px; }
+.pol-contact { padding: 14px 18px; border-radius: 14px; background: var(--blue-soft); font-weight: 600; }

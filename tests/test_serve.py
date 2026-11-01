@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import contextlib
+import io
 import json
 import sys
 import tempfile
@@ -59,38 +61,63 @@ class SaveCountTests(unittest.TestCase):
 
 
 class ReviewTests(unittest.TestCase):
-    GOOD = {"org": " 경희대학교  국제캠퍼스 ", "items": {"pay_legal": 5, "grow_learn": 4},
-            "facts": {"class_size": "11~15명"}, "comment": " 좋아요 "}
+    GOOD = {"org": " 경희대학교  국제캠퍼스 ", "items": {"pay_care": 5, "grow_learn": 4},
+            "facts": {"class_size": "11~15명"}, "comment": " 좋아요 ", "pledge": True}
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.conn = serve.open_reviews(Path(self.tmp.name) / "reviews.sqlite3")
+
+    def tearDown(self):
+        self.conn.close()
+        self.tmp.cleanup()
 
     def test_clean_review_keeps_a_valid_review(self):
         review = review_items.clean_review(self.GOOD)
         self.assertEqual(review["org"], "경희대학교 국제캠퍼스")
         self.assertEqual(review["comment"], "좋아요")
-        self.assertEqual(review["items"], {"pay_legal": 5, "grow_learn": 4})
+        self.assertEqual(review["items"], {"pay_care": 5, "grow_learn": 4})
 
     def test_any_single_answer_is_a_review(self):
         for answer in ({"items": {"stab_hours": 3}}, {"facts": {"weekly_hours": "10~14시간"}}, {"comment": "한마디"}):
-            self.assertIsNotNone(review_items.clean_review({"org": "A대학", **answer}), answer)
-        self.assertIsNone(review_items.clean_review({"org": "A대학"}))
-        self.assertIsNone(review_items.clean_review({"org": "A대학", "comment": "   "}))
+            self.assertIsNotNone(review_items.clean_review({"org": "A대학", "pledge": True, **answer}), answer)
+        self.assertIsNone(review_items.clean_review({"org": "A대학", "pledge": True}))
+        self.assertIsNone(review_items.clean_review({"org": "A대학", "pledge": True, "comment": "   "}))
+
+    def test_no_review_without_the_pledge(self):
+        for pledge in (None, False, "true", 1):
+            data = {**self.GOOD, "pledge": pledge}
+            self.assertIsNone(review_items.clean_review(data), pledge)
 
     def test_clean_review_rejects_bad_input(self):
-        for change in ({"org": ""}, {"items": {"pay_legal": 6}}, {"items": {"nope": 3}},
-                       {"items": {"pay_legal": "5"}}, {"items": {"pay_legal": True}},
+        for change in ({"org": ""}, {"items": {"pay_care": 6}}, {"items": {"nope": 3}},
+                       {"items": {"pay_care": "5"}}, {"items": {"pay_care": True}},
                        {"facts": {"class_size": "모름"}}, {"comment": "x" * 1001}, {"org": "x" * 81}):
             self.assertIsNone(review_items.clean_review({**self.GOOD, **change}), change)
         self.assertIsNone(review_items.clean_review([]))
 
-    def test_record_review_stores_the_day_only(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            conn = serve.open_reviews(Path(tmp) / "reviews.sqlite3")
-            serve.record_review(conn, review_items.clean_review(self.GOOD))
-            org, day = conn.execute("SELECT org, created_on FROM ratings").fetchone()
-            reviews = serve.org_reviews(conn, org)
-            conn.close()
+    def test_record_review_stores_the_month_only(self):
+        serve.record_review(self.conn, review_items.clean_review(self.GOOD))
+        org, month = self.conn.execute("SELECT org, created_on FROM ratings").fetchone()
         self.assertEqual(org, "경희대학교 국제캠퍼스")
-        self.assertRegex(day, r"^\d{4}-\d{2}-\d{2}$")
-        self.assertRegex(reviews[0]["on"], r"^\d{4}-\d{2}$")
+        self.assertRegex(month, r"^\d{4}-\d{2}$")
+
+    def test_comment_shows_only_once_approved(self):
+        rid = serve.record_review(self.conn, review_items.clean_review(self.GOOD))
+        org = "경희대학교 국제캠퍼스"
+        self.assertEqual(serve.org_reviews(self.conn, org)[0]["comment"], "")
+        serve.set_review(self.conn, rid, "comment_status", "approved")
+        self.assertEqual(serve.org_reviews(self.conn, org)[0]["comment"], "좋아요")
+        serve.set_review(self.conn, rid, "comment_status", "rejected")
+        self.assertEqual(serve.org_reviews(self.conn, org)[0]["comment"], "")
+
+    def test_hidden_review_leaves_the_site(self):
+        rid = serve.record_review(self.conn, review_items.clean_review(self.GOOD))
+        serve.set_review(self.conn, rid, "status", "hidden")
+        self.assertEqual(serve.org_reviews(self.conn, "경희대학교 국제캠퍼스"), [])
+        self.assertEqual(serve.org_counts(self.conn), {})
+        serve.set_review(self.conn, rid, "status", "shown")
+        self.assertEqual(len(serve.org_reviews(self.conn, "경희대학교 국제캠퍼스")), 1)
 
     def test_story_asks_every_statement_and_fact_once(self):
         asked = [q[:2] for scene in review_items.STORY for q in scene["core"] + scene["more"]]
@@ -108,16 +135,43 @@ class ReviewTests(unittest.TestCase):
         data = review_items.page_data()["story"][0]["core"][0]
         self.assertEqual([o["score"] for o in data["options"]], [1, 2, 3, 4, 5])
 
+    def test_wording_stays_clear_of_legal_claims(self):
+        # Statements and answers are the reviewer's feeling, never a charge
+        # against the institution or one person, nor about students' origins.
+        banned = ("보험", "퇴직금", "체불", "밀리", "쪼개", "원장", "주임", "관리자", "불법", "비자", "이탈", "국적", "목적")
+        texts = [t for _, _, items in review_items.AREAS for _, t in items]
+        for scene in review_items.STORY:
+            texts.append(scene["scene"])
+            for q in scene["core"] + scene["more"]:
+                texts.append(q[2])
+                if q[0] == "item":
+                    texts.extend(q[3])
+        for text in texts:
+            for word in banned:
+                self.assertNotIn(word, text, text)
+
     def test_summarize_adds_up_each_statement(self):
         reviews = [
-            {"items": {"grow_learn": 4, "pay_legal": 2}, "facts": {"class_size": "11~15명"}, "comment": "", "on": "2026-09"},
-            {"items": {"grow_learn": 2}, "facts": {"class_size": "11~15명"}, "comment": "좋아요", "on": "2026-10"},
+            {"items": {"grow_learn": 4, "pay_care": 2, "retired_key": 1}, "facts": {"class_size": "11~15명"}, "comment": ""},
+            {"items": {"grow_learn": 2}, "facts": {"class_size": "11~15명"}, "comment": "좋아요"},
         ]
         summary = review_items.summarize(reviews)
         self.assertEqual(summary["count"], 2)
-        self.assertEqual(summary["items"], {"grow_learn": [6, 2], "pay_legal": [2, 1]})
+        self.assertFalse(summary["public"])
+        self.assertEqual(summary["items"], {"grow_learn": [6, 2], "pay_care": [2, 1]})
         self.assertEqual(summary["facts"], {"class_size": {"11~15명": 2}})
-        self.assertEqual(summary["comments"], [{"text": "좋아요", "on": "2026-10"}])
+        # Text only: no date that could point at a writer.
+        self.assertEqual(summary["comments"], ["좋아요"])
+        self.assertTrue(review_items.summarize(reviews * 3)["public"])
+
+    def test_log_line_has_no_address(self):
+        handler = object.__new__(serve.Handler)
+        handler.client_address = ("203.0.113.9", 51234)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            handler.log_message('"%s" %s %s', "POST /test/api/review HTTP/1.1", "204", "-")
+        self.assertIn("/test/api/review", err.getvalue())
+        self.assertNotIn("203.0.113.9", err.getvalue())
 
 
 class AdminGateTests(unittest.TestCase):
@@ -174,19 +228,21 @@ class AdminGateTests(unittest.TestCase):
         self.assertEqual(self.fetch("/test/../index.html", "pw")[:2], (200, "staging"))
 
     def test_review_post_needs_the_password(self):
-        body = json.dumps({"org": "A대학", "items": {"grow_learn": 4}}).encode()
+        body = json.dumps({"org": "A대학", "items": {"grow_learn": 4}, "pledge": True}).encode()
         self.assertEqual(self.fetch("/test/api/review", body=body)[0], 401)
         self.assertEqual(self.fetch("/test/api/review", "pw", body)[0], 204)
         self.assertEqual(self.fetch("/test/api/review", "pw", b'{"org": "A"}')[0], 400)
 
     def test_ratings_api_returns_one_institutions_totals(self):
-        body = json.dumps({"org": "B대학", "items": {"grow_learn": 5}, "comment": "좋아요"}).encode()
+        body = json.dumps({"org": "B대학", "items": {"grow_learn": 5}, "comment": "좋아요", "pledge": True}).encode()
         self.fetch("/test/api/review", "pw", body)
         self.assertEqual(self.fetch("/test/api/ratings?org=B%EB%8C%80%ED%95%99")[0], 401)
         status, text, _ = self.fetch("/test/api/ratings?org=B%EB%8C%80%ED%95%99", "pw")
         data = json.loads(text)
         self.assertEqual((status, data["count"], data["items"]["grow_learn"]), (200, 1, [5, 1]))
-        self.assertEqual(data["comments"][0]["text"], "좋아요")
+        # Not public yet, and the 한마디 waits for approval.
+        self.assertFalse(data["public"])
+        self.assertEqual((data["comments"], data["pending"]), ([], 1))
         status, text, _ = self.fetch("/test/api/ratings", "pw")
         self.assertEqual(json.loads(text)["orgs"]["B대학"], 1)
 

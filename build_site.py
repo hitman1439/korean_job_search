@@ -960,6 +960,83 @@ def render_review(config: dict, orgs: list[str]) -> str:
     return review_page(config, orgs, script="review.js", title="나도 후기 남기기", active="review")
 
 
+def render_review_policy(config: dict) -> str:
+    """후기 운영 정책: what gets published, how anonymity is kept, and the takedown
+    (임시조치, 정보통신망법 제44조의2) and objection path. A clear, working
+    takedown path is the operator's main shield for posts written by others."""
+    contact = config.get("review_contact")
+    contact_html = (f'<a href="mailto:{e(contact)}">{e(contact)}</a>' if contact
+                    else "<strong>[연락처 미설정: secrets.env의 REVIEW_CONTACT]</strong>")
+    n = review_items.PUBLIC_MIN
+    body = f"""<main class="wrap review policy" data-policy>
+<a class="back" href="rating.html">‹ 근무 후기로 돌아가기</a>
+<h1 class="title-xl">근무 후기 운영 정책</h1>
+<p class="rv-sub">근무 후기는 한국어 강사가 일할 곳을 고를 때 참고할 수 있도록, 실제로 일해 본 분들의 체감을 모은 것이에요.</p>
+
+<section class="pol-sec"><h2>1. 후기는 이런 정보예요</h2>
+<ul>
+<li>점수는 응답자 개인이 <strong>주관적으로 느낀 정도</strong>를 모은 <strong>체감 평균</strong>이에요. 사실을 확인한 결과가 아니에요.</li>
+<li>이 사이트는 후기 내용이 사실인지 확인하거나 보증하지 않으며, 어떤 기관에 대해서도 단정하지 않아요.</li>
+<li>문항은 모두 “~라고 느꼈다”, “만족했다”처럼 개인의 체감을 묻도록 만들었어요.</li>
+</ul></section>
+
+<section class="pol-sec"><h2>2. 공개 기준</h2>
+<ul>
+<li>한 기관의 후기가 <strong>{n}개 이상</strong> 모여야 점수를 공개해요. 적은 수로는 작성자가 짐작될 수 있기 때문이에요.</li>
+<li>작성 시기는 공개하지 않고, 한마디는 작성 순서와 관계없이 섞어서 보여 줘요.</li>
+<li><strong>한마디는 운영자가 확인한 뒤에만 공개</strong>해요. 아래 기준에 맞지 않으면 공개하지 않아요(고쳐서 올리지 않아요).</li>
+</ul></section>
+
+<section class="pol-sec"><h2>3. 게시하지 않는 한마디</h2>
+<ul>
+<li>실명, 직함(원장·주임 등), 담당 업무처럼 <strong>특정한 사람을 알아볼 수 있는 내용</strong></li>
+<li>임금 체불, 보험 미가입, 불법 행위 등 <strong>범죄나 법 위반을 단정하는 내용</strong>. 실제로 겪었다면 고용노동부 등 관계 기관에 신고해 주세요.</li>
+<li>학생의 <strong>국적·출신·체류 목적</strong>에 대한 비하나 일반화</li>
+<li>욕설, 인신공격, 성적이거나 차별적인 표현</li>
+<li>연락처 등 개인정보, 광고·홍보, 근무 경험과 관계없는 내용</li>
+</ul></section>
+
+<section class="pol-sec"><h2>4. 작성자 보호</h2>
+<ul>
+<li>이름, 경력, 근무 시기, 역할을 묻지 않아요.</li>
+<li>이 사이트 서버는 후기와 함께 접속 IP를 저장하지 않고, 접속 기록에도 IP를 남기지 않아요.</li>
+<li>작성 시기는 월 단위로만 보관해요.</li>
+</ul></section>
+
+<section class="pol-sec"><h2>5. 작성자의 약속</h2>
+<p>후기를 보내기 전에 작성자는 “직접 경험한 내용만 답했고, 사실과 다른 내용에 대한 책임은 작성한 본인에게 있다”는 데 동의해요.</p></section>
+
+<section class="pol-sec" id="takedown"><h2>6. 삭제·임시조치 요청 (권리 침해 신고)</h2>
+<p>후기 때문에 명예나 권리를 침해당했다고 생각하는 기관이나 개인은 아래로 요청해 주세요.</p>
+<p class="pol-contact">요청 창구: {contact_html}</p>
+<p>요청에 담아 주세요:</p>
+<ol>
+<li>요청하는 분의 이름(기관명)과 연락처</li>
+<li>대상 기관과 문제가 되는 후기 내용(한마디 문장 등)</li>
+<li>침해라고 생각하는 이유와 이를 뒷받침하는 자료</li>
+</ol>
+<p>처리 절차:</p>
+<ol>
+<li>요청을 받으면 <strong>지체 없이(영업일 기준 2일 이내)</strong> 해당 후기를 가리는 <strong>임시조치</strong>를 하고, 요청하신 분께 알려 드려요. (정보통신망법 제44조의2)</li>
+<li>임시조치 기간은 <strong>최대 30일</strong>이에요. 그 안에 운영자가 검토해 삭제하거나 다시 공개할지 정해요.</li>
+<li>판단이 어려운 경우 방송통신심의위원회의 심의나 명예훼손 분쟁조정을 요청할 수 있어요.</li>
+</ol></section>
+
+<section class="pol-sec"><h2>7. 이의 제기</h2>
+<p>가려지거나 공개되지 않은 후기에 이의가 있으면 같은 창구로 알려 주세요. 작성자는 익명이라 본인 확인이 어렵기 때문에, 다시 공개할지는 운영자가 위 게시 기준에 따라 판단해요. 결과는 요청하신 분께 알려 드려요.</p></section>
+
+<section class="pol-sec"><h2>8. 공정성</h2>
+<ul>
+<li>기관을 포함해 누구도 비용을 내고 후기를 삭제·수정하거나 순서를 바꿀 수 없어요.</li>
+<li>후기 화면에는 광고를 붙이지 않아요.</li>
+<li>기관도 같은 창구로 의견이나 정정 요청을 보낼 수 있어요.</li>
+</ul></section>
+</main>"""
+    head = f'<link rel="stylesheet" href="assets/review.css?v={asset_version("review.css")}">'
+    return page(f"근무 후기 운영 정책 · {SITE_NAME}", "근무 후기의 공개 기준, 게시 기준, 삭제·임시조치 요청 방법", body,
+                root="", config=config, canonical=None, active="review", extra_head=head)
+
+
 RATE_RE = re.compile(r"(\d{1,3}(?:,\d{3})+|\d{4,6})\s*원")
 WEEKLY_HOURS_RE = re.compile(r"주\s*(\d{1,2}(?:\.\d)?)\s*시간")
 
@@ -1072,6 +1149,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     if config.get("test"):
         write("rating.html", render_rating(config, orgs))
         write("review.html", render_review(config, orgs))
+        write("review-policy.html", render_review_policy(config))
         write("pay.html", render_pay(config))
     files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)
     for job in jobs:
@@ -1138,6 +1216,7 @@ def main() -> int:
         "site_url": os.environ.get("SITE_URL"),
         "kakao_js_key": os.environ.get("KAKAO_JS_KEY"),
         "alert_endpoint": os.environ.get("ALERT_ENDPOINT"),
+        "review_contact": os.environ.get("REVIEW_CONTACT"),
         "adsense_client": None if args.private else os.environ.get("ADSENSE_CLIENT"),
         "private": args.private,
         "test": args.test,

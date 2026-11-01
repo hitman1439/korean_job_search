@@ -139,6 +139,7 @@ class BuildTests(unittest.TestCase):
         self.assertFalse((self.out / "review.html").exists())
         self.assertFalse((self.out / "assets" / "large.css").exists())
         self.assertFalse((self.out / "rating.html").exists())
+        self.assertFalse((self.out / "review-policy.html").exists())
         for page in (self.index, job):
             self.assertNotIn("large.css", page)
             self.assertNotIn("review.html", page)
@@ -169,6 +170,11 @@ class BuildTests(unittest.TestCase):
         job = next(p.read_text(encoding="utf-8") for p in (out / "jobs").glob("*.html")
                    if "세종학당재단" in p.read_text(encoding="utf-8"))
         self.assertIn("../rating.html?org=%EC%84%B8%EC%A2%85", job)
+        policy = (out / "review-policy.html").read_text(encoding="utf-8")
+        for words in ("임시조치", "30일", "운영자가 확인한 뒤에만 공개", "REVIEW_CONTACT"):
+            self.assertIn(words, policy)
+        bs.build(self.db, out, {**self.config, "test": True, "review_contact": "help@jobs.example"}, TODAY, BUILT_AT)
+        self.assertIn('mailto:help@jobs.example', (out / "review-policy.html").read_text(encoding="utf-8"))
         self.assertIn("../review.html?org=%EC%84%B8%EC%A2%85", job)
 
     def test_pay_calculator_in_test_build_only(self):

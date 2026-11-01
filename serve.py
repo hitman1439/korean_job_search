@@ -9,11 +9,18 @@ still have it saved"; nothing about the visitor is kept.
 /test/ serves the admin-only staging build (site_test/, from build_site.py
 --test) behind HTTP Basic auth with ADMIN_USER / ADMIN_PASSWORD from
 secrets.env. Without a password set, /test does not exist. Reviews sent from
-/test/review.html land in reviews.sqlite3 with the day only, no visitor data.
+/test/review.html land in reviews.sqlite3 with the month only. No request is
+logged with the visitor's address (see Handler.log_message).
+
+A review's 한마디 stays unpublished until the operator approves it, and a
+whole review can be hidden at once on a takedown request (임시조치):
 
   python serve.py                      # serve site/ on 127.0.0.1:8080
   python serve.py --report             # print save counts per job
-  python serve.py --reviews            # print 근무 후기 per institution
+  python serve.py --reviews            # print 근무 후기 per institution, with ids
+  python serve.py --pending            # 한마디 waiting for approval
+  python serve.py --approve 12         # publish review 12's 한마디 (--reject 12 keeps it unpublished)
+  python serve.py --hide 12            # take review 12 off the site (--unhide 12 puts it back)
 """
 
 from __future__ import annotations
@@ -121,27 +128,55 @@ def open_reviews(path: Path) -> sqlite3.Connection:
         )
         """
     )
+    # status: 'shown' or 'hidden' (임시조치). comment_status: NULL without a
+    # 한마디, else 'pending' until the operator approves or rejects it.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(ratings)")}
+    if "status" not in columns:
+        conn.execute("ALTER TABLE ratings ADD COLUMN status TEXT NOT NULL DEFAULT 'shown'")
+    if "comment_status" not in columns:
+        conn.execute("ALTER TABLE ratings ADD COLUMN comment_status TEXT")
+        # 한마디 sent before approval existed waits like a new one.
+        conn.execute("UPDATE ratings SET comment_status = 'pending' WHERE json_extract(data, '$.comment') <> ''")
+        # Reviews saved with the full day keep only the month, like new ones.
+        conn.execute("UPDATE ratings SET created_on = substr(created_on, 1, 7) WHERE length(created_on) > 7")
+        conn.commit()
     return conn
 
 
-def record_review(conn: sqlite3.Connection, review: dict) -> None:
-    # The day only: a time stamp could single out who sent it.
-    today = dt.datetime.now(dt.timezone.utc).date().isoformat()
-    conn.execute(
-        "INSERT INTO ratings (org, data, created_on) VALUES (?, ?, ?)",
-        (review["org"], json.dumps(review, ensure_ascii=False), today),
+def record_review(conn: sqlite3.Connection, review: dict) -> int:
+    # The month only: a finer time could single out who sent it.
+    month = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m")
+    cur = conn.execute(
+        "INSERT INTO ratings (org, data, created_on, comment_status) VALUES (?, ?, ?, ?)",
+        (review["org"], json.dumps(review, ensure_ascii=False), month, "pending" if review["comment"] else None),
     )
     conn.commit()
+    return cur.lastrowid
 
 
 def org_reviews(conn: sqlite3.Connection, org: str) -> list[dict]:
-    rows = conn.execute("SELECT data, created_on FROM ratings WHERE org = ? ORDER BY id", (org,)).fetchall()
-    # Pages show the month only, for the same reason the day is all that is kept.
-    return [{**json.loads(data), "on": day[:7]} for data, day in rows]
+    """The shown reviews of one institution, each 한마디 kept only once approved."""
+    rows = conn.execute(
+        "SELECT data, comment_status FROM ratings WHERE org = ? AND status = 'shown' ORDER BY id", (org,)
+    ).fetchall()
+    reviews = []
+    for data, comment_status in rows:
+        review = json.loads(data)
+        if comment_status != "approved":
+            review["comment"] = ""
+        reviews.append(review)
+    return reviews
 
 
 def org_counts(conn: sqlite3.Connection) -> dict[str, int]:
-    return dict(conn.execute("SELECT org, COUNT(*) FROM ratings GROUP BY org").fetchall())
+    return dict(conn.execute("SELECT org, COUNT(*) FROM ratings WHERE status = 'shown' GROUP BY org").fetchall())
+
+
+def set_review(conn: sqlite3.Connection, review_id: int, column: str, value: str) -> bool:
+    assert column in ("status", "comment_status")
+    cur = conn.execute(f"UPDATE ratings SET {column} = ? WHERE id = ?", (value, review_id))
+    conn.commit()
+    return cur.rowcount == 1
 
 
 def load_admin(secrets: Path) -> tuple[str, str] | None:
@@ -184,6 +219,12 @@ class Handler(SimpleHTTPRequestHandler):
     reviews_path: Path = DEFAULT_REVIEWS
     test_dir: Path = DEFAULT_TEST
     admin: tuple[str, str] | None = None
+
+    def log_message(self, format: str, *args) -> None:
+        # The default line starts with the client's IP. A review must never be
+        # traceable to its writer through the server log (systemd journal), so
+        # no request is logged with an address.
+        sys.stderr.write(f"[{self.log_date_time_string()}] {format % args}\n")
 
     def end_headers(self) -> None:
         # Admin pages must never sit in a shared cache (Cloudflare, proxies).
@@ -236,7 +277,14 @@ class Handler(SimpleHTTPRequestHandler):
         """One institution's totals with ?org=, else how many reviews each one has."""
         conn = open_reviews(self.reviews_path)
         try:
-            data = review_items.summarize(org_reviews(conn, org)) if org else {"orgs": org_counts(conn)}
+            if org:
+                data = review_items.summarize(org_reviews(conn, org))
+                # For the admin preview only (all of /test is admin-only).
+                (data["pending"],) = conn.execute(
+                    "SELECT COUNT(*) FROM ratings WHERE org = ? AND status = 'shown' AND comment_status = 'pending'", (org,)
+                ).fetchone()
+            else:
+                data = {"orgs": org_counts(conn)}
         finally:
             conn.close()
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
@@ -342,7 +390,7 @@ def report_reviews(reviews_path: Path) -> int:
     counts = org_counts(conn)
     for org in sorted(counts, key=lambda o: -counts[o]):
         summary = review_items.summarize(org_reviews(conn, org))
-        print(f"{org}  후기 {summary['count']}개")
+        print(f"{org}  후기 {summary['count']}개{'' if summary['public'] else ' (공개 기준 미달)'}")
         areas = []
         for _, name, items in review_items.AREAS:
             scores = [summary["items"][k] for k, _ in items if k in summary["items"]]
@@ -350,10 +398,41 @@ def report_reviews(reviews_path: Path) -> int:
                 areas.append(f"{name} {sum(s for s, _ in scores) / sum(n for _, n in scores):.1f}")
         if areas:
             print("  " + " · ".join(areas))
-        for comment in summary["comments"]:
-            print(f"  - {comment['text'][:120]}")
+    print("\nid  상태    한마디    기관 · 한마디")
+    for rid, org, status, cstatus, data in conn.execute(
+        "SELECT id, org, status, comment_status, data FROM ratings ORDER BY id"
+    ):
+        comment = json.loads(data)["comment"]
+        print(f"{rid:<3} {status:<7} {cstatus or '-':<9} {org}{' · ' + comment[:80] if comment else ''}")
     conn.close()
     return 0
+
+
+def report_pending(reviews_path: Path) -> int:
+    sys.stdout.reconfigure(encoding="utf-8")
+    if not reviews_path.is_file():
+        print("no reviews yet")
+        return 0
+    conn = open_reviews(reviews_path)
+    rows = conn.execute(
+        "SELECT id, org, data FROM ratings WHERE comment_status = 'pending' AND status = 'shown' ORDER BY id"
+    ).fetchall()
+    conn.close()
+    if not rows:
+        print("검토할 한마디가 없어요")
+    for rid, org, data in rows:
+        print(f"[{rid}] {org}\n    {json.loads(data)['comment']}\n")
+    if rows:
+        print("공개: python3 serve.py --approve ID  /  비공개: python3 serve.py --reject ID")
+    return 0
+
+
+def moderate(reviews_path: Path, review_id: int, column: str, value: str) -> int:
+    conn = open_reviews(reviews_path)
+    ok = set_review(conn, review_id, column, value)
+    conn.close()
+    print(f"review {review_id}: {column} = {value}" if ok else f"error: no review {review_id}", file=sys.stdout if ok else sys.stderr)
+    return 0 if ok else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -367,13 +446,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reviews-db", default=str(DEFAULT_REVIEWS), help="근무 후기 database")
     parser.add_argument("--secrets", default=str(DEFAULT_SECRETS), help="KEY=value file with ADMIN_PASSWORD")
     parser.add_argument("--report", action="store_true", help="Print save counts and exit")
-    parser.add_argument("--reviews", action="store_true", help="Print 근무 후기 per institution and exit")
+    parser.add_argument("--reviews", action="store_true", help="Print 근무 후기 per institution and every review with its id")
+    parser.add_argument("--pending", action="store_true", help="Print 한마디 waiting for approval")
+    for flag, help_text in (("--approve", "Publish this review's 한마디"), ("--reject", "Keep this review's 한마디 unpublished"),
+                            ("--hide", "Take this review off the site (임시조치)"), ("--unhide", "Put a hidden review back")):
+        parser.add_argument(flag, type=int, metavar="ID", help=help_text)
     args = parser.parse_args(argv)
 
     if args.report:
         return report(Path(args.stats), Path(args.db))
     if args.reviews:
         return report_reviews(Path(args.reviews_db))
+    if args.pending:
+        return report_pending(Path(args.reviews_db))
+    for flag, column, value in (("approve", "comment_status", "approved"), ("reject", "comment_status", "rejected"),
+                                ("hide", "status", "hidden"), ("unhide", "status", "shown")):
+        if getattr(args, flag) is not None:
+            return moderate(Path(args.reviews_db), getattr(args, flag), column, value)
     site = Path(args.site)
     if not (site / "index.html").is_file():
         print(f"error: no built site at {site.resolve()}; run python build_site.py first", file=sys.stderr)
