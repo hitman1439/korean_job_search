@@ -187,12 +187,15 @@ def prepare(job: dict, today: dt.date) -> dict:
         if isinstance(f.get("file"), str) and re.fullmatch(r"\d+/\d+\.[a-z]{2,4}", f["file"])
     ]
     job["has_place"] = job["scope"] == "domestic" and job.get("latitude") is not None and job.get("longitude") is not None
-    chips = [INSTITUTION_TYPE_LABELS.get(job.get("institution_type") or "")]
+    job["rates"] = hourly_rates(job)
+    rates = job["rates"]
+    rate_chip = (f"시급 {min(rates):,}~{max(rates):,}원" if len(rates) > 1 else f"시급 {rates[0]:,}원") if rates else None
+    chips = [INSTITUTION_TYPE_LABELS.get(job.get("institution_type") or ""), rate_chip]
     chips += [
         short(job.get("qualification"), 16),
         "신입 가능" if job.get("newcomer_ok") == 1 else None,
         "모의수업 있음" if job.get("demo_lesson") == 1 else None,
-        short(job.get("salary_text"), 18),
+        None if rates else short(job.get("salary_text"), 18),
     ]
     job["chips"] = [c for c in chips if c][:4]
     return job
@@ -535,7 +538,7 @@ def job_row(job: dict, root: str, review: bool = False) -> str:
     lat = job["latitude"] if job["has_place"] else ""
     lng = job["longitude"] if job["has_place"] else ""
     review_attr = f' data-review="{e(job["institution_name"])}"' if review and job.get("institution_name") else ""
-    return f"""<li class="job-row" data-id="{job['job_id']}" data-scope="{job['scope']}" data-newcomer="{1 if job.get('newcomer_ok') == 1 else 0}" data-demo="{1 if job.get('demo_lesson') == 1 else 0}" data-lat="{lat}" data-lng="{lng}" data-deadline="{e(job.get('deadline') or '')}" data-posted="{e(posted_date(job))}" data-name="{e(job['org'])}" data-title="{e(job.get('title'))}" data-org="{e(job['org'] + ' · ' + job['place'])}" data-search="{e(search)}"{review_attr}>
+    return f"""<li class="job-row" data-id="{job['job_id']}" data-scope="{job['scope']}" data-newcomer="{1 if job.get('newcomer_ok') == 1 else 0}" data-demo="{1 if job.get('demo_lesson') == 1 else 0}" data-lat="{lat}" data-lng="{lng}" data-deadline="{e(job.get('deadline') or '')}" data-rate="{max(job['rates']) if job.get('rates') else ''}" data-posted="{e(posted_date(job))}" data-name="{e(job['org'])}" data-title="{e(job.get('title'))}" data-org="{e(job['org'] + ' · ' + job['place'])}" data-search="{e(search)}"{review_attr}>
 <button type="button" class="pick">
 <span class="badge {job['badge_class']}" data-badge="{e(job.get('deadline') or '')}">{e(job['badge'])}</span>
 <span class="job-title">{e(job.get('title'))}</span>
@@ -595,6 +598,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 <div class="seg" role="group" aria-label="근무 형태">{scope_buttons}</div>
 <button type="button" class="toggle" data-toggle="newcomer" aria-pressed="false">신입 가능</button>
 <button type="button" class="toggle" data-toggle="demo" aria-pressed="false">모의수업 있음</button>
+<button type="button" class="toggle" data-toggle="paid" aria-pressed="false">시급 나온 공고</button>
 <button type="button" class="toggle" data-toggle="saved" aria-pressed="false">저장한 공고 <span data-saved-count></span></button>
 <label class="search"><span class="sr-only">기관명이나 지역 검색</span><input type="search" data-search-input placeholder="기관명, 지역으로 찾기"></label>
 </div>
@@ -618,6 +622,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 <div class="sort-bar" role="group" aria-label="정렬">
 <button type="button" data-sort="deadline" aria-pressed="true">마감순</button>
 <button type="button" data-sort="newest" aria-pressed="false">최신순</button>
+<button type="button" data-sort="pay" aria-pressed="false">시급순</button>
 <button type="button" data-sort="name" aria-pressed="false">가나다순</button>
 <button type="button" data-sort="near" aria-pressed="false">가까운순</button>
 </div>

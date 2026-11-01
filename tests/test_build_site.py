@@ -194,6 +194,13 @@ class BuildTests(unittest.TestCase):
         self.assertIn('data-mini-rate="40000" aria-pressed="false">40,000원</button>', job)
         self.assertIn('value="12" data-mini-hours', job)
         self.assertIn('../assets/pay.js?v=', job)
+        # The list: the highest fee for 시급순, a fee chip, the filter and sort buttons.
+        index = (self.out / "index.html").read_text(encoding="utf-8")
+        self.assertIn('data-rate="40000"', index)
+        self.assertIn('<span class="chip">시급 35,000~40,000원</span>', index)
+        self.assertIn('data-rate=""', index)
+        self.assertIn('data-toggle="paid"', index)
+        self.assertIn('data-sort="pay"', index)
         other = self.job_page("세종학당재단")
         self.assertNotIn("data-pay-mini", other)
         self.assertNotIn("pay.js", other)

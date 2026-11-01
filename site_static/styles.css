@@ -173,6 +173,11 @@ button, input, select { font: inherit; }
   background: #fff; color: var(--text-3); border: 1px solid #d1d6db; font-size: 14px; font-weight: 600;
 }
 .sort-bar button[aria-pressed="true"] { background: var(--text); color: #fff; border-color: var(--text); }
+/* Five sort buttons share one row on a phone. */
+@media (max-width: 480px) {
+  .sort-bar { flex-wrap: nowrap; gap: 4px; padding-inline: 8px; }
+  .sort-bar button { flex: 1 1 auto; min-width: 0; padding: 0 6px; font-size: 13px; white-space: nowrap; }
+}
 .sort-note { margin: 8px 12px 0; font-size: 13px; line-height: 1.5; color: var(--text-4); }
 .dist { display: block; margin-top: 2px; font-size: 13px; font-weight: 600; color: var(--blue); }
 .here-dot {

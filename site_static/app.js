@@ -93,7 +93,7 @@
 
   function initBoard(board) {
     var rows = Array.prototype.slice.call(board.querySelectorAll(".job-row"));
-    var state = { scope: "all", newcomer: false, demo: false, saved: false, q: "", selected: null, sort: "deadline" };
+    var state = { scope: "all", newcomer: false, demo: false, paid: false, saved: false, q: "", selected: null, sort: "deadline" };
     var map = null;
     var clusterer = null;
     var overlays = {};
@@ -109,6 +109,8 @@
         lat: parseFloat(row.getAttribute("data-lat")),
         lng: parseFloat(row.getAttribute("data-lng")),
         deadline: row.getAttribute("data-deadline"),
+        // The highest hourly fee in won the notice names; 0 when it names none.
+        rate: parseInt(row.getAttribute("data-rate"), 10) || 0,
         posted: row.getAttribute("data-posted") || "",
         name: row.getAttribute("data-name") || "",
         search: row.getAttribute("data-search") || "",
@@ -129,6 +131,7 @@
       return (state.scope === "all" || job.scope === state.scope) &&
         (!state.newcomer || job.newcomer) &&
         (!state.demo || job.demo) &&
+        (!state.paid || job.rate > 0) &&
         (!state.saved || readStore("savedJobs").indexOf(job.id) !== -1) &&
         (!state.q || job.search.indexOf(state.q) !== -1);
     }
@@ -215,6 +218,7 @@
         var parts = [{ all: "전체", domestic: "국내", overseas: "해외", online: "온라인" }[state.scope]];
         if (state.newcomer) parts.push("신입 가능");
         if (state.demo) parts.push("모의수업 있음");
+        if (state.paid) parts.push("시급 나온 공고");
         if (state.saved) parts.push("저장한 공고");
         summary.textContent = parts.join(" · ");
       }
@@ -387,6 +391,8 @@
     // Ties (and online jobs, which have no place) fall back to the deadline order.
     var sorters = {
       deadline: function (a, b) { return a.order - b.order; },
+      // Highest fee first; notices without one keep the deadline order at the end.
+      pay: function (a, b) { return (b.rate - a.rate) || a.order - b.order; },
       newest: function (a, b) { return b.posted.localeCompare(a.posted) || b.id - a.id; },
       name: function (a, b) { return a.name.localeCompare(b.name, "ko") || a.order - b.order; },
       near: function (a, b) { return (distance(a) - distance(b)) || a.order - b.order; }
