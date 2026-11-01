@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install (or update) the hourly collection on the Pi as a systemd timer.
+# Install (or update) the collection (4 times a day) on the Pi as a systemd timer.
 # Run on the Pi from the project folder:  bash pi_install_collect_timer.sh
 #
 #   systemctl list-timers korean-jobs-collect.timer   # next run
@@ -34,10 +34,10 @@ EOF
 
 sudo tee "$UNIT.timer" >/dev/null <<EOF
 [Unit]
-Description=Collect Korean teacher jobs every hour
+Description=Collect Korean teacher jobs 4 times a day (00, 06, 12, 18)
 
 [Timer]
-OnCalendar=hourly
+OnCalendar=*-*-* 00,06,12,18:00
 RandomizedDelaySec=5min
 Persistent=true
 

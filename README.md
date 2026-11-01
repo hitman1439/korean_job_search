@@ -155,9 +155,9 @@ $env:SARAMIN_ACCESS_KEY="발급받은_access_key"
 python collect_jobs.py --saramin-count 50
 ```
 
-### Pi에서 매시간 자동 수집
+### Pi에서 하루 4번 자동 수집
 
-Pi에서는 systemd 타이머가 매시간(0~5분 사이 무작위로) 한 번씩 `pi_collect.sh`를 실행합니다. 이 스크립트는 수집 → 공개 사이트 빌드(`site/`) → 테스트 사이트 빌드(`site_test/`) 순서로 돕니다. `collect_jobs.py`가 `secrets.env`를 직접 읽기 때문에, 키(사람인·네이버 등)도 그대로 적용됩니다.
+Pi에서는 systemd 타이머가 하루 4번(0·6·12·18시, 0~5분 사이 무작위로) `pi_collect.sh`를 실행합니다. 이 스크립트는 수집 → 공개 사이트 빌드(`site/`) → 테스트 사이트 빌드(`site_test/`) 순서로 돕니다. `collect_jobs.py`가 `secrets.env`를 직접 읽기 때문에, 키(사람인·네이버 등)도 그대로 적용됩니다.
 
 ```bash
 bash pi_install_collect_timer.sh                          # 설치 (한 번만, 고친 뒤 다시 실행해도 됨)

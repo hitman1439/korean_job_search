@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One collection cycle on the Pi: collect → build site/ → build site_test/.
-# Run by the korean-jobs-collect timer every hour (see pi_install_collect_timer.sh);
+# Run by the korean-jobs-collect timer 4 times a day (00, 06, 12, 18) (see pi_install_collect_timer.sh);
 # can also be run by hand:  bash pi_collect.sh
 #
 # collect_jobs.py reads secrets.env itself, so any API keys there apply here too.
