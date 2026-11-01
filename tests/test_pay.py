@@ -15,8 +15,9 @@ PAY_JS = Path(__file__).resolve().parent.parent / "site_test_static" / "pay.js"
 NODE = shutil.which("node")
 
 
-def calc(rate: float, hours: float) -> dict:
-    script = f"process.stdout.write(JSON.stringify(require({json.dumps(str(PAY_JS))}).calc({rate}, {hours})))"
+def calc(rate: float, hours: float, unit: str = "week") -> dict:
+    script = (f"process.stdout.write(JSON.stringify(require({json.dumps(str(PAY_JS))})"
+              f".calc({rate}, {hours}, {json.dumps(unit)})))")
     return json.loads(subprocess.run([NODE, "-e", script], capture_output=True, encoding="utf-8", check=True).stdout)
 
 
@@ -55,6 +56,14 @@ class PayCalcTests(unittest.TestCase):
     def test_under_sixty_hours_a_month_is_flagged(self):
         self.assertTrue(calc(35000, 12)["underSixty"])   # 52시간
         self.assertFalse(calc(35000, 14)["underSixty"])  # 60.7시간
+
+    def test_monthly_hours_are_used_as_given(self):
+        r = calc(30000, 40, "month")
+        self.assertEqual((r["gross"], r["monthlyHours"], r["unit"]), (1200000, 40, "month"))
+        self.assertTrue(r["underSixty"])
+        # 주 10시간 and 한 달 43.33…시간 are the same work.
+        self.assertEqual(calc(30000, 10 * 52 / 12, "month")["gross"], calc(30000, 10)["gross"])
+        self.assertEqual(calc(30000, 10, "bogus")["unit"], "week")
 
     def test_empty_input_is_zero(self):
         r = calc(0, 0)

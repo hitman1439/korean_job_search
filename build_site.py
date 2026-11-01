@@ -989,16 +989,19 @@ def render_pay(config: dict) -> str:
     body = """<main class="wrap pay" data-pay>
 <a class="back" href="index.html">‹ 공고 보러 가기</a>
 <h1 class="title-xl">강사료, 실제로 얼마 받을까요?</h1>
-<p class="pay-sub">시간당 강사료와 주당 시수를 넣으면 한 달 실수령액을 계약 형태별로 비교해 드려요.</p>
+<p class="pay-sub">시간당 강사료와 시수(주당 또는 한 달)를 넣으면 한 달 실수령액을 계약 형태별로 비교하고, 계산식도 보여 드려요.</p>
 <p class="pay-from" data-from hidden><strong></strong> 공고의 강사료로 채웠어요. 고쳐서 계산해 보세요.</p>
+<div class="pay-units" role="group" aria-labelledby="unitLabel"><span id="unitLabel" class="label">시수 입력 방식</span>
+<div class="pay-unit-opts"><button type="button" class="opt" data-unit="week" aria-pressed="true">주당 시수로 입력</button>
+<button type="button" class="opt" data-unit="month" aria-pressed="false">한 달 시수로 입력</button></div></div>
 <div class="pay-inputs">
 <label><span class="label">시간당 강사료</span>
 <span class="pay-field"><input class="field" type="text" inputmode="numeric" autocomplete="off" data-rate value="35,000"><span class="unit">원</span></span></label>
-<label><span class="label">주당 시수</span>
+<label><span class="label" data-hours-label>주당 시수</span>
 <span class="pay-field"><input class="field" type="text" inputmode="decimal" autocomplete="off" data-hours value="12"><span class="unit">시간</span></span></label>
 </div>
 <section data-out aria-live="polite">
-<p class="pay-gross">한 달 세전 <strong data-gross></strong> <span>(월 평균 <span data-month-hours></span>시간 · 한 달을 4.33주로 계산)</span></p>
+<p class="pay-gross">한 달 세전 <strong data-gross></strong> <span data-gross-note></span></p>
 <div class="pay-cards">
 <div class="pay-card" data-card="freelance"><h2>프리랜서 <span>3.3% 떼는 경우</span></h2>
 <p class="pay-net" data-net></p><dl class="pay-items" data-items></dl>
@@ -1008,6 +1011,9 @@ def render_pay(config: dict) -> str:
 <p class="fine">소득세는 1인 가구 기준 어림값이에요. 실제 원천징수액과 조금 다를 수 있고, 연말정산으로 정산해요.</p></div>
 </div>
 <p class="pay-warn" data-under60 hidden>한 달 근무가 60시간 미만이면 보통 국민연금·건강보험·고용보험 가입 대상이 아니에요. 이 경우 근로자라도 소득세만 떼는 경우가 많아요.</p>
+<section class="pay-formula" aria-labelledby="formulaTitle"><h2 id="formulaTitle">이렇게 계산했어요</h2>
+<div data-formula></div>
+<p class="fine">보험료와 세금은 10원 미만을 버렸어요.</p></section>
 </section>
 <section class="pay-notes"><h2>알아 두면 좋아요</h2>
 <ul>

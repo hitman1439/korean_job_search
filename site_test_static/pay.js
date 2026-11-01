@@ -1,6 +1,6 @@
 /* 강사료 실수령 계산기 (test build only: pay.html).
 
-   PayCalc.calc(rate, weeklyHours) compares one month of take-home pay under
+   PayCalc.calc(rate, hours, unit) compares one month of take-home pay under
    the two usual contracts for a Korean-language lecturer:
      - freelance (사업소득): 3.3% withheld (소득세 3% + 지방소득세 0.3%)
      - employee (근로소득): the worker's share of 국민연금, 건강보험,
@@ -75,10 +75,12 @@
     return floor10(Math.max(0, tax - earnedCredit(tax, year)) / 12);
   }
 
-  function calc(rate, weeklyHours) {
+  // hours are per week (unit "week", the default) or per month ("month").
+  function calc(rate, hours, unit) {
     rate = Math.max(0, Number(rate) || 0);
-    weeklyHours = Math.max(0, Number(weeklyHours) || 0);
-    var monthlyHours = weeklyHours * WEEKS_PER_MONTH;
+    hours = Math.max(0, Number(hours) || 0);
+    unit = unit === "month" ? "month" : "week";
+    var monthlyHours = unit === "month" ? hours : hours * WEEKS_PER_MONTH;
     var gross = Math.round(rate * monthlyHours);
 
     var fIncome = floor10(gross * RATES.freelanceTax);
@@ -105,6 +107,10 @@
     };
 
     return {
+      rate: rate,
+      hours: hours,
+      unit: unit,
+      pensionBase: pensionBase,
       monthlyHours: Math.round(monthlyHours * 10) / 10,
       gross: gross,
       freelance: freelance,
@@ -114,7 +120,7 @@
     };
   }
 
-  var PayCalc = { calc: calc, RATES: RATES, monthlyIncomeTax: monthlyIncomeTax };
+  var PayCalc = { calc: calc, RATES: RATES, WEEKS_PER_MONTH: WEEKS_PER_MONTH, monthlyIncomeTax: monthlyIncomeTax };
   if (typeof module !== "undefined" && module.exports) module.exports = PayCalc;
   root.PayCalc = PayCalc;
 
@@ -125,6 +131,7 @@
 
   var rateInput = box.querySelector("[data-rate]");
   var hoursInput = box.querySelector("[data-hours]");
+  var unit = "week";
   var params = new URLSearchParams(location.search);
   if (/^\d{4,6}$/.test(params.get("rate") || "")) rateInput.value = Number(params.get("rate")).toLocaleString("ko-KR");
   if (/^\d{1,2}(\.\d)?$/.test(params.get("hours") || "")) hoursInput.value = params.get("hours");
@@ -136,11 +143,15 @@
   }
 
   function won(n) { return n.toLocaleString("ko-KR") + "원"; }
+  function num(n) { return (Math.round(n * 10) / 10).toLocaleString("ko-KR"); }
+  function pct(r) { return (Math.round(r * 100000) / 1000) + "%"; }
   function number(input) { return Number(String(input.value).replace(/[^\d.]/g, "")) || 0; }
+  function amount(items, name) { return items.filter(function (it) { return it[0] === name; })[0][1]; }
 
   function fill(card, result) {
     card.querySelector("[data-net]").textContent = won(result.net);
-    card.querySelector("[data-items]").innerHTML = "";
+    var list = card.querySelector("[data-items]");
+    list.innerHTML = "";
     result.items.forEach(function (it) {
       var row = document.createElement("div");
       var dt = document.createElement("dt");
@@ -149,21 +160,97 @@
       dd.textContent = "−" + won(it[1]);
       row.appendChild(dt);
       row.appendChild(dd);
-      card.querySelector("[data-items]").appendChild(row);
+      list.appendChild(row);
     });
   }
 
+  // One titled list of [name, expression, amount, isTotal] lines.
+  function group(title, lines) {
+    var wrap = document.createElement("div");
+    wrap.className = "pay-f-group";
+    var h = document.createElement("h3");
+    h.textContent = title;
+    var ul = document.createElement("ul");
+    lines.forEach(function (l) {
+      var li = document.createElement("li");
+      var name = document.createElement("span");
+      name.className = "pay-f-name";
+      name.textContent = l[0];
+      var expr = document.createElement("span");
+      expr.className = "pay-f-expr";
+      expr.textContent = l[1] + " = " + won(l[2]);
+      li.appendChild(name);
+      li.appendChild(expr);
+      if (l[3]) li.className = "pay-f-total";
+      ul.appendChild(li);
+    });
+    wrap.appendChild(h);
+    wrap.appendChild(ul);
+    return wrap;
+  }
+
+  function formula(r) {
+    var g = won(r.gross);
+    var f = r.freelance.items, e = r.employee.items;
+    var grossExpr = r.unit === "month"
+      ? won(r.rate) + " × " + num(r.hours) + "시간"
+      : won(r.rate) + " × 주 " + num(r.hours) + "시간 × 4.33주";
+    var pensionExpr = (r.pensionBase !== r.gross ? won(r.pensionBase) + "(기준소득월액)" : g) + " × " + pct(RATES.pension);
+    var deducted = e.reduce(function (sum, it) { return sum + it[1]; }, 0);
+    var out = document.createDocumentFragment();
+    out.appendChild(group("한 달 세전", [["세전", grossExpr, r.gross, true]]));
+    out.appendChild(group("프리랜서", [
+      ["소득세", g + " × 3%", f[0][1]],
+      ["지방소득세", "소득세 " + won(f[0][1]) + " × 10%", f[1][1]],
+      ["실수령", g + " − " + won(f[0][1]) + " − " + won(f[1][1]), r.freelance.net, true]
+    ]));
+    out.appendChild(group("근로자 (4대보험)", [
+      ["국민연금", pensionExpr, amount(e, "국민연금")],
+      ["건강보험", g + " × " + pct(RATES.health), amount(e, "건강보험")],
+      ["장기요양보험", "건강보험료 " + won(amount(e, "건강보험")) + " × " + pct(RATES.care), amount(e, "장기요양보험")],
+      ["고용보험", g + " × " + pct(RATES.employment), amount(e, "고용보험")],
+      ["소득세", "간이세액표 어림 (1인 가구)", amount(e, "소득세")],
+      ["지방소득세", "소득세 " + won(amount(e, "소득세")) + " × 10%", amount(e, "지방소득세")],
+      ["실수령", g + " − 공제 합계 " + won(deducted), r.employee.net, true]
+    ]));
+    return out;
+  }
+
   function update() {
-    var r = calc(number(rateInput), number(hoursInput));
+    var r = calc(number(rateInput), number(hoursInput), unit);
     var out = box.querySelector("[data-out]");
     out.hidden = r.gross <= 0;
     if (r.gross <= 0) return;
     box.querySelector("[data-gross]").textContent = won(r.gross);
-    box.querySelector("[data-month-hours]").textContent = String(r.monthlyHours);
+    box.querySelector("[data-gross-note]").textContent = unit === "month"
+      ? "(한 달 " + num(r.hours) + "시간)"
+      : "(한 달 평균 " + num(r.monthlyHours) + "시간 · 한 달을 4.33주로 계산)";
     fill(box.querySelector('[data-card="freelance"]'), r.freelance);
     fill(box.querySelector('[data-card="employee"]'), r.employee);
     box.querySelector("[data-under60]").hidden = !r.underSixty;
+    var f = box.querySelector("[data-formula]");
+    f.innerHTML = "";
+    f.appendChild(formula(r));
   }
+
+  // Switching the unit keeps the same amount of work: 주 12시간 becomes 한 달 52시간.
+  box.querySelectorAll("[data-unit]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var next = btn.getAttribute("data-unit");
+      if (next === unit) return;
+      var h = number(hoursInput);
+      if (h) {
+        var converted = next === "month" ? h * WEEKS_PER_MONTH : h / WEEKS_PER_MONTH;
+        hoursInput.value = String(Math.round(converted * 10) / 10);
+      }
+      unit = next;
+      box.querySelectorAll("[data-unit]").forEach(function (b) {
+        b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+      });
+      box.querySelector("[data-hours-label]").textContent = unit === "month" ? "한 달 시수" : "주당 시수";
+      update();
+    });
+  });
 
   rateInput.addEventListener("input", function () {
     var n = number(rateInput);
