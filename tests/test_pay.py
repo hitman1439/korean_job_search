@@ -65,6 +65,13 @@ class PayCalcTests(unittest.TestCase):
         self.assertEqual(calc(30000, 10 * 52 / 12, "month")["gross"], calc(30000, 10)["gross"])
         self.assertEqual(calc(30000, 10, "bogus")["unit"], "week")
 
+    def test_one_week_is_one_month_over_4_33_weeks(self):
+        r = calc(30000, 10)
+        self.assertEqual((r["weeklyHours"], r["weekGross"]), (10, 300000))
+        self.assertEqual(r["freelance"]["weekNet"], 290100)  # 1,257,100 ÷ 4.33…, 10원 미만 버림
+        self.assertEqual(r["employee"]["weekNet"], r["employee"]["net"] * 12 // 52 // 10 * 10)
+        self.assertEqual(calc(30000, 52, "month")["weeklyHours"], 12)
+
     def test_empty_input_is_zero(self):
         r = calc(0, 0)
         self.assertEqual((r["gross"], r["freelance"]["net"], r["employee"]["net"]), (0, 0, 0))

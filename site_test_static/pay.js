@@ -105,6 +105,10 @@
       items: items,
       net: gross - items.reduce(function (sum, it) { return sum + it[1]; }, 0)
     };
+    // One week is one month spread over its 4.33 weeks.
+    var perWeek = function (won) { return floor10(won / WEEKS_PER_MONTH); };
+    freelance.weekNet = perWeek(freelance.net);
+    employee.weekNet = perWeek(employee.net);
 
     return {
       rate: rate,
@@ -112,7 +116,9 @@
       unit: unit,
       pensionBase: pensionBase,
       monthlyHours: Math.round(monthlyHours * 10) / 10,
+      weeklyHours: Math.round(monthlyHours / WEEKS_PER_MONTH * 10) / 10,
       gross: gross,
+      weekGross: perWeek(gross),
       freelance: freelance,
       employee: employee,
       // 월 60시간 미만이면 보통 4대보험(국민연금·건강보험·고용보험) 대상이 아니다.
@@ -132,6 +138,7 @@
   var rateInput = box.querySelector("[data-rate]");
   var hoursInput = box.querySelector("[data-hours]");
   var unit = "week";
+  var contract = "freelance";
   var params = new URLSearchParams(location.search);
   if (/^\d{4,6}$/.test(params.get("rate") || "")) rateInput.value = Number(params.get("rate")).toLocaleString("ko-KR");
   if (/^\d{1,2}(\.\d)?$/.test(params.get("hours") || "")) hoursInput.value = params.get("hours");
@@ -142,77 +149,41 @@
     fromBox.hidden = false;
   }
 
+  var NOTES = {
+    freelance: "3.3%는 미리 떼는 세금이에요. 5월 종합소득세 신고 때 정산해서 돌려받거나 더 낼 수 있어요. 건강보험료는 지역가입자로 따로 낼 수 있어요.",
+    employee: "근로자가 내는 몫(절반)만 계산했어요. 소득세는 1인 가구 기준 어림값이라 실제와 조금 다를 수 있고, 연말정산으로 정산해요."
+  };
+
   function won(n) { return n.toLocaleString("ko-KR") + "원"; }
   function num(n) { return (Math.round(n * 10) / 10).toLocaleString("ko-KR"); }
   function pct(r) { return (Math.round(r * 100000) / 1000) + "%"; }
   function number(input) { return Number(String(input.value).replace(/[^\d.]/g, "")) || 0; }
-  function amount(items, name) { return items.filter(function (it) { return it[0] === name; })[0][1]; }
+  function text(sel, value) { box.querySelector(sel).textContent = value; }
 
-  function fill(card, result) {
-    card.querySelector("[data-net]").textContent = won(result.net);
-    var list = card.querySelector("[data-items]");
-    list.innerHTML = "";
-    result.items.forEach(function (it) {
-      var row = document.createElement("div");
-      var dt = document.createElement("dt");
-      var dd = document.createElement("dd");
-      dt.textContent = it[0];
-      dd.textContent = "−" + won(it[1]);
-      row.appendChild(dt);
-      row.appendChild(dd);
-      list.appendChild(row);
-    });
-  }
-
-  // One titled list of [name, expression, amount, isTotal] lines.
-  function group(title, lines) {
-    var wrap = document.createElement("div");
-    wrap.className = "pay-f-group";
-    var h = document.createElement("h3");
-    h.textContent = title;
-    var ul = document.createElement("ul");
-    lines.forEach(function (l) {
-      var li = document.createElement("li");
-      var name = document.createElement("span");
-      name.className = "pay-f-name";
-      name.textContent = l[0];
-      var expr = document.createElement("span");
-      expr.className = "pay-f-expr";
-      expr.textContent = l[1] + " = " + won(l[2]);
-      li.appendChild(name);
-      li.appendChild(expr);
-      if (l[3]) li.className = "pay-f-total";
-      ul.appendChild(li);
-    });
-    wrap.appendChild(h);
-    wrap.appendChild(ul);
-    return wrap;
-  }
-
-  function formula(r) {
+  // The folded detail: [label, expression, amount, kind] where kind is
+  // "minus" for a deduction and "total" for a result line.
+  function lines(r) {
     var g = won(r.gross);
-    var f = r.freelance.items, e = r.employee.items;
     var grossExpr = r.unit === "month"
       ? won(r.rate) + " × " + num(r.hours) + "시간"
       : won(r.rate) + " × 주 " + num(r.hours) + "시간 × 4.33주";
-    var pensionExpr = (r.pensionBase !== r.gross ? won(r.pensionBase) + "(기준소득월액)" : g) + " × " + pct(RATES.pension);
-    var deducted = e.reduce(function (sum, it) { return sum + it[1]; }, 0);
-    var out = document.createDocumentFragment();
-    out.appendChild(group("한 달 세전", [["세전", grossExpr, r.gross, true]]));
-    out.appendChild(group("프리랜서", [
-      ["소득세", g + " × 3%", f[0][1]],
-      ["지방소득세", "소득세 " + won(f[0][1]) + " × 10%", f[1][1]],
-      ["실수령", g + " − " + won(f[0][1]) + " − " + won(f[1][1]), r.freelance.net, true]
-    ]));
-    out.appendChild(group("근로자 (4대보험)", [
-      ["국민연금", pensionExpr, amount(e, "국민연금")],
-      ["건강보험", g + " × " + pct(RATES.health), amount(e, "건강보험")],
-      ["장기요양보험", "건강보험료 " + won(amount(e, "건강보험")) + " × " + pct(RATES.care), amount(e, "장기요양보험")],
-      ["고용보험", g + " × " + pct(RATES.employment), amount(e, "고용보험")],
-      ["소득세", "간이세액표 어림 (1인 가구)", amount(e, "소득세")],
-      ["지방소득세", "소득세 " + won(amount(e, "소득세")) + " × 10%", amount(e, "지방소득세")],
-      ["실수령", g + " − 공제 합계 " + won(deducted), r.employee.net, true]
-    ]));
+    var out = [["한 달 세전", grossExpr, r.gross, "total"]];
+    var c = r[contract];
+    var amount = function (name) { return c.items.filter(function (it) { return it[0] === name; })[0][1]; };
+    if (contract === "freelance") {
+      out.push(["소득세", g + " × 3%", c.items[0][1], "minus"]);
+      out.push(["지방소득세", "소득세 × 10%", c.items[1][1], "minus"]);
+    } else {
+      var pensionOf = r.pensionBase !== r.gross ? won(r.pensionBase) + "(상·하한 적용)" : g;
+      out.push(["국민연금", pensionOf + " × " + pct(RATES.pension), amount("국민연금"), "minus"]);
+      out.push(["건강보험", g + " × " + pct(RATES.health), amount("건강보험"), "minus"]);
+      out.push(["장기요양보험", "건강보험료 × " + pct(RATES.care), amount("장기요양보험"), "minus"]);
+      out.push(["고용보험", g + " × " + pct(RATES.employment), amount("고용보험"), "minus"]);
+      out.push(["소득세", "간이세액표 어림 (1인 가구)", amount("소득세"), "minus"]);
+      out.push(["지방소득세", "소득세 × 10%", amount("지방소득세"), "minus"]);
+    }
+    out.push(["한 달 실수령", "세전 − 뗀 돈", c.net, "total"]);
+    out.push(["한 주 실수령", "한 달 실수령 ÷ 4.33주", c.weekNet, "total"]);
     return out;
   }
 
@@ -221,16 +192,40 @@
     var out = box.querySelector("[data-out]");
     out.hidden = r.gross <= 0;
     if (r.gross <= 0) return;
-    box.querySelector("[data-gross]").textContent = won(r.gross);
-    box.querySelector("[data-gross-note]").textContent = unit === "month"
-      ? "(한 달 " + num(r.hours) + "시간)"
-      : "(한 달 평균 " + num(r.monthlyHours) + "시간 · 한 달을 4.33주로 계산)";
-    fill(box.querySelector('[data-card="freelance"]'), r.freelance);
-    fill(box.querySelector('[data-card="employee"]'), r.employee);
-    box.querySelector("[data-under60]").hidden = !r.underSixty;
-    var f = box.querySelector("[data-formula]");
-    f.innerHTML = "";
-    f.appendChild(formula(r));
+    var c = r[contract];
+    text("[data-week-net]", won(c.weekNet));
+    text("[data-week-gross]", won(r.weekGross));
+    text("[data-month-net]", won(c.net));
+    text("[data-month-gross]", won(r.gross));
+    text("[data-basis]", "주 " + num(r.weeklyHours) + "시간 · 한 달 " + num(r.monthlyHours) + "시간 기준 (한 달 = 평균 4.33주)");
+    box.querySelector("[data-under60]").hidden = !(contract === "employee" && r.underSixty);
+    text("[data-contract-note]", NOTES[contract] + " 10원 미만은 버렸어요.");
+
+    var list = box.querySelector("[data-formula]");
+    list.innerHTML = "";
+    lines(r).forEach(function (l) {
+      var li = document.createElement("li");
+      li.className = "pay-line " + l[3];
+      var name = document.createElement("span");
+      name.className = "pay-line-name";
+      name.textContent = l[0];
+      var expr = document.createElement("span");
+      expr.className = "pay-line-expr";
+      expr.textContent = l[1];
+      var value = document.createElement("span");
+      value.className = "pay-line-value";
+      value.textContent = (l[3] === "minus" ? "−" : "") + won(l[2]);
+      li.appendChild(name);
+      li.appendChild(value);
+      li.appendChild(expr);
+      list.appendChild(li);
+    });
+  }
+
+  function press(attr, btn) {
+    box.querySelectorAll("[" + attr + "]").forEach(function (b) {
+      b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+    });
   }
 
   // Switching the unit keeps the same amount of work: 주 12시간 becomes 한 달 52시간.
@@ -244,10 +239,16 @@
         hoursInput.value = String(Math.round(converted * 10) / 10);
       }
       unit = next;
-      box.querySelectorAll("[data-unit]").forEach(function (b) {
-        b.setAttribute("aria-pressed", b === btn ? "true" : "false");
-      });
-      box.querySelector("[data-hours-label]").textContent = unit === "month" ? "한 달 시수" : "주당 시수";
+      press("data-unit", btn);
+      text("[data-hours-unit]", unit === "month" ? "시간/월" : "시간/주");
+      update();
+    });
+  });
+
+  box.querySelectorAll("[data-contract]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      contract = btn.getAttribute("data-contract");
+      press("data-contract", btn);
       update();
     });
   });
