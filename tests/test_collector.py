@@ -7,6 +7,7 @@ Text fixtures are trimmed from real collected pages.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import sys
 import tempfile
@@ -413,6 +414,17 @@ class DatabaseTests(unittest.TestCase):
         rows = self.conn.execute("SELECT confidence_score, is_canonical FROM jobs ORDER BY confidence_score").fetchall()
         self.assertEqual(rows, [(60, 0), (90, 1)])
 
+    def test_saramin_found_copy_never_wins_canonical(self):
+        # Saramin-found notices are test-build only, so the public site must
+        # keep showing the same notice collected from a regular board.
+        cj.save_job(self.conn, make_job(confidence_score=60))
+        cj.save_job(self.conn, make_job(title="[아주대학교 국제교육센터] 한국어 강사 초빙", institution_name="아주대학교 국제교육센터",
+                                        original_url="https://ajou.ac.kr/notice/9", source_name=cj.SARAMIN_ORIGINAL_NAME,
+                                        confidence_score=90))
+        self.assertEqual(cj.assign_duplicate_groups(self.conn), 1)
+        rows = self.conn.execute("SELECT source_name, is_canonical FROM jobs WHERE is_canonical = 1").fetchall()
+        self.assertNotEqual(rows[0][0], cj.SARAMIN_ORIGINAL_NAME)
+
     def test_undated_repost_joins_dated_original(self):
         cj.save_job(self.conn, make_job(title="숭실대학교 한국어교육원 한국어강사 채용 공고", institution_name="숭실대학교 한국어교육원",
                                         deadline="2026-11-09", confidence_score=88))
@@ -665,6 +677,149 @@ class LlmRequestTests(unittest.TestCase):
 
     def test_schema_requires_every_property(self):
         self.assertEqual(set(ef.LLM_SCHEMA["required"]), set(ef.LLM_SCHEMA["properties"]))
+
+
+SARAMIN_XML = """<?xml version="1.0" encoding="utf-8"?>
+<job-search><jobs count="2" start="0" total="2">
+<job><url>https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=111</url><active>1</active>
+<company><detail href="https://www.saramin.co.kr/zf_user/company-info/view?csn=1">(주)가나어학원</detail></company>
+<position><title>가나어학원 한국어 강사 채용</title><location code="101010">서울 &gt; 강남구</location></position>
+<keyword>한국어강사</keyword><posting-timestamp>1793232000</posting-timestamp>
+<expiration-timestamp>1795132800</expiration-timestamp><id>111</id></job>
+<job><url>https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=222</url><active>1</active>
+<company><detail href="https://www.saramin.co.kr/zf_user/company-info/view?csn=2">다라 IT</detail></company>
+<position><title>백엔드 개발자 채용</title><location code="101010">서울 &gt; 마포구</location></position>
+<posting-timestamp>1793232000</posting-timestamp><expiration-timestamp>1795132800</expiration-timestamp><id>222</id></job>
+</jobs></job-search>"""
+
+ACADEMY_PAGE = (
+    "<html><head><title>가나어학원 한국어 강사 채용</title></head><body>"
+    "가나어학원 한국어 강사 채용 공고. 외국인 대상 한국어 수업을 맡을 강사를 모집합니다. "
+    "자격: 한국어교원 2급 이상. 시급 35,000원. 접수 마감 2026년 11월 25일. 서울 강남구 테헤란로 1"
+    "</body></html>"
+)
+
+
+class SaraminLeadTests(unittest.TestCase):
+    """Saramin is a hiring signal only: leads are kept out of jobs, Saramin
+    pages are never fetched, and only the institution's own notice is saved."""
+
+    def setUp(self):
+        self.conn = cj.init_db(Path(":memory:"))
+
+    def tearDown(self):
+        self.conn.close()
+
+    def test_parse_leads_keeps_facts_not_the_posting(self):
+        leads = cj.parse_saramin_leads(SARAMIN_XML, "한국어강사")
+        self.assertEqual([l["lead_key"] for l in leads], ["111", "222"])
+        self.assertEqual(leads[0]["institution_name"], "(주)가나어학원")
+        self.assertEqual(leads[0]["location_text"], "서울 > 강남구")
+        self.assertEqual(leads[0]["deadline"], "2026-11-20")
+        self.assertNotIn("original_url", leads[0])
+        self.assertNotIn("raw_text", leads[0])
+
+    def test_parse_leads_reads_the_json_the_api_actually_returns(self):
+        payload = {"jobs": {"count": 1, "start": 0, "total": "1", "job": [{
+            "url": "http://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=111", "active": 1,
+            "company": {"detail": {"href": "http://www.saramin.co.kr/x", "name": "(주)가나어학원"}},
+            "position": {"title": "가나어학원 한국어 강사 채용", "location": {"code": "101", "name": "서울 &gt; 강남구"}},
+            "id": "111", "posting-timestamp": "1793503564", "expiration-timestamp": "1793503564",
+        }]}}
+        leads = cj.parse_saramin_leads(json.dumps(payload, ensure_ascii=False), "한국어강사")
+        self.assertEqual(len(leads), 1)
+        self.assertEqual(leads[0]["lead_key"], "111")
+        self.assertEqual(leads[0]["institution_name"], "(주)가나어학원")
+        self.assertEqual(leads[0]["location_text"], "서울 > 강남구")
+        self.assertEqual(leads[0]["deadline"], cj.timestamp_to_date("1793503564"))
+
+    def test_parse_leads_raises_on_api_error(self):
+        with self.assertRaises(ValueError):
+            cj.parse_saramin_leads('{"code":1,"message":"access-key를 입력해 주세요."}', "한국어강사")
+
+    def run_collect(self, search_results):
+        fetched, searched = [], []
+
+        def fake_fetch(url, timeout=20):
+            fetched.append(url)
+            if "oapi.saramin.co.kr" in url:
+                return SARAMIN_XML
+            if "saramin.co.kr" in url:
+                raise AssertionError(f"fetched a Saramin page: {url}")
+            return ACADEMY_PAGE
+
+        def fake_search(query, cid, secret):
+            searched.append(query)
+            return search_results
+
+        with mock.patch.object(cj, "fetch_url", fake_fetch), mock.patch.object(cj, "naver_search", fake_search), \
+                mock.patch.dict(os.environ, {"SARAMIN_ACCESS_KEY": "KEY"}):
+            stats = cj.collect_saramin(self.conn, 1, ["한국어 강사"], ["한국어"], ["채용", "모집"], [], 50, TODAY, True,
+                                       ("id", "secret"))
+        return stats, fetched, searched
+
+    def test_lead_leads_to_the_institution_notice(self):
+        stats, fetched, searched = self.run_collect([
+            {"link": "https://www.saramin.co.kr/zf_user/jobs/view?rec_idx=111", "title": "가나어학원 한국어 강사 채용"},
+            {"link": "https://blog.naver.com/x/1", "title": "가나어학원 한국어 강사 채용", "description": "가나어학원"},
+            {"link": "https://www.ganaedu.co.kr/board/notice/7", "title": "<b>가나어학원</b> 한국어 강사 채용 안내",
+             "description": "가나어학원에서 한국어 강사를 모집합니다"},
+        ])
+        self.assertEqual(stats["saved"], 1)
+        self.assertEqual(len(searched), 1)  # the IT job is not a lead
+        rows = self.conn.execute("SELECT source_name, original_url, institution_name, deadline FROM jobs").fetchall()
+        self.assertEqual(rows, [(cj.SARAMIN_ORIGINAL_NAME, "https://www.ganaedu.co.kr/board/notice/7",
+                                 "(주)가나어학원", "2026-11-20")])  # the API deadline
+        self.assertFalse([u for u in fetched if "saramin.co.kr" in u and "oapi." not in u])
+        lead = self.conn.execute("SELECT status, original_url FROM saramin_leads").fetchone()
+        self.assertEqual(lead, ("found", "https://www.ganaedu.co.kr/board/notice/7"))
+
+        # The next run neither searches again nor re-reads the found notice as new.
+        stats, _, searched = self.run_collect([])
+        self.assertEqual((searched, stats["saved"]), ([], 0))
+
+    def test_notice_already_collected_elsewhere_keeps_its_source(self):
+        cj.save_job(self.conn, make_job(title="가나어학원 한국어 강사 채용", original_url="https://www.ganaedu.co.kr/board/notice/7",
+                                        source_name="seed"))
+        stats, fetched, _ = self.run_collect([
+            {"link": "https://www.ganaedu.co.kr/board/notice/7", "title": "<b>가나어학원</b> 한국어 강사 채용 안내",
+             "description": "가나어학원에서 한국어 강사를 모집합니다"},
+        ])
+        self.assertEqual(stats["saved"] + stats["updated"], 0)
+        self.assertNotIn("https://www.ganaedu.co.kr/board/notice/7", fetched)
+        self.assertEqual(self.conn.execute("SELECT source_name FROM jobs").fetchall(), [("seed",)])
+
+    def test_no_original_means_nothing_published(self):
+        stats, _, _ = self.run_collect([
+            {"link": "https://www.jobkorea.co.kr/Recruit/1", "title": "가나어학원 한국어 강사 채용", "description": "가나어학원"},
+        ])
+        self.assertEqual(stats["saved"], 0)
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0], 0)
+        self.assertEqual(self.conn.execute("SELECT status FROM saramin_leads").fetchone()[0], "none")
+        # Not searched again before LEAD_RETRY_DAYS pass.
+        _, _, searched = self.run_collect([])
+        self.assertEqual(searched, [])
+
+    def test_old_saramin_jobs_are_removed(self):
+        cj.save_job(self.conn, make_job(source_name=cj.SARAMIN_NAME, original_url="https://www.saramin.co.kr/x"))
+        self.run_collect([])
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0], 0)
+
+    def test_no_keys_no_calls(self):
+        with mock.patch.object(cj, "fetch_url", side_effect=AssertionError("no fetch")):
+            stats = cj.collect_saramin(self.conn, 1, ["한국어 강사"], ["한국어"], ["채용"], [], 50, TODAY, True, None)
+        self.assertEqual(stats["saved"], 0)
+
+    def test_search_original_any_host_needs_the_institution_named(self):
+        results = [{"link": "https://www.ganaedu.co.kr/notice/7", "title": "한국어 강사 채용 안내", "description": "강사 모집"}]
+        with mock.patch.object(cj, "naver_search", lambda *a: results):
+            # Not official, institution not named in the result → rejected.
+            self.assertIsNone(cj.search_original("가나어학원 한국어 강사 채용", "(주)가나어학원", "i", "s", any_host=True))
+            results[0]["description"] = "가나어학원 강사 모집"
+            self.assertEqual(cj.search_original("가나어학원 한국어 강사 채용", "(주)가나어학원", "i", "s", any_host=True),
+                             "https://www.ganaedu.co.kr/notice/7")
+            # Without any_host only official domains count, as before.
+            self.assertIsNone(cj.search_original("가나어학원 한국어 강사 채용", "(주)가나어학원", "i", "s"))
 
 
 if __name__ == "__main__":

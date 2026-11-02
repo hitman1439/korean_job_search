@@ -76,7 +76,8 @@ def json_for_script(data: object) -> str:
 
 # --- data --------------------------------------------------------------------
 
-def load_jobs(conn: sqlite3.Connection, today: dt.date, approved_only: bool, include_overseas: bool = False) -> list[dict]:
+def load_jobs(conn: sqlite3.Connection, today: dt.date, approved_only: bool, include_overseas: bool = False,
+              include_saramin: bool = False) -> list[dict]:
     conn.row_factory = sqlite3.Row
     statuses = ("approved",) if approved_only else ("approved", "needs_review")
     rows = conn.execute(
@@ -92,6 +93,9 @@ def load_jobs(conn: sqlite3.Connection, today: dt.date, approved_only: bool, inc
         for row in rows
         if collect_jobs.is_live_job(row["deadline"], row["posted_at"], row["first_seen_at"], today)
     ]
+    # Notices found through Saramin leads are on trial: test build only.
+    if not include_saramin:
+        jobs = [job for job in jobs if job.get("source_name") != collect_jobs.SARAMIN_ORIGINAL_NAME]
     # Overseas postings are still collected but only shown in the private build.
     if not include_overseas:
         jobs = [job for job in jobs if job["scope"] != "overseas"]
@@ -1100,7 +1104,8 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
           approved_only: bool = False) -> dict[str, int]:
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        jobs = load_jobs(conn, today, approved_only, include_overseas=bool(config.get("private")))
+        jobs = load_jobs(conn, today, approved_only, include_overseas=bool(config.get("private")),
+                         include_saramin=bool(config.get("test")))
         last_run = conn.execute("SELECT MAX(finished_at) FROM collection_runs").fetchone()[0]
         orgs = review_orgs(conn) if config.get("test") else []
     finally:

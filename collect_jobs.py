@@ -244,6 +244,27 @@ def init_db(db_path: Path) -> sqlite3.Connection:
         )
         """
     )
+    # Hiring signals from the Saramin API. They are never published: each one
+    # only says "this institution is hiring", and the site carries the job
+    # only once the institution's own notice is found (find_lead_originals).
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS saramin_leads (
+            lead_key TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            institution_name TEXT,
+            location_text TEXT,
+            deadline TEXT,
+            posted_at TEXT,
+            keyword TEXT,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            original_url TEXT,
+            status TEXT NOT NULL DEFAULT 'new',
+            checked_at TEXT
+        )
+        """
+    )
     return conn
 
 
@@ -1048,45 +1069,89 @@ def make_content_hash(title: str, institution: str | None, deadline: str | None,
     return hashlib.sha256(stable.encode("utf-8")).hexdigest()
 
 
-def parse_saramin_jobs(xml_text: str, keyword: str) -> list[dict[str, str | int | None]]:
+def xml_first(item: ET.Element, *paths: str) -> str:
+    for path in paths:
+        value = xml_get(item, path)
+        if value and value.strip():
+            return clean_text(strip_markup(value))
+    return ""
+
+
+def parse_saramin_leads(xml_text: str, keyword: str) -> list[dict[str, str | None]]:
+    """Hiring signals from the Saramin job-search API: who is hiring, for
+    what, until when. The posting itself (its text and its Saramin page) is
+    never kept or fetched; see find_lead_originals.
+
+    The API answers JSON unless asked otherwise; XML is still read."""
+    if xml_text.lstrip().startswith("{"):
+        return parse_saramin_leads_json(json.loads(xml_text), keyword)
     root = ET.fromstring(xml_text)
-    jobs: list[dict[str, str | int | None]] = []
+    leads: list[dict[str, str | None]] = []
     for item in root.findall(".//job"):
-        title = clean_text(strip_markup(xml_get(item, "position/title") or "Untitled")
-        )
-        institution = clean_text(strip_markup(xml_get(item, "company/name") or ""))
-        original_url = xml_get(item, "url") or ""
-        location = clean_text(strip_markup(xml_get(item, "position/location/name") or ""))
+        title = xml_first(item, "position/title")
+        if not title:
+            continue
+        institution = xml_first(item, "company/detail", "company/name")
         deadline = timestamp_to_date(xml_get(item, "expiration-timestamp"))
-        posted_at = timestamp_to_date(xml_get(item, "posting-timestamp"))
-        description_parts = [
-            f"keyword: {keyword}",
-            f"job-type: {strip_markup(xml_get(item, 'position/job-type/name') or '')}",
-            f"industry: {strip_markup(xml_get(item, 'position/industry/name') or '')}",
-            f"experience: {strip_markup(xml_get(item, 'position/experience-level/name') or '')}",
-            f"education: {strip_markup(xml_get(item, 'position/required-education-level/name') or '')}",
-        ]
-        content_hash = make_content_hash(title, institution, deadline, original_url)
-        jobs.append(
-            {
-                "title": title,
-                "institution_name": institution or None,
-                "source_name": "사람인 채용정보 API",
-                "source_url": "https://oapi.saramin.co.kr/guide/info",
-                "original_url": original_url,
-                "location_text": location or None,
-                "deadline": deadline,
-                "posted_at": posted_at,
-                "collected_at": utc_now(),
-                "description": "\n".join(part for part in description_parts if part.split(": ", 1)[-1]),
-                "raw_text": ET.tostring(item, encoding="unicode"),
-                "confidence_score": 80,
-                "status": "needs_review",
-                "content_hash": content_hash,
-                "duplicate_group_id": content_hash[:16],
-            }
-        )
-    return jobs
+        key = xml_first(item, "id") or make_content_hash(title, institution, deadline, "")[:16]
+        leads.append({
+            "lead_key": key,
+            "title": title,
+            "institution_name": institution or None,
+            "location_text": xml_first(item, "position/location", "position/location/name") or None,
+            "deadline": deadline,
+            "posted_at": timestamp_to_date(xml_get(item, "posting-timestamp")),
+            "keyword": keyword,
+        })
+    return leads
+
+
+def parse_saramin_leads_json(data: dict, keyword: str) -> list[dict[str, str | None]]:
+    if "jobs" not in data:
+        raise ValueError(f"saramin API error: {data.get('code')} {data.get('message')}")
+    jobs = data["jobs"].get("job") or []
+    if isinstance(jobs, dict):
+        jobs = [jobs]
+
+    def text(value: object) -> str:
+        if isinstance(value, dict):
+            value = value.get("name")
+        return html_lib.unescape(str(value or "")).strip()
+
+    leads: list[dict[str, str | None]] = []
+    for item in jobs:
+        position = item.get("position") or {}
+        title = text(position.get("title"))
+        if not title:
+            continue
+        company = item.get("company") or {}
+        institution = text(company.get("detail")) or text(company.get("name"))
+        deadline = timestamp_to_date(str(item.get("expiration-timestamp") or ""))
+        key = str(item.get("id") or "") or make_content_hash(title, institution, deadline, "")[:16]
+        leads.append({
+            "lead_key": key,
+            "title": title,
+            "institution_name": institution or None,
+            "location_text": text(position.get("location")) or None,
+            "deadline": deadline,
+            "posted_at": timestamp_to_date(str(item.get("posting-timestamp") or "")),
+            "keyword": keyword,
+        })
+    return leads
+
+
+def save_lead(conn: sqlite3.Connection, lead: dict[str, str | None]) -> None:
+    conn.execute(
+        """
+        INSERT INTO saramin_leads (lead_key, title, institution_name, location_text, deadline, posted_at, keyword,
+                                   first_seen_at, last_seen_at)
+        VALUES (:lead_key, :title, :institution_name, :location_text, :deadline, :posted_at, :keyword, :now, :now)
+        ON CONFLICT(lead_key) DO UPDATE SET
+            title = excluded.title, institution_name = excluded.institution_name,
+            location_text = excluded.location_text, deadline = excluded.deadline, last_seen_at = excluded.last_seen_at
+        """,
+        {**lead, "now": utc_now()},
+    )
 
 
 def xml_get(item: ET.Element, path: str) -> str | None:
@@ -1245,9 +1310,12 @@ def assign_duplicate_groups(conn: sqlite3.Connection) -> int:
     for members in groups.values():
         key = hashlib.sha256(",".join(str(r[0]) for r in sorted(members)).encode("utf-8")).hexdigest()[:16] \
             if len(members) > 1 else members[0][4][:16]
-        # Prefer a reviewed-approved row, then one that states its deadline,
-        # then the most trusted board, then the oldest.
-        members.sort(key=lambda r: (r[6] != "approved", not r[3], -(r[5] or 0), r[7] or "", r[0]))
+        # Prefer a row not found through Saramin (those are test-build only,
+        # so one must not hide a notice the public site already shows), then a
+        # reviewed-approved row, then one that states its deadline, then the
+        # most trusted board, then the oldest.
+        members.sort(key=lambda r: (r[8] == SARAMIN_ORIGINAL_NAME, r[6] != "approved", not r[3], -(r[5] or 0),
+                                    r[7] or "", r[0]))
         for index, row in enumerate(members):
             conn.execute(
                 "UPDATE jobs SET duplicate_group_id = ?, is_canonical = ? WHERE job_id = ?",
@@ -1302,11 +1370,23 @@ def naver_search(query: str, client_id: str, client_secret: str) -> list[dict]:
         return json.loads(response.read().decode("utf-8")).get("items", [])
 
 
-def search_original(title: str, institution: str | None, client_id: str, client_secret: str) -> str | None:
+# Job portals, blogs and cafes carry copies of notices, never the original.
+COPY_HOSTS = re.compile(
+    r"(?:^|\.)(?:saramin\.co\.kr|jobkorea\.co\.kr|incruit\.com|albamon\.com|alba\.co\.kr|wanted\.co\.kr"
+    r"|jobplanet\.co\.kr|catch\.co\.kr|linkareer\.com|peoplenjob\.com|jinhakpro\.com|hibrain\.net"
+    r"|blog\.naver\.com|cafe\.naver\.com|post\.naver\.com|tistory\.com|blog\.daum\.net|cafe\.daum\.net)$"
+)
+
+
+def search_original(title: str, institution: str | None, client_id: str, client_secret: str,
+                    any_host: bool = False) -> str | None:
     """The institution's own post, found by web search on its title.
 
-    Accepted only on an official domain (.ac.kr, .go.kr, ...) that is not an
-    aggregator, with a result title sharing most of our title's words.
+    Accepted on an official domain (.ac.kr, .go.kr, ...) that is not an
+    aggregator, with a result title sharing most of our title's words. With
+    any_host (학원·센터·기업 hiring through Saramin keep their own .com or
+    .co.kr sites), any host that is not a job portal, blog or cafe is
+    accepted too, but only when the result also names the institution.
     """
     words = [w for w in re.findall(r"[가-힣A-Za-z0-9]{2,}", title_key_text(title)) if w not in {"공고", "채용", "모집"}]
     if not words:
@@ -1315,13 +1395,23 @@ def search_original(title: str, institution: str | None, client_id: str, client_
     for item in naver_search(query, client_id, client_secret):
         link = item.get("link") or ""
         host = urllib.parse.urlparse(link).hostname or ""
-        if host in AGGREGATOR_HOSTS or not OFFICIAL_HOST.search(host):
+        if host in AGGREGATOR_HOSTS or COPY_HOSTS.search(host):
             continue
         found = re.sub(r"<[^>]+>", "", item.get("title") or "")
+        if not OFFICIAL_HOST.search(host):
+            about = normalize(found + " " + re.sub(r"<[^>]+>", "", item.get("description") or ""))
+            if not (any_host and institution and normalize(without_legal_form(institution)) in about):
+                continue
         shared = sum(1 for w in words if w in found)
         if shared >= max(2, (len(words) + 1) // 2):
             return link
     return None
+
+
+def without_legal_form(name: str) -> str:
+    """The institution's name without its legal form: (주)가나 → 가나."""
+    core = re.sub(r"\(\s*(?:주|유|재|사)\s*\)|㈜|주식회사|유한회사|재단법인|사단법인|학교법인", "", name).strip()
+    return core or name
 
 
 def title_key_text(title: str) -> str:
@@ -1374,6 +1464,11 @@ def resolve_apply_urls(conn: sqlite3.Connection, naver: tuple[str, str] | None =
         conn.execute("UPDATE jobs SET apply_url = ?, apply_url_source = ? WHERE job_id = ?", (url, how, job_id))
         stats["aggregator" if how == "search_none" else how] += 1
     return stats
+
+
+def naver_keys() -> tuple[str, str] | None:
+    keys = (os.environ.get("NAVER_CLIENT_ID"), os.environ.get("NAVER_CLIENT_SECRET"))
+    return (keys[0], keys[1]) if keys[0] and keys[1] else None
 
 
 def load_retired_source_names(path: Path) -> set[str]:
@@ -2517,6 +2612,13 @@ def infer_location_from_text(text: str) -> str | None:
     return extract_location(text)
 
 
+SARAMIN_NAME = "사람인 채용정보 API"
+# Name for jobs whose institution notice a Saramin lead led to. Internal only:
+# pages never name the source.
+SARAMIN_ORIGINAL_NAME = "기관 원문 (사람인 API로 발견)"
+LEAD_RETRY_DAYS = 3
+
+
 def collect_saramin(
     conn: sqlite3.Connection,
     run_id: int,
@@ -2527,40 +2629,85 @@ def collect_saramin(
     count: int,
     today: dt.date,
     active_only: bool,
+    naver: tuple[str, str] | None = None,
 ) -> dict[str, int]:
+    """Saramin as a hiring signal only. The API says who is hiring; the job
+    the site shows comes from that institution's own notice, found by web
+    search and read like a seed URL. Saramin pages are never fetched, and
+    nothing from Saramin is published."""
     stats = {"candidates": 0, "saved": 0, "updated": 0, "skipped": 0, "failed": 0}
+    # Jobs saved straight from the API before leads existed.
+    conn.execute("DELETE FROM jobs WHERE source_name = ?", (SARAMIN_NAME,))
     access_key = os.environ.get("SARAMIN_ACCESS_KEY")
-    source = Source(
-        "사람인 채용정보 API",
-        "https://oapi.saramin.co.kr/guide/info",
-        80,
-        "api",
-    )
-    if not access_key:
-        return stats
-
-    for keyword in keywords:
-        try:
-            xml_text = fetch_saramin(keyword, access_key, count)
-            jobs = parse_saramin_jobs(xml_text, keyword)
-            stats["candidates"] += len(jobs)
-            for job in jobs:
-                text = f"{job['title']} {job.get('institution_name') or ''} {job.get('description') or ''}"
-                if has_excluded_term(str(job["title"]), exclude_terms):
-                    stats["skipped"] += 1
-                    continue
-                if active_only and not is_active_deadline(str(job.get("deadline") or ""), today):
-                    stats["skipped"] += 1
-                    continue
-                if not is_relevant(text, include_terms + keywords, hiring_terms, []):
-                    stats["skipped"] += 1
-                    continue
-                result = save_job(conn, job)
-                stats[result] += 1
-        except Exception as exc:
-            stats["failed"] += 1
-            log_error(conn, run_id, source, f"{keyword}: {exc}")
+    source = Source(SARAMIN_NAME, "https://oapi.saramin.co.kr/guide/info", 80, "api")
+    if access_key:
+        for keyword in keywords:
+            try:
+                for lead in parse_saramin_leads(fetch_saramin(keyword, access_key, count), keyword):
+                    text = f"{lead['title']} {lead.get('institution_name') or ''}"
+                    if has_excluded_term(str(lead["title"]), exclude_terms):
+                        continue
+                    if active_only and not is_active_deadline(str(lead.get("deadline") or ""), today):
+                        continue
+                    if not is_relevant(text, include_terms + keywords, hiring_terms, []):
+                        continue
+                    save_lead(conn, lead)
+            except Exception as exc:
+                stats["failed"] += 1
+                log_error(conn, run_id, source, f"{keyword}: {exc}")
+        conn.commit()
+    originals = [
+        Source(SARAMIN_ORIGINAL_NAME, url, infer_trust(url), "saramin_lead",
+               institution_hint=institution, location_hint=location, deadline_hint=deadline)
+        for url, institution, location, deadline in find_lead_originals(conn, today, naver)
+        # A notice another source already collects stays that source's.
+        if not conn.execute("SELECT 1 FROM jobs WHERE original_url = ? AND source_name <> ?",
+                            (url, SARAMIN_ORIGINAL_NAME)).fetchone()
+    ]
+    for key, value in collect_seed_urls(conn, run_id, originals, include_terms + keywords, hiring_terms,
+                                        exclude_terms, today, active_only).items():
+        stats[key] += value
     return stats
+
+
+def find_lead_originals(conn: sqlite3.Connection, today: dt.date,
+                        naver: tuple[str, str] | None) -> list[tuple[str, str | None, str | None, str | None]]:
+    """Search the institution's own notice for each live lead not yet found.
+
+    A lead with no result is tried again every LEAD_RETRY_DAYS days until its
+    deadline passes. Returns (url, institution, location, deadline) for the
+    notices found in this run; once saved, they are refreshed like any job.
+    """
+    if not naver:
+        return []
+    retry_before = (dt.datetime.now(dt.UTC) - dt.timedelta(days=LEAD_RETRY_DAYS)).replace(microsecond=0).isoformat()
+    rows = conn.execute(
+        """
+        SELECT lead_key, title, institution_name, location_text, deadline FROM saramin_leads
+        WHERE status = 'new' OR (status = 'none' AND (checked_at IS NULL OR checked_at < ?))
+        ORDER BY first_seen_at
+        """,
+        (retry_before,),
+    ).fetchall()
+    found = []
+    for key, title, institution, location, deadline in rows:
+        if deadline and deadline < today.isoformat():
+            conn.execute("UPDATE saramin_leads SET status = 'closed', checked_at = ? WHERE lead_key = ?",
+                         (utc_now(), key))
+            continue
+        try:
+            url = search_original(title, institution, *naver, any_host=True)
+        except Exception as exc:  # search is a bonus; never fail the run on it
+            print(f"naver search failed for saramin lead {key}: {exc}", file=sys.stderr)
+            continue
+        conn.execute(
+            "UPDATE saramin_leads SET status = ?, original_url = ?, checked_at = ? WHERE lead_key = ?",
+            ("found" if url else "none", url, utc_now(), key),
+        )
+        if url:
+            found.append((url, institution, location, deadline))
+    conn.commit()
+    return found
 
 
 # 예전에는 기관 검색이 실패하면 location_text의 시·도청을 보조 좌표로 찍었다. 그 지역명은
@@ -2869,6 +3016,7 @@ def collect(args: argparse.Namespace) -> int:
                 args.saramin_count,
                 today,
                 args.active_only,
+                naver_keys(),
             )
             for key, value in saramin_stats.items():
                 stats[key] += value
@@ -2905,8 +3053,7 @@ def collect(args: argparse.Namespace) -> int:
         conn.commit()
         fields = fill_job_fields(conn, args.llm_backend if args.llm_fields else None, args.llm_limit)
         duplicates = assign_duplicate_groups(conn)
-        naver_keys = (os.environ.get("NAVER_CLIENT_ID"), os.environ.get("NAVER_CLIENT_SECRET"))
-        links = resolve_apply_urls(conn, naver_keys if all(naver_keys) else None)
+        links = resolve_apply_urls(conn, naver_keys())
         conn.commit()
         print(
             f"fields: rules={fields['rules']} llm={fields['llm']} llm_failed={fields['llm_failed']} "

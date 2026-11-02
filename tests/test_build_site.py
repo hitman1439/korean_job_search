@@ -97,6 +97,21 @@ class BuildTests(unittest.TestCase):
         self.assertFalse((private_out / "sitemap.xml").exists())
         self.assertEqual((private_out / "robots.txt").read_text(encoding="utf-8"), "User-agent: *\nDisallow: /\n")
 
+    def test_saramin_found_jobs_show_in_test_build_only(self):
+        conn = cj.init_db(self.db)
+        cj.save_job(conn, make_job(title="가나어학원 한국어 강사 채용", institution_name="가나어학원", deadline="2026-11-20",
+                                   original_url="https://gana.example/7", source_name=cj.SARAMIN_ORIGINAL_NAME))
+        conn.commit()
+        conn.close()
+        public_out = Path(self.tmp.name) / "site2"
+        stats = bs.build(self.db, public_out, self.config, TODAY, BUILT_AT)
+        self.assertEqual(stats["jobs"], 2)
+        self.assertNotIn("가나어학원", (public_out / "index.html").read_text(encoding="utf-8"))
+        test_out = Path(self.tmp.name) / "site_test"
+        stats = bs.build(self.db, test_out, {**self.config, "test": True}, TODAY, BUILT_AT)
+        self.assertEqual(stats["jobs"], 3)
+        self.assertIn("가나어학원", (test_out / "index.html").read_text(encoding="utf-8"))
+
     def test_untrusted_text_is_escaped(self):
         self.assertNotIn('<script>alert("x")</script>', self.index)
         self.assertIn("&lt;script&gt;", self.index)
