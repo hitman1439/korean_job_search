@@ -105,6 +105,7 @@
         id: row.getAttribute("data-id"),
         scope: row.getAttribute("data-scope"),
         country: row.getAttribute("data-country") || "",
+        region: row.getAttribute("data-region") || "",
         newcomer: row.getAttribute("data-newcomer") === "1",
         demo: row.getAttribute("data-demo") === "1",
         lat: parseFloat(row.getAttribute("data-lat")),
@@ -135,7 +136,35 @@
         (!state.demo || job.demo) &&
         (!state.paid || job.rate > 0) &&
         (!state.saved || readStore("savedJobs").indexOf(job.id) !== -1) &&
-        (!state.q || job.search.indexOf(state.q) !== -1);
+        queryMatches(job);
+    }
+
+    // 시·도 이름으로 찾으면 글자가 아니라 근무지로 걸러요: '서울'에 남서울대학교(천안)가
+    // 섞이면 지도가 전국으로 넓어지니까요. 온라인·해외 공고는 빠져요.
+    var REGION_FULL = {
+      "충청북도": "충북", "충청남도": "충남", "전라북도": "전북", "전라남도": "전남",
+      "경상북도": "경북", "경상남도": "경남"
+    };
+    // 시·도 → [위도, 경도, 지도 레벨]: 그 지역에 공고가 없어도 지도는 그 지역으로 가요.
+    var regions = {
+      "서울": [37.5665, 126.978, 8], "부산": [35.1796, 129.0756, 9], "대구": [35.8714, 128.6014, 9],
+      "인천": [37.4563, 126.7052, 9], "광주": [35.1595, 126.8526, 8], "대전": [36.3504, 127.3845, 8],
+      "울산": [35.5384, 129.3114, 9], "세종": [36.48, 127.289, 9], "경기": [37.4138, 127.5183, 11],
+      "강원": [37.8228, 128.1555, 11], "충북": [36.8, 127.7, 11], "충남": [36.5184, 126.8, 11],
+      "전북": [35.7175, 127.153, 11], "전남": [34.8679, 126.991, 11], "경북": [36.4919, 128.8889, 11],
+      "경남": [35.4606, 128.2132, 11], "제주": [33.4996, 126.5312, 10]
+    };
+    function regionQuery(q) {
+      var t = q.replace(/\s+/g, "");
+      if (REGION_FULL[t]) return REGION_FULL[t];
+      t = t.replace(/(특별자치시|특별자치도|특별시|광역시|시|도)$/, "");
+      return regions[t] ? t : "";
+    }
+    function queryMatches(job) {
+      if (!state.q) return true;
+      var region = regionQuery(state.q);
+      if (region) return job.region === region;
+      return job.search.indexOf(state.q) !== -1;
     }
 
     function hasPlace(job) { return !isNaN(job.lat) && !isNaN(job.lng); }
@@ -212,7 +241,15 @@
         if (showMap) {
           map.relayout();
           if (state.sort === "near" && here) fitNear(visible);
-          else if (shown.length) map.setBounds(bounds, 60, 60, 160, 60);
+          else if (!shown.length && regionQuery(state.q)) {
+            var spot = regions[regionQuery(state.q)];
+            map.setLevel(spot[2]);
+            map.setCenter(new kakao.maps.LatLng(spot[0], spot[1]));
+          } else if (shown.length === 1) {
+            // One pin: setBounds would zoom to street level; show the 동네 instead.
+            map.setLevel(6);
+            map.setCenter(shown[0].getPosition());
+          } else if (shown.length) map.setBounds(bounds, 60, 60, 160, 60);
         }
       }
       var summary = board.querySelector("[data-filter-summary]");
@@ -580,10 +617,17 @@
     });
     var search = board.querySelector("[data-search-input]");
     if (search) {
-      search.addEventListener("input", function () {
-        state.q = search.value.trim().toLowerCase();
+      // Some phone keyboards hold back the last 한글 syllable until composition
+      // ends, so listen for that too; skip work when the query didn't change.
+      var onSearch = function () {
+        var q = search.value.trim().toLowerCase();
+        if (q === state.q) return;
+        state.q = q;
         apply();
-      });
+      };
+      search.addEventListener("input", onSearch);
+      search.addEventListener("compositionend", onSearch);
+      search.addEventListener("search", onSearch);
     }
     rows.forEach(function (row) {
       row.querySelector(".pick").addEventListener("click", function () {

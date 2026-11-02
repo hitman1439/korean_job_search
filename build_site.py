@@ -161,6 +161,30 @@ def place_text(job: dict) -> str:
     return job.get("location_text") or "지역 미확인"
 
 
+# 시·도 short names, each with the longer forms addresses and boards use.
+REGIONS = {
+    "서울": ("서울특별시", "서울시"), "부산": ("부산광역시", "부산시"), "대구": ("대구광역시", "대구시"),
+    "인천": ("인천광역시", "인천시"), "광주": ("광주광역시", "광주시"), "대전": ("대전광역시", "대전시"),
+    "울산": ("울산광역시", "울산시"), "세종": ("세종특별자치시", "세종시"), "경기": ("경기도",),
+    "강원": ("강원특별자치도", "강원도"), "충북": ("충청북도",), "충남": ("충청남도",),
+    "전북": ("전북특별자치도", "전라북도"), "전남": ("전라남도",), "경북": ("경상북도",),
+    "경남": ("경상남도",), "제주": ("제주특별자치도", "제주도"),
+}
+
+
+def region_of(job: dict) -> str:
+    """The 시·도 a domestic job sits in ("서울"), so a search for 서울 means the
+    place, not every title that contains it (남서울대학교 is in 천안)."""
+    if job["scope"] != "domestic":
+        return ""
+    for text in (job.get("address"), job.get("location_text")):
+        head = re.split(r"[\s>·,/()]+", (text or "").strip())[0]
+        for short, longs in REGIONS.items():
+            if head == short or head in longs:
+                return short
+    return ""
+
+
 def display_title(title: str | None) -> str:
     """Drop board clutter: KLEOcean's "N" new-post marker, notice numbers like "(제2026-02-011호)"."""
     text = (title or "").strip()
@@ -546,6 +570,8 @@ def job_row(job: dict, root: str, review: bool = False) -> str:
     lng = job["longitude"] if job["has_place"] else ""
     review_attr = f' data-review="{e(job["institution_name"])}"' if review and job.get("institution_name") else ""
     country_attr = f' data-country="{e(job["place"])}"' if job["scope"] == "overseas" else ""
+    region = region_of(job)
+    country_attr += f' data-region="{region}"' if region else ""
     return f"""<li class="job-row" data-id="{job['job_id']}" data-scope="{job['scope']}"{country_attr} data-newcomer="{1 if job.get('newcomer_ok') == 1 else 0}" data-demo="{1 if job.get('demo_lesson') == 1 else 0}" data-lat="{lat}" data-lng="{lng}" data-deadline="{e(job.get('deadline') or '')}" data-rate="{max(job['rates']) if job.get('rates') else ''}" data-posted="{e(posted_date(job))}" data-name="{e(job['org'])}" data-title="{e(job.get('title'))}" data-org="{e(job['org'] + ' · ' + job['place'])}" data-search="{e(search)}"{review_attr}>
 <button type="button" class="pick">
 <span class="badge {job['badge_class']}" data-badge="{e(job.get('deadline') or '')}">{e(job['badge'])}</span>

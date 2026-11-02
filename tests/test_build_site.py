@@ -304,6 +304,16 @@ class BuildTests(unittest.TestCase):
                          [45000, 40000, 37000])
         self.assertEqual(bs.hourly_rates({**job, "salary_text": "시급 35,000원(화목), 35,000원(월수금)"}), [35000])
 
+    def test_region_of_reads_the_place_not_the_title(self):
+        def job(**kw):
+            return {"scope": "domestic", "address": None, "location_text": None, **kw}
+        self.assertEqual(bs.region_of(job(address="서울특별시 동대문구 회기로")), "서울")
+        self.assertEqual(bs.region_of(job(location_text="서울 > 마포구")), "서울")
+        self.assertEqual(bs.region_of(job(address="충청남도 천안시", title="남서울대학교")), "충남")
+        self.assertEqual(bs.region_of(job(address="경기 수원시 영통구")), "경기")
+        self.assertEqual(bs.region_of(job(location_text="세종특별자치시")), "세종")
+        self.assertEqual(bs.region_of({"scope": "online", "location_text": "서울"}), "")
+
     def test_alert_hidden_until_it_can_store_sign_ups(self):
         job = self.job_page("아주대 강사 모집")
         for page in (self.index, job):
