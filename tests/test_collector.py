@@ -75,6 +75,18 @@ class DeadlineTests(unittest.TestCase):
         # "상시" on its own (상시 근무) is not a rolling deadline.
         self.assertIsNone(cj.extract_deadline("주 5일 상시 근무", TODAY))
 
+    def test_yearless_end_takes_the_start_year_not_a_footer_date(self):
+        # 영남대 notice: the range end has no year, and the page footer carries a
+        # certificate term ending in 2028 that the old pattern ran on to.
+        text = ("서류 접수 : 2026.07.13.( 월 ) ~ 07.24.( 금 ) 16 시까지 · 제출 방법 : 이메일 "
+                "원서 접수 기간 2026.07.13.( 월 )~07.24.( 금 ) 16 시까지 도착분 " + "본문 " * 300 +
+                "개인정보처리방침 정보보호관리체계(ISMS) 인증 유효기간 2025.06.15. ~ 2028.06.14.")
+        self.assertEqual(cj.extract_deadline(text, dt.date(2026, 7, 1)), "2026-07-24")
+        self.assertEqual(cj.extract_deadline("접수기간: 2026.12.20.(일) ~ 01.05.(화)", TODAY), "2027-01-05")
+
+    def test_deadline_years_out_is_not_a_deadline(self):
+        self.assertIsNone(cj.extract_deadline("접수 마감 2029.06.14", TODAY))
+
 
 class LocationTests(unittest.TestCase):
     def test_site_footer_address_is_ignored(self):
@@ -125,6 +137,38 @@ class GeocodeTests(unittest.TestCase):
         self.assertIsNone(cj.parent_institution("경북대학교"))
         self.assertIsNone(cj.parent_institution("강북구가족센터"))
 
+    def test_plausible_place(self):
+        def place(name, address="서울 종로구 청계천로 61"):
+            return {"place_name": name, "address": address}
+        # The 영남대 notice whose name came out as "한국어".
+        self.assertFalse(cj.plausible_place("한국어", place("그린한국어학원"), None))
+        self.assertFalse(cj.plausible_place("세종대학교 세종어학원", place("고려대학교세종캠퍼스 어학원"), None))
+        self.assertFalse(cj.plausible_place("숙명여자대학교", place("래쉬에비뉴 속눈썹연장&펌 왁싱 공덕점"), None))
+        self.assertTrue(cj.plausible_place("영남대학교 한국어·국제언어교육원", place("영남대학교 경산캠퍼스"), "대구"))
+        self.assertTrue(cj.plausible_place("사단법인 영진코리아센터", place("영진코리아센터", "경남 김해시"), "경남"))
+        # Right name, wrong region: some other branch.
+        self.assertFalse(cj.plausible_place("강북구가족센터", place("강북구가족센터", "부산 강북구"), "서울"))
+
+    def test_vague_name_is_read_again_and_wrong_pins_dropped(self):
+        found = {"영남대학교 한국어·국제언어교육원": {"latitude": 35.83, "longitude": 128.75,
+                                          "address": "경북 경산시 대학로 280", "place_name": "영남대학교 경산캠퍼스"}}
+        notice = "작성자 한국어‧국제언어교육원 행정실 등록일 : 2026.07.09 영남대학교 한국어 · 국제언어교육원에서 강사를 초빙"
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = cj.init_db(Path(tmp) / "jobs.sqlite3")
+            cj.save_job(conn, make_job(title="영남대", institution_name="한국어", original_url="https://a.example/1"))
+            cj.save_job(conn, make_job(title="세종대", institution_name="세종대학교 세종어학원",
+                                       original_url="https://a.example/2"))
+            conn.execute("UPDATE jobs SET raw_text = ?, latitude = 37.56, longitude = 126.98, "
+                         "place_name = '그린한국어학원', location_text = '서울' WHERE title = '영남대'", (notice,))
+            conn.execute("UPDATE jobs SET latitude = 36.6, longitude = 127.29, "
+                         "place_name = '고려대학교세종캠퍼스 어학원' WHERE title = '세종대'")
+            with mock.patch.dict(os.environ, {"KAKAO_REST_API_KEY": "k"}),                     mock.patch.object(cj, "geocode_query", lambda conn, q, key: found.get(q)),                     mock.patch("sys.stderr"):
+                cj.geocode_jobs(conn)
+            rows = {r[0]: r[1:] for r in conn.execute("SELECT title, institution_name, place_name FROM jobs")}
+            conn.close()
+        self.assertEqual(rows["영남대"], ("영남대학교 한국어·국제언어교육원", "영남대학교 경산캠퍼스"))
+        self.assertEqual(rows["세종대"], ("세종대학교 세종어학원", None))
+
 
 class InstitutionTests(unittest.TestCase):
     def test_bracketed_title_fallback(self):
@@ -145,6 +189,16 @@ class InstitutionTests(unittest.TestCase):
     def test_notice_number_prefix_stripped(self):
         cleaned = cj.clean_extracted_field("(제2026-02-011호) 2026년 강북구가족센터", None)
         self.assertEqual(cleaned, "강북구가족센터")
+
+    def test_author_with_other_middle_dot_and_office(self):
+        text = "작성자 한국어‧국제언어교육원 행정실 등록일 : 2026.07.09 영남대학교 한국어 · 국제언어교육원에서 초빙"
+        self.assertEqual(cj.extract_institution(text, "2026-3학기 한국어강사 초빙"), "영남대학교 한국어·국제언어교육원")
+
+    def test_vague_names_are_not_institutions(self):
+        for name in ("한국어", "국제팀", "강사", "교무처"):
+            self.assertTrue(cj.is_vague_institution(name), name)
+        self.assertFalse(cj.is_vague_institution("강북구가족센터"))
+        self.assertIsNone(cj.extract_institution("작성자 국제팀 등록일 2026.10.22 교육기관 강의 경력자 우대 3. 원서접수", "모집"))
 
     def test_institution_core_groups_reposts(self):
         a = cj.institution_core("아주대학교 국제교육센터", "")

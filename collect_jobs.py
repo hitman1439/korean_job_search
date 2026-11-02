@@ -741,13 +741,35 @@ def safe_date(year: int, month: int, day: int) -> str | None:
 
 def extract_deadline(text: str, reference: dt.date | None = None) -> str | None:
     reference = reference or dt.date.today()
-    text = compact_spaced_dates(text)
+    found = _extract_deadline(strip_site_chrome(compact_spaced_dates(text)), reference)
+    # No hiring notice closes years out; such a date is a certificate's or a
+    # contract's term ("유효기간 2025.06.15. ~ 2028.06.14."), not a deadline.
+    if found and found != "rolling":
+        try:
+            if dt.date.fromisoformat(found) > reference + dt.timedelta(days=MAX_DEADLINE_AHEAD_DAYS):
+                return None
+        except ValueError:
+            return None
+    return found
+
+
+# A posting whose deadline is further out than this is read as undated.
+MAX_DEADLINE_AHEAD_DAYS = 400
+APPLY_RANGE_YEARLESS_END = re.compile(
+    r"(?:접수|지원|원서|서류\s*접수|모집)\s*(?:기간|일정|마감)?\s*[:：|]?\s*"
+    r"(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})\.?[^~]{0,15}~\s*(\d{1,2})[.\-/](\d{1,2})(?![.\-/]?\d)"
+)
+
+
+def _extract_deadline(text: str, reference: dt.date) -> str | None:
     patterns = [
         r"(?:모집종료일|접수\s*종료일|종료일)\s*[:：]?\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
         r"(?:마감일|접수\s*마감|지원\s*마감)\s*[:：]?\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
         # Japanese / Chinese notices on overseas boards.
         r"(?:応募締切|締め?切り?|応募期限|〆切|截止日期|截止)\s*(?:日)?\s*[:：]?\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
-        r"(?:접수\s*기간|지원\s*기간|원서\s*접수\s*기간)\s*[:：|]?\s*\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}.*?~\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
+        # The gap before "~" is bounded: unbounded, a range with a yearless end
+        # ("2026.07.13.(월) ~ 07.24.(금)") ran on to a date in the page footer.
+        r"(?:접수\s*기간|지원\s*기간|원서\s*접수\s*기간)\s*[:：|]?\s*\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}.{0,20}?~\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
         # Boards that print a two-digit year range, e.g. "접수기간 | 26.08.25~26.09.08".
         r"(?:접수\s*기간|지원\s*기간|원서\s*접수\s*기간)\s*[:：|]?\s*\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2}\s*~\s*(\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2})",
         r"(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})\s*(?:까지|마감)",
@@ -757,6 +779,16 @@ def extract_deadline(text: str, reference: dt.date | None = None) -> str | None:
         match = re.search(pattern, text)
         if match:
             return normalize_date(match.group(1))
+    # "서류 접수 : 2026.07.13.(월) ~ 07.24.(금)": the end date borrows the start's year.
+    match = APPLY_RANGE_YEARLESS_END.search(text)
+    if match:
+        year, start_month, _, month, day = (int(g) for g in match.groups())
+        if month < start_month:
+            year += 1
+        try:
+            return dt.date(year, month, day).isoformat()
+        except ValueError:
+            pass
     for label in EN_DEADLINE_LABEL.finditer(text):
         found = parse_english_date(text[label.end() :], reference)
         if found:
@@ -948,20 +980,62 @@ def extract_institution(text: str, title: str) -> str | None:
         # KLEOcean-style posts lead with "회사명 : X 근무지역 : ..."; only trusted with a colon.
         r"회사명\s*[:：]\s*(.{2,80}?)(?=\s*(?:근무\s*지역|근무지|고용형태|마감일|$))",
         r"(?:작성자)\s*[:：]?\s*([가-힣A-Za-z0-9()·.\- ]{2,40})",
-        r"(?:기관|기관명|채용기관|근무기관)\s*[:：]?\s*(.{2,80}?)(?=\s*(?:근무지|근무\s*지역|지역|주소|접수|마감일|지원\s*기간|기관\s*유형|대표전화|$))",
+        # A label, not the tail of a word: "교육기관 강의 경력자 우대" names no institution.
+        r"(?<![가-힣])(?:기관|기관명|채용기관|근무기관)\s*[:：]?\s*(.{2,80}?)(?=\s*(?:근무지|근무\s*지역|지역|주소|접수|마감일|지원\s*기간|기관\s*유형|대표전화|$))",
         r"([가-힣A-Za-z0-9()·.\- ]{2,40}(?:대학교|한국어학당|언어교육원|국제교육원|세종학당|문화원|교육원|센터))",
     ]
-    for source_text in (strip_site_chrome(text), title):
+    body = normalize_middle_dots(strip_site_chrome(text))
+    for source_text in (body, normalize_middle_dots(title)):
         for pattern in patterns:
             match = re.search(pattern, source_text)
             if not match:
                 continue
             # The author field runs straight into "작성일 2026-..." on most boards.
             value = clean_text(re.split(r"\s*(?:작성일|등록일|조회)", match.group(1))[0])
+            value = OFFICE_SUFFIX.sub("", value).strip()
             if value.lower() in BOARD_ADMIN_NAMES:
                 continue
-            return tidy_institution(value)[:80]
+            value = with_parent_university(tidy_institution(value), body)
+            if is_vague_institution(value) or NOT_A_NAME.search(value):
+                continue
+            return value[:80]
     return None
+
+
+# Board furniture and notice wording a pattern can sweep up instead of a name.
+NOT_A_NAME = re.compile(r"\d{4}[.\-/]\d{1,2}|작성자|등록일|원서|우대|경험자|자격증")
+# Boards type the 가운뎃점 in "한국어·국제언어교육원" several ways.
+MIDDLE_DOTS = re.compile(r"[‧ㆍ∙•･・]")
+# "…교육원 행정실": the office that posted it, not the institution.
+OFFICE_SUFFIX = re.compile(r"\s*(?:행정실|사무실|교학팀|행정팀|운영팀|담당자?|관리자)$")
+# Words that name a subject or a role, never one institution. Geocoding one
+# lands on whichever 학원 Kakao ranks first (그린한국어학원 for "한국어").
+VAGUE_INSTITUTION_WORDS = {
+    "한국어", "한국어교육", "한국어강사", "한국어교원", "한국어교사", "외국어", "국어", "강사", "교원",
+    "교육", "행정", "채용", "모집", "공고", "기관", "학교", "대학", "대학교", "본부", "교무처", "교무팀",
+}
+
+
+def normalize_middle_dots(text: str) -> str:
+    return MIDDLE_DOTS.sub("·", text)
+
+
+def is_vague_institution(value: str | None) -> bool:
+    """Too general to name (or geocode) one institution: "한국어", "강사", "AB"."""
+    compact = re.sub(r"[\s·.()\-]", "", value or "")
+    # A bare office ("국제팀", "교무처") belongs to an institution it doesn't name.
+    return len(compact) < 3 or compact in VAGUE_INSTITUTION_WORDS or bool(re.fullmatch(r"[가-힣]{1,4}(?:팀|처|과|실)", compact))
+
+
+def with_parent_university(value: str, text: str) -> str:
+    """'한국어·국제언어교육원' -> '영남대학교 한국어·국제언어교육원' when the notice
+    itself names the unit under its university; a unit alone geocodes poorly."""
+    if re.search(r"대학교|대학", value):
+        return value
+    # Pasted HWP text spaces the dot out: "한국어 · 국제언어교육원".
+    loose = r"\s*".join(re.escape(ch) for ch in re.sub(r"\s", "", value))
+    match = re.search(r"([가-힣A-Za-z]{2,20}(?:대학교|대학))\s*" + loose, text)
+    return f"{match.group(1)} {value}" if match else value
 
 
 INSTITUTION_UNIT = r"(?:언어연구교육원|언어교육원|한국어교육원|국제교육원|한국어학당|어학당|한국어교육센터|언어교육센터|국제교육센터|교육센터|센터|교육원)"
@@ -2874,6 +2948,45 @@ def parent_institution(name: str | None) -> str | None:
     return match.group(1) if match else None
 
 
+def clear_pin(conn: sqlite3.Connection, job_id: int) -> None:
+    """Take a job off the map. A wrong pin also overwrote location_text with its
+    region (영남대 -> 서울), so read the region from the notice again."""
+    row = conn.execute("SELECT raw_text, latitude FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+    if not row or row[1] is None:
+        return
+    region = extract_location(strip_site_chrome(row[0])) if row[0] else None
+    conn.execute(
+        "UPDATE jobs SET latitude = NULL, longitude = NULL, address = NULL, place_name = NULL, "
+        "location_text = COALESCE(?, location_text) WHERE job_id = ?",
+        (region, job_id),
+    )
+
+
+def plausible_place(query: str, result: dict, location: str | None) -> bool:
+    """Whether Kakao's first answer is the institution asked for.
+
+    Kakao answers almost anything with something: "한국어" gave 그린한국어학원
+    in 종로 for a 영남대 notice. A university in the query must be in the
+    place's name; any other name must match the place's name either way round
+    and, when the notice states a region, sit in that region.
+    """
+    def squash(value: str | None) -> str:
+        return re.sub(r"[\s·.()\-]", "", value or "")
+
+    if is_vague_institution(query):
+        return False
+    place = squash(result.get("place_name"))
+    university = re.search(r"[가-힣A-Za-z]+(?:대학교|대학)", query)
+    if university:
+        return squash(university.group(0)) in place
+    name = squash(query)
+    if not place or not (name in place or place in name):
+        return False
+    region = short_region(result.get("address") or "")
+    stated = short_region(location or "")
+    return not (region and stated and region != stated)
+
+
 def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
     """Fill in coordinates for saved jobs that do not have them yet.
 
@@ -2893,6 +3006,28 @@ def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
         f"WHERE place_name IN ({', '.join('?' for _ in fallbacks)})",
         fallbacks,
     )
+    # Names too vague to place ("한국어") once got the first 학원 Kakao knew:
+    # read the institution again from the notice and drop that pin.
+    for job_id, institution, raw_text, title in conn.execute(
+        "SELECT job_id, institution_name, raw_text, title FROM jobs WHERE institution_name IS NOT NULL"
+    ).fetchall():
+        vague = is_vague_institution(institution)
+        if not vague and clean_text(institution) not in GENERIC_INSTITUTION_NAMES:
+            continue
+        better = extract_institution(raw_text, title or "") if raw_text else None
+        if better == institution or (not vague and (not better or clean_text(better) in GENERIC_INSTITUTION_NAMES)):
+            continue  # a bare unit name is kept until the notice gives a better one
+        conn.execute("UPDATE jobs SET institution_name = ? WHERE job_id = ?", (better, job_id))
+        clear_pin(conn, job_id)
+    # Re-check every pin with today's rules, so a wrong one from an older run
+    # (세종대학교 placed on 고려대학교 세종캠퍼스) does not stay on the map forever.
+    for job_id, institution, place_name, address in conn.execute(
+        "SELECT job_id, institution_name, place_name, address FROM jobs WHERE latitude IS NOT NULL"
+    ).fetchall():
+        found = {"place_name": place_name, "address": address}
+        queries = [q for q in (institution, parent_institution(institution)) if q]
+        if not any(plausible_place(q, found, None) for q in queries):
+            clear_pin(conn, job_id)
 
     rows = conn.execute(
         """
@@ -2908,7 +3043,7 @@ def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
             continue
         result = None
         # A bare unit name ("가족센터") matches some other branch anywhere in the country.
-        if institution and clean_text(institution) in GENERIC_INSTITUTION_NAMES:
+        if institution and (clean_text(institution) in GENERIC_INSTITUTION_NAMES or is_vague_institution(institution)):
             institution = None
         # Kakao often knows the university but not its language centre
         # ("숭실대학교 한국어교육원"), so the university alone comes next.
@@ -2917,6 +3052,9 @@ def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
             if not query:
                 continue
             result = geocode_query(conn, query, rest_key)
+            if result and not plausible_place(query, result, location):
+                print(f"geocode rejected for job {job_id}: {query!r} -> {result['place_name']!r}", file=sys.stderr)
+                result = None
             if result:
                 break
         if not result:
