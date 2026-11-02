@@ -112,6 +112,55 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(stats["jobs"], 3)
         self.assertIn("가나어학원", (test_out / "index.html").read_text(encoding="utf-8"))
 
+    def add_leads(self):
+        conn = cj.init_db(self.db)
+        base = {"institution_name": "가나어학원", "location_text": "서울 > 강남구", "posted_at": "2026-10-20",
+                "keyword": "한국어강사", "job_type": "파트", "salary": "시급 30,000원", "experience": "신입",
+                "education": None, "close_type": "접수마감일"}
+        url = "https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx="
+        cj.save_lead(conn, {**base, "lead_key": "1", "title": "가나어학원 <한국어> 강사", "deadline": "2026-11-20",
+                            "saramin_url": url + "1"})
+        cj.save_lead(conn, {**base, "lead_key": "2", "title": "지난 공고", "deadline": "2026-10-01", "saramin_url": url + "2"})
+        cj.save_lead(conn, {**base, "lead_key": "3", "title": "채용시 마감 공고", "deadline": "2032-12-31",
+                            "close_type": "채용시", "saramin_url": url + "3"})
+        cj.save_lead(conn, {**base, "lead_key": "4", "title": "링크 없는 공고", "deadline": "2026-11-20", "saramin_url": None})
+        # The same notice the list already has from a board: left out.
+        cj.save_lead(conn, {**base, "lead_key": "5", "title": "아주대학교 한국어 강사 채용 공고", "institution_name": "아주대학교",
+                            "deadline": "2026-11-06", "saramin_url": url + "5"})
+        conn.commit()
+        conn.close()
+
+    def test_test_build_mixes_saramin_postings_into_the_list(self):
+        self.add_leads()
+        out = Path(self.tmp.name) / "site_test"
+        stats = bs.build(self.db, out, {**self.config, "test": True}, TODAY, BUILT_AT)
+        self.assertEqual((stats["jobs"], stats["saramin"]), (4, 2))
+        index = (out / "index.html").read_text(encoding="utf-8")
+        self.assertIn("가나어학원 &lt;한국어&gt; 강사", index)
+        self.assertIn('href="https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=1" target="_blank"', index)
+        self.assertIn('data-id="s1"', index)
+        self.assertIn('data-rate="30000"', index)
+        self.assertIn('<span class="chip">사람인</span>', index)
+        self.assertIn('data-id="s3"', index)
+        self.assertIn('data-deadline="rolling"', index)
+        for left_out in ("지난 공고", "링크 없는 공고", "rec_idx=5"):
+            self.assertNotIn(left_out, index)
+        self.assertIn('Powered by <a href="http://www.saramin.co.kr"', index)
+        self.assertFalse(list((out / "jobs").glob("s*.html")))
+
+    def test_saramin_postings_stay_off_public_and_ad_builds(self):
+        self.add_leads()
+        public = Path(self.tmp.name) / "public"
+        self.assertEqual(bs.build(self.db, public, self.config, TODAY, BUILT_AT)["saramin"], 0)
+        self.assertNotIn("saramin.co.kr", (public / "index.html").read_text(encoding="utf-8"))
+        opted_in = Path(self.tmp.name) / "opted"
+        self.assertEqual(bs.build(self.db, opted_in, {**self.config, "saramin": True}, TODAY, BUILT_AT)["saramin"], 2)
+        self.assertNotIn("saramin.co.kr", (opted_in / "sitemap.xml").read_text(encoding="utf-8"))
+        with_ads = Path(self.tmp.name) / "ads"
+        stats = bs.build(self.db, with_ads, {**self.config, "test": True, "saramin": True, "adsense_client": "ca-pub-1"},
+                         TODAY, BUILT_AT)
+        self.assertEqual(stats["saramin"], 0)
+
     def test_untrusted_text_is_escaped(self):
         self.assertNotIn('<script>alert("x")</script>', self.index)
         self.assertIn("&lt;script&gt;", self.index)

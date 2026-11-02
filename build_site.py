@@ -96,11 +96,14 @@ def load_jobs(conn: sqlite3.Connection, today: dt.date, approved_only: bool, inc
     # Notices found through Saramin leads are on trial: test build only.
     if not include_saramin:
         jobs = [job for job in jobs if job.get("source_name") != collect_jobs.SARAMIN_ORIGINAL_NAME]
+    if include_saramin:
+        jobs += saramin_jobs(load_saramin_leads(conn, today), jobs, today)
     # Overseas postings are still collected but only shown in the private build.
     if not include_overseas:
         jobs = [job for job in jobs if job["scope"] != "overseas"]
-    # Dated deadlines first (soonest on top), then rolling, then unknown.
-    jobs.sort(key=lambda j: (j["sort_days"], j["job_id"]))
+    # Dated deadlines first (soonest on top), then rolling, then unknown;
+    # collected notices before Saramin postings on the same day.
+    jobs.sort(key=lambda j: (j["sort_days"], bool(j.get("external")), str(j["job_id"]).zfill(12)))
     return jobs
 
 
@@ -549,8 +552,16 @@ def job_row(job: dict, root: str, review: bool = False) -> str:
 <span class="job-org">{e(job['org'])} · {e(job['place'])}</span>
 <span class="chips">{chips}</span>
 </button>
-<a class="go" href="{root}{job['path']}" aria-label="{e(job['org'])} 공고 자세히 보기">자세히</a>
+{go_link(job, root)}
 </li>"""
+
+
+def go_link(job: dict, root: str) -> str:
+    if job.get("external"):
+        # A Saramin posting: no page of ours; the link opens it on Saramin.
+        return (f'<a class="go" href="{e(job["path"])}" target="_blank" rel="noopener" '
+                f'aria-label="{e(job["org"])} 공고 사람인에서 보기">사람인</a>')
+    return f'<a class="go" href="{root}{job["path"]}" aria-label="{e(job["org"])} 공고 자세히 보기">자세히</a>'
 
 
 # --- pages -------------------------------------------------------------------
@@ -634,6 +645,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 <p class="local-note" data-saved-note hidden>저장한 공고와 지원 표시는 <strong>이 브라우저에만</strong> 남아요. 다른 기기나 다른 브라우저에서는 보이지 않고, 방문 기록·쿠키를 지우면 사라져요.</p>
 <div class="empty" data-empty hidden><p data-empty-title>조건에 맞는 공고가 아직 없어요</p><p data-empty-desc>{"알림을 켜 두면 올라오는 대로 알려 드려요." if alerts_on(config) else "다른 조건으로 찾아보세요."}</p></div>
 <ul class="jobs">{"".join(rows)}</ul>
+{saramin_credit(jobs)}
 </section>
 </div>
 
@@ -1036,6 +1048,94 @@ def pay_box(job: dict, root: str) -> str:
 <script src="{root}assets/pay.js?v={asset_version('pay.js')}" defer></script>"""
 
 
+# --- 사람인 공고 --------------------------------------------------------------
+# Saramin open API postings, mixed into the list as the API allows: its own
+# fields, a link to the posting on Saramin, and the "Powered by 취업 사람인"
+# credit its guide asks for (oapi.saramin.co.kr/introduce). The API forbids
+# earning from what it provides (/caution), so a build with ads leaves them out.
+
+SARAMIN_CREDIT = 'Powered by <a href="http://www.saramin.co.kr" target="_blank" rel="noopener">취업 사람인</a>'
+
+
+def saramin_on(config: dict) -> bool:
+    """Saramin postings show in the test build, or wherever --with-saramin
+    asks, and never next to ads."""
+    return bool(config.get("saramin") or config.get("test")) and not config.get("adsense_client")
+
+
+def load_saramin_leads(conn: sqlite3.Connection, today: dt.date) -> list[dict]:
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'saramin_leads'").fetchone():
+        return []
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM saramin_leads WHERE deadline IS NULL OR deadline >= ? ORDER BY deadline, first_seen_at",
+            (today.isoformat(),),
+        )]
+    finally:
+        conn.row_factory = None
+    return [row for row in rows if row.get("saramin_url")]
+
+
+def saramin_deadline(lead: dict, today: dt.date) -> str | None:
+    """'rolling' for 채용시·상시채용 postings, which carry a placeholder
+    expiry years ahead; else the API's deadline."""
+    close_type = (lead.get("close_type") or "").replace(" ", "")
+    deadline = lead.get("deadline")
+    if "상시" in close_type or "채용시" in close_type or (deadline or "") > (today + dt.timedelta(days=365)).isoformat():
+        return "rolling"
+    return deadline
+
+
+def saramin_jobs(leads: list[dict], jobs: list[dict], today: dt.date) -> list[dict]:
+    """Leads as list rows, minus any posting the list already has (same
+    institution and deadline, same title, or its own notice already saved):
+    the collected notice, with its full page, wins."""
+    urls = {u for j in jobs for u in (j.get("original_url"), j.get("apply_url")) if u}
+    titles = {k for j in jobs if len(k := collect_jobs.title_key(j.get("title"))) >= 8}
+    org_days = {f"{core}|{j['deadline']}" for j in jobs
+                if j.get("deadline") not in (None, "rolling")
+                and (core := collect_jobs.institution_core(j.get("institution_name"), j.get("title") or ""))}
+    rows = []
+    for lead in leads:
+        deadline = saramin_deadline(lead, today)
+        core = collect_jobs.institution_core(lead.get("institution_name"), lead["title"])
+        if (lead.get("original_url") in urls or collect_jobs.title_key(lead["title"]) in titles
+                or (core and deadline not in (None, "rolling") and f"{core}|{deadline}" in org_days)):
+            continue
+        title, location = lead["title"], (lead.get("location_text") or "").replace(" > ", " ").replace(">", " ")
+        online = bool(re.search(r"온라인|화상|재택", title))
+        experience = lead.get("experience") or ""
+        job = {
+            "job_id": f"s{lead['lead_key']}",
+            "external": True,
+            "title": title,
+            "institution_name": lead.get("institution_name"),
+            "location_text": "온라인" if online else location or None,
+            "is_overseas": 1 if location.startswith("해외") else 0,
+            "deadline": deadline,
+            "posted_at": lead.get("posted_at"),
+            "first_seen_at": lead.get("first_seen_at"),
+            "salary_text": lead.get("salary"),
+            "newcomer_ok": 1 if "신입" in experience or "무관" in experience else 0,
+            "attachments": None,
+            "latitude": None,
+            "longitude": None,
+        }
+        prepare(job, today)
+        job["path"] = lead["saramin_url"]
+        job["chips"] = (["사람인"] + [c for c in job["chips"] if c] + [short(lead.get("job_type"), 12)])
+        job["chips"] = [c for c in job["chips"] if c][:4]
+        rows.append(job)
+    return rows
+
+
+def saramin_credit(jobs: list[dict]) -> str:
+    if not any(j.get("external") for j in jobs):
+        return ""
+    return f'<p class="fine saramin-credit">‘사람인’ 표시 공고는 사람인 채용정보예요. {SARAMIN_CREDIT}</p>'
+
+
 def render_pay(config: dict) -> str:
     """강사료 실수령 계산기: hourly fee × hours → what one week and one month
     pay, before and after deductions, for the chosen contract (프리랜서 3.3%
@@ -1088,7 +1188,7 @@ def render_sitemap(jobs: list[dict], config: dict, today: dt.date) -> str | None
     if not config.get("site_url"):
         return None
     service_pages = ["resume.html", "demo.html"] if services_on(config) else []
-    urls = ["index.html", "pay.html"] + service_pages + [job["path"] for job in jobs]
+    urls = ["index.html", "pay.html"] + service_pages + [job["path"] for job in jobs if not job.get("external")]
     entries = "".join(f"<url><loc>{e(absolute(config, u))}</loc><lastmod>{today.isoformat()}</lastmod></url>" for u in urls)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{entries}</urlset>\n'
 
@@ -1105,7 +1205,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         jobs = load_jobs(conn, today, approved_only, include_overseas=bool(config.get("private")),
-                         include_saramin=bool(config.get("test")))
+                         include_saramin=saramin_on(config))
         last_run = conn.execute("SELECT MAX(finished_at) FROM collection_runs").fetchone()[0]
         orgs = review_orgs(conn) if config.get("test") else []
     finally:
@@ -1132,6 +1232,8 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
         write("review.html", render_review(config, orgs))
     files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)
     for job in jobs:
+        if job.get("external"):
+            continue
         job["files"] = [(name, rel) for name, rel in job["files"] if (files_dir / rel).is_file()]
         for _, rel in job["files"]:
             (out_dir / "files" / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -1150,6 +1252,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
         "overseas": sum(1 for j in jobs if j["scope"] == "overseas"),
         "online": sum(1 for j in jobs if j["scope"] == "online"),
         "on_map": sum(1 for j in jobs if j["has_place"]),
+        "saramin": sum(1 for j in jobs if j.get("external")),
     }
 
 
@@ -1177,6 +1280,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Publish the not-yet-launched services (이력서·자소서 첨삭, 시강 교안 AI) on the public site",
     )
+    parser.add_argument(
+        "--with-saramin",
+        action="store_true",
+        help="Mix Saramin API postings into the list (the test build always does); never with ads (ADSENSE_CLIENT)",
+    )
     parser.add_argument("--secrets", default=str(collect_jobs.DEFAULT_SECRETS_FILE), help="KEY=value file")
     parser.add_argument("--approved-only", action="store_true", help="Publish only jobs a reviewer approved")
     parser.add_argument("--today", default=None, help="Reference date, YYYY-MM-DD")
@@ -1199,6 +1307,7 @@ def main() -> int:
         "private": args.private,
         "test": args.test,
         "services": args.with_services,
+        "saramin": args.with_saramin,
         "ad_slots": args.ad_slots,
     }
     out = Path(args.out) if args.out else (PRIVATE_OUT if args.private else TEST_OUT if args.test else DEFAULT_OUT)
@@ -1214,6 +1323,9 @@ def main() -> int:
         print("note: SITE_URL is not set, so canonical links and sitemap.xml were skipped", file=sys.stderr)
     if not config["kakao_js_key"]:
         print("note: KAKAO_JS_KEY is not set, so the map shows a notice instead", file=sys.stderr)
+    if (config["saramin"] or config["test"]) and config["adsense_client"]:
+        print("warning: ADSENSE_CLIENT is set, so Saramin postings were left out "
+              "(the Saramin API forbids earning from its data)", file=sys.stderr)
     return 0
 
 

@@ -265,7 +265,14 @@ def init_db(db_path: Path) -> sqlite3.Connection:
         )
         """
     )
+    # What the test build shows of a lead (see build_site.render_saramin):
+    # the API's own fields and the link back to the posting on Saramin.
+    for column in LEAD_DETAIL_COLUMNS:
+        ensure_column(conn, "saramin_leads", column, "TEXT")
     return conn
+
+
+LEAD_DETAIL_COLUMNS = ("saramin_url", "job_type", "salary", "experience", "education", "close_type")
 
 
 # Structured fields filled by extract_fields.py (rules, optionally the LLM).
@@ -1102,8 +1109,23 @@ def parse_saramin_leads(xml_text: str, keyword: str) -> list[dict[str, str | Non
             "deadline": deadline,
             "posted_at": timestamp_to_date(xml_get(item, "posting-timestamp")),
             "keyword": keyword,
+            "saramin_url": saramin_link(xml_get(item, "url")),
+            "job_type": xml_first(item, "position/job-type") or None,
+            "salary": xml_first(item, "salary") or None,
+            "experience": xml_first(item, "position/experience-level") or None,
+            "education": xml_first(item, "position/required-education-level") or None,
+            "close_type": xml_first(item, "close-type") or None,
         })
     return leads
+
+
+def saramin_link(url: str | None) -> str | None:
+    """The posting's page on Saramin, only ever linked to, never fetched."""
+    url = (url or "").strip()
+    host = urllib.parse.urlparse(url).hostname or ""
+    if url.startswith(("http://", "https://")) and (host == "saramin.co.kr" or host.endswith(".saramin.co.kr")):
+        return url
+    return None
 
 
 def parse_saramin_leads_json(data: dict, keyword: str) -> list[dict[str, str | None]]:
@@ -1136,21 +1158,32 @@ def parse_saramin_leads_json(data: dict, keyword: str) -> list[dict[str, str | N
             "deadline": deadline,
             "posted_at": timestamp_to_date(str(item.get("posting-timestamp") or "")),
             "keyword": keyword,
+            "saramin_url": saramin_link(item.get("url")),
+            "job_type": text(position.get("job-type")) or None,
+            "salary": text(item.get("salary")) or None,
+            "experience": text(position.get("experience-level")) or None,
+            "education": text(position.get("required-education-level")) or None,
+            "close_type": text(item.get("close-type")) or None,
         })
     return leads
 
 
 def save_lead(conn: sqlite3.Connection, lead: dict[str, str | None]) -> None:
+    details = ", ".join(LEAD_DETAIL_COLUMNS)
+    values = ", ".join(f":{c}" for c in LEAD_DETAIL_COLUMNS)
+    updates = ", ".join(f"{c} = excluded.{c}" for c in LEAD_DETAIL_COLUMNS)
     conn.execute(
-        """
+        f"""
         INSERT INTO saramin_leads (lead_key, title, institution_name, location_text, deadline, posted_at, keyword,
-                                   first_seen_at, last_seen_at)
-        VALUES (:lead_key, :title, :institution_name, :location_text, :deadline, :posted_at, :keyword, :now, :now)
+                                   {details}, first_seen_at, last_seen_at)
+        VALUES (:lead_key, :title, :institution_name, :location_text, :deadline, :posted_at, :keyword,
+                {values}, :now, :now)
         ON CONFLICT(lead_key) DO UPDATE SET
             title = excluded.title, institution_name = excluded.institution_name,
-            location_text = excluded.location_text, deadline = excluded.deadline, last_seen_at = excluded.last_seen_at
+            location_text = excluded.location_text, deadline = excluded.deadline, last_seen_at = excluded.last_seen_at,
+            {updates}
         """,
-        {**lead, "now": utc_now()},
+        {**{c: None for c in LEAD_DETAIL_COLUMNS}, **lead, "now": utc_now()},
     )
 
 

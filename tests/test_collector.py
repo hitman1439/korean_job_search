@@ -727,6 +727,12 @@ class SaraminLeadTests(unittest.TestCase):
         self.assertEqual(leads[0]["institution_name"], "(주)가나어학원")
         self.assertEqual(leads[0]["location_text"], "서울 > 강남구")
         self.assertEqual(leads[0]["deadline"], cj.timestamp_to_date("1793503564"))
+        self.assertEqual(leads[0]["saramin_url"], "http://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=111")
+
+    def test_lead_link_is_only_ever_a_saramin_page(self):
+        self.assertIsNone(cj.saramin_link("javascript:alert(1)"))
+        self.assertIsNone(cj.saramin_link("https://saramin.co.kr.evil.example/x"))
+        self.assertEqual(cj.saramin_link("https://www.saramin.co.kr/x"), "https://www.saramin.co.kr/x")
 
     def test_parse_leads_raises_on_api_error(self):
         with self.assertRaises(ValueError):
