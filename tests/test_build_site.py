@@ -137,8 +137,8 @@ class BuildTests(unittest.TestCase):
         self.assertEqual((stats["jobs"], stats["saramin"]), (4, 2))
         index = (out / "index.html").read_text(encoding="utf-8")
         self.assertIn("가나어학원 &lt;한국어&gt; 강사", index)
-        self.assertIn('href="https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=1" target="_blank"', index)
         self.assertIn('data-id="s1"', index)
+        self.assertIn('href="jobs/s1.html"', index)
         self.assertIn('data-rate="30000"', index)
         self.assertIn('<span class="chip">사람인</span>', index)
         self.assertIn('data-id="s3"', index)
@@ -146,7 +146,13 @@ class BuildTests(unittest.TestCase):
         for left_out in ("지난 공고", "링크 없는 공고", "rec_idx=5"):
             self.assertNotIn(left_out, index)
         self.assertIn('Powered by <a href="http://www.saramin.co.kr"', index)
-        self.assertFalse(list((out / "jobs").glob("s*.html")))
+        # Its own page from the API's fields; applying goes to Saramin.
+        page = (out / "jobs" / "s1.html").read_text(encoding="utf-8")
+        self.assertIn('href="https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=1" target="_blank" rel="noopener">사람인에서 지원하기', page)
+        self.assertIn("<dt>고용 형태</dt><dd>파트</dd>", page)
+        self.assertIn("시급 30,000원", page)
+        self.assertIn('Powered by <a href="http://www.saramin.co.kr"', page)
+        self.assertNotIn("application/ld+json", page)
 
     def test_saramin_postings_stay_off_public_and_ad_builds(self):
         self.add_leads()
@@ -155,7 +161,10 @@ class BuildTests(unittest.TestCase):
         self.assertNotIn("saramin.co.kr", (public / "index.html").read_text(encoding="utf-8"))
         opted_in = Path(self.tmp.name) / "opted"
         self.assertEqual(bs.build(self.db, opted_in, {**self.config, "saramin": True}, TODAY, BUILT_AT)["saramin"], 2)
-        self.assertNotIn("saramin.co.kr", (opted_in / "sitemap.xml").read_text(encoding="utf-8"))
+        self.assertNotIn("jobs/s1.html", (opted_in / "sitemap.xml").read_text(encoding="utf-8"))
+        page = (opted_in / "jobs" / "s1.html").read_text(encoding="utf-8")
+        self.assertIn('<meta name="robots" content="noindex, follow">', page)
+        self.assertNotIn('rel="canonical"', page)
         with_ads = Path(self.tmp.name) / "ads"
         stats = bs.build(self.db, with_ads, {**self.config, "test": True, "saramin": True, "adsense_client": "ca-pub-1"},
                          TODAY, BUILT_AT)

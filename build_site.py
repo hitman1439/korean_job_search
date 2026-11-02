@@ -557,10 +557,6 @@ def job_row(job: dict, root: str, review: bool = False) -> str:
 
 
 def go_link(job: dict, root: str) -> str:
-    if job.get("external"):
-        # A Saramin posting: no page of ours; the link opens it on Saramin.
-        return (f'<a class="go" href="{e(job["path"])}" target="_blank" rel="noopener" '
-                f'aria-label="{e(job["org"])} 공고 사람인에서 보기">사람인</a>')
     return f'<a class="go" href="{root}{job["path"]}" aria-label="{e(job["org"])} 공고 자세히 보기">자세히</a>'
 
 
@@ -688,6 +684,7 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
         ("기관 유형", INSTITUTION_TYPE_LABELS.get(job.get("institution_type") or "")),
         ("지원 자격", job.get("qualification")),
         ("경력", job.get("experience_required") or ("없어도 돼요" if job.get("newcomer_ok") == 1 else None)),
+        ("고용 형태", job.get("employment_type")),
         ("근무 기간", job.get("work_period")),
         ("근무 시간", job.get("work_hours")),
         ("강의료", job.get("salary_text")),
@@ -729,6 +726,10 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
     # Everything needed to apply is on this page: the email, our own copies of
     # the notice files, and the full notice. Nothing links to where it came from.
     email_block = apply_guide(job)
+    if job.get("external"):
+        email_block = (f'<div class="apply-row"><a class="btn btn-primary btn-lg" href="{e(job["saramin_url"])}" '
+                       f'target="_blank" rel="noopener">사람인에서 지원하기</a></div>'
+                       f'<p class="fine">사람인 채용정보예요. {SARAMIN_CREDIT}</p>')
     files_block = ""
     if job["files"]:
         items = "".join(
@@ -736,7 +737,11 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
         )
         files_block = f'<div class="files"><h3>공고문·지원 양식</h3><ul>{items}</ul></div>'
     notice = notice_html(job.get("body_text"))
-    if notice:
+    if job.get("external"):
+        # The API gives no notice text, and Saramin's pages are not copied.
+        notice_section = """<section class="sec" aria-labelledby="sumTitle"><h2 id="sumTitle">이런 공고예요</h2>
+<p class="prose">사람인에 올라온 공고예요. 담당 업무, 자격 요건 같은 자세한 내용은 사람인 공고에서 확인해 주세요.</p></section>"""
+    elif notice:
         notice_section = f'<section class="sec" aria-labelledby="noticeTitle"><h2 id="noticeTitle">공고 내용</h2><div class="notice">{notice}</div></section>'
     else:
         notice_section = f"""<section class="sec" aria-labelledby="sumTitle"><h2 id="sumTitle">이런 공고예요</h2>
@@ -817,10 +822,17 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
 <aside class="detail-side" aria-label="지원 준비">{"".join(side)}</aside>
 </div>
 </main>"""
-    jsonld = f'<script type="application/ld+json">{json_for_script(job_posting(job, config))}</script>'
+    if job.get("external"):
+        # Saramin's posting, not ours to offer search engines as a JobPosting.
+        # (The test and private builds are noindex as a whole already.)
+        hidden = config.get("test") or config.get("private")
+        head, canonical = ("" if hidden else '<meta name="robots" content="noindex, follow">'), None
+    else:
+        head = f'<script type="application/ld+json">{json_for_script(job_posting(job, config))}</script>'
+        canonical = absolute(config, job["path"])
     description = job.get("summary") or f"{job['org']} 한국어 강사 채용 공고"
     return page(f"{job.get('title')} · {job['org']} | {SITE_NAME}", short(description, 150), body, root=root,
-                config=config, canonical=absolute(config, job["path"]), active="jobs", extra_head=jsonld,
+                config=config, canonical=canonical, active="jobs", extra_head=head,
                 body_attrs=f' data-job-id="{job["job_id"]}"')
 
 
@@ -1123,7 +1135,10 @@ def saramin_jobs(leads: list[dict], jobs: list[dict], today: dt.date) -> list[di
             "longitude": None,
         }
         prepare(job, today)
-        job["path"] = lead["saramin_url"]
+        job["saramin_url"] = lead["saramin_url"]
+        job["employment_type"] = lead.get("job_type")
+        job["experience_required"] = lead.get("experience")
+        job["qualification"] = lead.get("education")
         job["chips"] = (["사람인"] + [c for c in job["chips"] if c] + [short(lead.get("job_type"), 12)])
         job["chips"] = [c for c in job["chips"] if c][:4]
         rows.append(job)
@@ -1232,8 +1247,6 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
         write("review.html", render_review(config, orgs))
     files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)
     for job in jobs:
-        if job.get("external"):
-            continue
         job["files"] = [(name, rel) for name, rel in job["files"] if (files_dir / rel).is_file()]
         for _, rel in job["files"]:
             (out_dir / "files" / rel).parent.mkdir(parents=True, exist_ok=True)
