@@ -93,7 +93,7 @@
 
   function initBoard(board) {
     var rows = Array.prototype.slice.call(board.querySelectorAll(".job-row"));
-    var state = { scope: "all", newcomer: false, demo: false, paid: false, saved: false, q: "", selected: null, sort: "deadline" };
+    var state = { scope: "all", country: "", newcomer: false, demo: false, paid: false, saved: false, q: "", selected: null, sort: "deadline" };
     var map = null;
     var clusterer = null;
     var overlays = {};
@@ -104,6 +104,7 @@
       return {
         id: row.getAttribute("data-id"),
         scope: row.getAttribute("data-scope"),
+        country: row.getAttribute("data-country") || "",
         newcomer: row.getAttribute("data-newcomer") === "1",
         demo: row.getAttribute("data-demo") === "1",
         lat: parseFloat(row.getAttribute("data-lat")),
@@ -129,6 +130,7 @@
 
     function matches(job) {
       return (state.scope === "all" || job.scope === state.scope) &&
+        (!state.country || job.country === state.country) &&
         (!state.newcomer || job.newcomer) &&
         (!state.demo || job.demo) &&
         (!state.paid || job.rate > 0) &&
@@ -216,6 +218,7 @@
       var summary = board.querySelector("[data-filter-summary]");
       if (summary) {
         var parts = [{ all: "전체", domestic: "국내", overseas: "해외", online: "온라인" }[state.scope]];
+        if (state.country) parts.push(state.country);
         if (state.newcomer) parts.push("신입 가능");
         if (state.demo) parts.push("모의수업 있음");
         if (state.paid) parts.push("시급 나온 공고");
@@ -546,9 +549,24 @@
     board.querySelectorAll("[data-scope-btn]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         state.scope = btn.getAttribute("data-scope-btn");
+        setCountry("");
         board.querySelectorAll("[data-scope-btn]").forEach(function (b) {
           b.setAttribute("aria-pressed", b === btn ? "true" : "false");
         });
+        apply();
+      });
+    });
+    // 나라별 카드: 누르면 그 나라 공고만, 같은 카드를 다시 누르면 해제.
+    function setCountry(name) {
+      state.country = name;
+      board.querySelectorAll("[data-country-btn]").forEach(function (b) {
+        b.setAttribute("aria-pressed", name && b.getAttribute("data-country-btn") === name ? "true" : "false");
+      });
+    }
+    board.querySelectorAll("[data-country-btn]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var name = btn.getAttribute("data-country-btn");
+        setCountry(state.country === name ? "" : name);
         apply();
       });
     });

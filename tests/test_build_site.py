@@ -86,6 +86,9 @@ class BuildTests(unittest.TestCase):
             self.assertIn("Smith College", index)
             self.assertIn('data-scope-btn="overseas"', index)
             self.assertIn('data-view="countries"', index)
+            # Country cards filter the list: each card names a country the rows carry.
+            self.assertIn('data-country-btn="미국"', index)
+            self.assertIn('data-country="미국"', index)
 
     def test_public_build_hides_overseas(self):
         self.assertEqual(self.stats["overseas"], 0)

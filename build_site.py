@@ -545,7 +545,8 @@ def job_row(job: dict, root: str, review: bool = False) -> str:
     lat = job["latitude"] if job["has_place"] else ""
     lng = job["longitude"] if job["has_place"] else ""
     review_attr = f' data-review="{e(job["institution_name"])}"' if review and job.get("institution_name") else ""
-    return f"""<li class="job-row" data-id="{job['job_id']}" data-scope="{job['scope']}" data-newcomer="{1 if job.get('newcomer_ok') == 1 else 0}" data-demo="{1 if job.get('demo_lesson') == 1 else 0}" data-lat="{lat}" data-lng="{lng}" data-deadline="{e(job.get('deadline') or '')}" data-rate="{max(job['rates']) if job.get('rates') else ''}" data-posted="{e(posted_date(job))}" data-name="{e(job['org'])}" data-title="{e(job.get('title'))}" data-org="{e(job['org'] + ' · ' + job['place'])}" data-search="{e(search)}"{review_attr}>
+    country_attr = f' data-country="{e(job["place"])}"' if job["scope"] == "overseas" else ""
+    return f"""<li class="job-row" data-id="{job['job_id']}" data-scope="{job['scope']}"{country_attr} data-newcomer="{1 if job.get('newcomer_ok') == 1 else 0}" data-demo="{1 if job.get('demo_lesson') == 1 else 0}" data-lat="{lat}" data-lng="{lng}" data-deadline="{e(job.get('deadline') or '')}" data-rate="{max(job['rates']) if job.get('rates') else ''}" data-posted="{e(posted_date(job))}" data-name="{e(job['org'])}" data-title="{e(job.get('title'))}" data-org="{e(job['org'] + ' · ' + job['place'])}" data-search="{e(search)}"{review_attr}>
 <button type="button" class="pick">
 <span class="badge {job['badge_class']}" data-badge="{e(job.get('deadline') or '')}">{e(job['badge'])}</span>
 <span class="job-title">{e(job.get('title'))}</span>
@@ -572,7 +573,8 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
         if job["scope"] == "overseas":
             countries[job["place"]] = countries.get(job["place"], 0) + 1
     country_cards = "".join(
-        f'<div class="country"><p>{e(name)}</p><strong>{count}개</strong></div>'
+        f'<button type="button" class="country" data-country-btn="{e(name)}" aria-pressed="false">'
+        f'<p>{e(name)}</p><strong>{count}개</strong></button>'
         for name, count in sorted(countries.items(), key=lambda kv: -kv[1])
     )
     show_overseas = overseas_on(config)
@@ -586,7 +588,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
     )
     countries_view = f"""<div class="alt-view" data-view="countries" hidden>
 <h2>나라별로 볼게요</h2>
-<p>해외 공고는 지역보다 나라가 먼저 중요해요. 비자·항공·숙소 지원은 공고 안에서 확인하세요.</p>
+<p>해외 공고는 지역보다 나라가 먼저 중요해요. 나라를 누르면 그 나라 공고만 보여요. 한 번 더 누르면 다시 전체가 보여요.</p>
 <div class="countries">{country_cards or '<p class="fine">지금 열린 해외 공고가 없어요.</p>'}</div>
 </div>""" if show_overseas else ""
     services = service_blocks(config, "")

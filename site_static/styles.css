@@ -139,7 +139,10 @@ button, input, select { font: inherit; }
 .panel-head h2 { font-size: 19px; font-weight: 700; }
 .panel-head span { font-size: 14px; color: var(--text-4); }
 .countries { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 16px; }
-.country { padding: 18px; border-radius: 16px; background: var(--soft); }
+.country { padding: 18px; border-radius: 16px; background: var(--soft); border: 2px solid transparent; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.country:hover { border-color: var(--line-strong); }
+.country[aria-pressed="true"] { background: var(--blue-soft); border-color: var(--blue); }
+.country[aria-pressed="true"] strong { color: var(--blue); }
 .country p { font-size: 15px; color: var(--text-3); }
 .country strong { display: block; margin-top: 4px; font-size: 26px; font-weight: 700; }
 .alt-view { min-height: 560px; padding: 8px 4px; }
