@@ -77,6 +77,16 @@ class BuildTests(unittest.TestCase):
         self.assertNotIn("중복 공고", self.index)
         self.assertEqual(len(list((self.out / "jobs").glob("*.html"))), 2)
 
+    def test_test_build_and_opt_in_show_overseas(self):
+        for name, extra in (("site_test", {"test": True}), ("opted", {"overseas": True})):
+            out = Path(self.tmp.name) / name
+            stats = bs.build(self.db, out, {**self.config, **extra}, TODAY, BUILT_AT)
+            index = (out / "index.html").read_text(encoding="utf-8")
+            self.assertEqual(stats["overseas"], 1, name)
+            self.assertIn("Smith College", index)
+            self.assertIn('data-scope-btn="overseas"', index)
+            self.assertIn('data-view="countries"', index)
+
     def test_public_build_hides_overseas(self):
         self.assertEqual(self.stats["overseas"], 0)
         self.assertNotIn("Smith College", self.index)
@@ -109,7 +119,7 @@ class BuildTests(unittest.TestCase):
         self.assertNotIn("가나어학원", (public_out / "index.html").read_text(encoding="utf-8"))
         test_out = Path(self.tmp.name) / "site_test"
         stats = bs.build(self.db, test_out, {**self.config, "test": True}, TODAY, BUILT_AT)
-        self.assertEqual(stats["jobs"], 3)
+        self.assertEqual(stats["jobs"], 4)  # + the overseas job
         self.assertIn("가나어학원", (test_out / "index.html").read_text(encoding="utf-8"))
 
     def add_leads(self):
@@ -134,7 +144,7 @@ class BuildTests(unittest.TestCase):
         self.add_leads()
         out = Path(self.tmp.name) / "site_test"
         stats = bs.build(self.db, out, {**self.config, "test": True}, TODAY, BUILT_AT)
-        self.assertEqual((stats["jobs"], stats["saramin"]), (4, 2))
+        self.assertEqual((stats["jobs"], stats["saramin"]), (5, 2))  # + the overseas job
         index = (out / "index.html").read_text(encoding="utf-8")
         self.assertIn("가나어학원 &lt;한국어&gt; 강사", index)
         self.assertIn('data-id="s1"', index)

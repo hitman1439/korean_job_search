@@ -232,7 +232,7 @@ python serve.py --report                       # 공고별 저장 수 (now = 지
 
 **아직 공개하지 않은 서비스**(이력서·자소서 첨삭 `resume.html`, 시강 교안 AI `demo.html`)는 공개 빌드에서 메뉴·페이지·안내 배너가 모두 빠집니다. 서비스를 열 때 `python build_site.py --with-services`로 켜면 됩니다. 비공개 빌드에는 항상 나옵니다.
 
-**해외 공고는 공개 사이트에 싣지 않습니다.** 수집은 계속하고, 운영자만 보는 비공개 빌드에서 봅니다.
+**해외 공고는 아직 공개 사이트에 싣지 않습니다.** 수집은 계속하고, 테스트 사이트(`--test`)와 운영자 전용 비공개 빌드에서 "해외" 탭과 나라별 카드로 봅니다. 공개 사이트에 켜려면 `python build_site.py --with-overseas` (Pi는 `pi_collect.sh`의 `build site`에 추가).
 
 ```powershell
 python build_site.py --private            # site_private/ 생성 (해외 포함, 나라별 보기)

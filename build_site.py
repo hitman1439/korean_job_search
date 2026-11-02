@@ -575,7 +575,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
         f'<div class="country"><p>{e(name)}</p><strong>{count}개</strong></div>'
         for name, count in sorted(countries.items(), key=lambda kv: -kv[1])
     )
-    show_overseas = bool(config.get("private"))
+    show_overseas = overseas_on(config)
     scopes = [("all", "전체", len(jobs)), ("domestic", "국내", counts["domestic"])]
     if show_overseas:
         scopes.append(("overseas", "해외", counts["overseas"]))
@@ -1069,6 +1069,12 @@ def pay_box(job: dict, root: str) -> str:
 SARAMIN_CREDIT = 'Powered by <a href="http://www.saramin.co.kr" target="_blank" rel="noopener">취업 사람인</a>'
 
 
+def overseas_on(config: dict) -> bool:
+    """Overseas postings (해외 tab, 나라별 카드): private and test builds, or
+    wherever --with-overseas asks."""
+    return bool(config.get("overseas") or config.get("private") or config.get("test"))
+
+
 def saramin_on(config: dict) -> bool:
     """Saramin postings show in the test build, or wherever --with-saramin
     asks, and never next to ads."""
@@ -1219,7 +1225,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
           approved_only: bool = False) -> dict[str, int]:
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        jobs = load_jobs(conn, today, approved_only, include_overseas=bool(config.get("private")),
+        jobs = load_jobs(conn, today, approved_only, include_overseas=overseas_on(config),
                          include_saramin=saramin_on(config))
         last_run = conn.execute("SELECT MAX(finished_at) FROM collection_runs").fetchone()[0]
         orgs = review_orgs(conn) if config.get("test") else []
@@ -1294,6 +1300,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Publish the not-yet-launched services (이력서·자소서 첨삭, 시강 교안 AI) on the public site",
     )
     parser.add_argument(
+        "--with-overseas",
+        action="store_true",
+        help="Show overseas postings (해외 tab, 나라별 카드) on the public site; the test and private builds always do",
+    )
+    parser.add_argument(
         "--with-saramin",
         action="store_true",
         help="Mix Saramin API postings into the list (the test build always does); never with ads (ADSENSE_CLIENT)",
@@ -1321,6 +1332,7 @@ def main() -> int:
         "test": args.test,
         "services": args.with_services,
         "saramin": args.with_saramin,
+        "overseas": args.with_overseas,
         "ad_slots": args.ad_slots,
     }
     out = Path(args.out) if args.out else (PRIVATE_OUT if args.private else TEST_OUT if args.test else DEFAULT_OUT)
