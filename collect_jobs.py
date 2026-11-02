@@ -24,7 +24,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 import extract_fields
 from extract_fields import COUNTRY_NAMES
@@ -1362,23 +1362,61 @@ def url_in_body(text: str) -> str | None:
 
 
 def naver_search(query: str, client_id: str, client_secret: str) -> list[dict]:
+    """Naver web-document search through NAVER API HUB (NAVER Cloud Platform).
+
+    The Developers Center endpoint (openapi.naver.com) takes no new sign-ups
+    since 2026-07-31 and shuts down 2027-06-30; HUB keys only work here.
+    """
     request = urllib.request.Request(
-        "https://openapi.naver.com/v1/search/webkr.json?" + urllib.parse.urlencode({"query": query, "display": 10}),
-        headers={"X-Naver-Client-Id": client_id, "X-Naver-Client-Secret": client_secret},
+        "https://naverapihub.apigw.ntruss.com/search/v1/webkr?" + urllib.parse.urlencode({"query": query, "display": 10}),
+        headers={"X-NCP-APIGW-API-KEY-ID": client_id, "X-NCP-APIGW-API-KEY": client_secret},
     )
     with urllib.request.urlopen(request, timeout=15) as response:
         return json.loads(response.read().decode("utf-8")).get("items", [])
+
+
+KAKAO_WEB_SEARCH_URL = "https://dapi.kakao.com/v2/search/web"
+
+
+def kakao_search(query: str, rest_key: str) -> list[dict]:
+    """Daum web-document search with the Kakao REST key the map already
+    uses; results reshaped like Naver's (link, title, description)."""
+    request = urllib.request.Request(
+        KAKAO_WEB_SEARCH_URL + "?" + urllib.parse.urlencode({"query": query, "size": 10}),
+        headers={"Authorization": f"KakaoAK {rest_key}"},
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        documents = json.loads(response.read().decode("utf-8")).get("documents", [])
+    return [{"link": d.get("url", ""), "title": d.get("title", ""), "description": d.get("contents", "")}
+            for d in documents]
+
+
+# A web search: query -> results with link, title, description.
+WebSearch = Callable[[str], list[dict]]
+
+
+def web_search() -> WebSearch | None:
+    """Naver when its keys are set, else Daum through the Kakao REST key."""
+    naver = (os.environ.get("NAVER_CLIENT_ID"), os.environ.get("NAVER_CLIENT_SECRET"))
+    if naver[0] and naver[1]:
+        return lambda query: naver_search(query, naver[0], naver[1])
+    kakao = os.environ.get("KAKAO_REST_API_KEY")
+    if kakao:
+        return lambda query: kakao_search(query, kakao)
+    return None
 
 
 # Job portals, blogs and cafes carry copies of notices, never the original.
 COPY_HOSTS = re.compile(
     r"(?:^|\.)(?:saramin\.co\.kr|jobkorea\.co\.kr|incruit\.com|albamon\.com|alba\.co\.kr|wanted\.co\.kr"
     r"|jobplanet\.co\.kr|catch\.co\.kr|linkareer\.com|peoplenjob\.com|jinhakpro\.com|hibrain\.net"
-    r"|blog\.naver\.com|cafe\.naver\.com|post\.naver\.com|tistory\.com|blog\.daum\.net|cafe\.daum\.net)$"
+    r"|blog\.naver\.com|cafe\.naver\.com|post\.naver\.com|tistory\.com|blog\.daum\.net|cafe\.daum\.net"
+    r"|v\.daum\.net|brunch\.co\.kr|namu\.wiki|wikipedia\.org|velog\.io"
+    r"|invione\.com|iljarihub\.or\.kr|korea\.kr|work24\.go\.kr|worknet\.go\.kr)$"
 )
 
 
-def search_original(title: str, institution: str | None, client_id: str, client_secret: str,
+def search_original(title: str, institution: str | None, search: WebSearch,
                     any_host: bool = False) -> str | None:
     """The institution's own post, found by web search on its title.
 
@@ -1392,16 +1430,22 @@ def search_original(title: str, institution: str | None, client_id: str, client_
     if not words:
         return None
     query = f"{institution or ''} {' '.join(words[:6])}".strip()
-    for item in naver_search(query, client_id, client_secret):
+    for item in search(query):
         link = item.get("link") or ""
         host = urllib.parse.urlparse(link).hostname or ""
         if host in AGGREGATOR_HOSTS or COPY_HOSTS.search(host):
             continue
         found = re.sub(r"<[^>]+>", "", item.get("title") or "")
-        if not OFFICIAL_HOST.search(host):
-            about = normalize(found + " " + re.sub(r"<[^>]+>", "", item.get("description") or ""))
-            if not (any_host and institution and normalize(without_legal_form(institution)) in about):
+        about = normalize(found + " " + re.sub(r"<[^>]+>", "", item.get("description") or ""))
+        names_institution = bool(institution) and normalize(without_legal_form(institution)) in about
+        if any_host:
+            # Saramin titles are often generic ("한국어 강사 모집"), which a
+            # 군청 or 시청 page also matches, so the institution must be named
+            # even on an official domain.
+            if not names_institution:
                 continue
+        elif not OFFICIAL_HOST.search(host):
+            continue
         shared = sum(1 for w in words if w in found)
         if shared >= max(2, (len(words) + 1) // 2):
             return link
@@ -1419,13 +1463,13 @@ def title_key_text(title: str) -> str:
     return re.sub(r"^\[[^\]]{1,6}\]\s*", "", text)
 
 
-def resolve_apply_urls(conn: sqlite3.Connection, naver: tuple[str, str] | None = None) -> dict[str, int]:
+def resolve_apply_urls(conn: sqlite3.Connection, search: WebSearch | None = None) -> dict[str, int]:
     """Pick, for every canonical posting, the most original link to apply through.
 
     original_url stays as collected; apply_url is what the site shows.
     Order: the collected link if it is not an aggregator; another board's
     copy of the same notice (duplicate group); a post URL in the body; a web
-    search (only with Naver keys, once per posting); else the aggregator.
+    search (only with search keys, once per posting); else the aggregator.
     """
     stats = {"original": 0, "group": 0, "body": 0, "search": 0, "aggregator": 0}
     rows = conn.execute(
@@ -1449,11 +1493,11 @@ def resolve_apply_urls(conn: sqlite3.Connection, naver: tuple[str, str] | None =
                 url, how = in_body, "body"
             elif previous == "search":
                 url, how = conn.execute("SELECT apply_url FROM jobs WHERE job_id = ?", (job_id,)).fetchone()[0], "search"
-            elif naver and previous != "search_none":
+            elif search and previous != "search_none":
                 try:
-                    found = search_original(title, institution, *naver)
+                    found = search_original(title, institution, search)
                 except Exception as exc:  # search is a bonus; never fail the run on it
-                    print(f"naver search failed for job {job_id}: {exc}", file=sys.stderr)
+                    print(f"web search failed for job {job_id}: {exc}", file=sys.stderr)
                     found = None
                 if found:
                     url, how = found, "search"
@@ -1464,11 +1508,6 @@ def resolve_apply_urls(conn: sqlite3.Connection, naver: tuple[str, str] | None =
         conn.execute("UPDATE jobs SET apply_url = ?, apply_url_source = ? WHERE job_id = ?", (url, how, job_id))
         stats["aggregator" if how == "search_none" else how] += 1
     return stats
-
-
-def naver_keys() -> tuple[str, str] | None:
-    keys = (os.environ.get("NAVER_CLIENT_ID"), os.environ.get("NAVER_CLIENT_SECRET"))
-    return (keys[0], keys[1]) if keys[0] and keys[1] else None
 
 
 def load_retired_source_names(path: Path) -> set[str]:
@@ -2629,7 +2668,7 @@ def collect_saramin(
     count: int,
     today: dt.date,
     active_only: bool,
-    naver: tuple[str, str] | None = None,
+    search: WebSearch | None = None,
 ) -> dict[str, int]:
     """Saramin as a hiring signal only. The API says who is hiring; the job
     the site shows comes from that institution's own notice, found by web
@@ -2659,7 +2698,7 @@ def collect_saramin(
     originals = [
         Source(SARAMIN_ORIGINAL_NAME, url, infer_trust(url), "saramin_lead",
                institution_hint=institution, location_hint=location, deadline_hint=deadline)
-        for url, institution, location, deadline in find_lead_originals(conn, today, naver)
+        for url, institution, location, deadline in find_lead_originals(conn, today, search)
         # A notice another source already collects stays that source's.
         if not conn.execute("SELECT 1 FROM jobs WHERE original_url = ? AND source_name <> ?",
                             (url, SARAMIN_ORIGINAL_NAME)).fetchone()
@@ -2671,14 +2710,14 @@ def collect_saramin(
 
 
 def find_lead_originals(conn: sqlite3.Connection, today: dt.date,
-                        naver: tuple[str, str] | None) -> list[tuple[str, str | None, str | None, str | None]]:
+                        search: WebSearch | None) -> list[tuple[str, str | None, str | None, str | None]]:
     """Search the institution's own notice for each live lead not yet found.
 
     A lead with no result is tried again every LEAD_RETRY_DAYS days until its
     deadline passes. Returns (url, institution, location, deadline) for the
     notices found in this run; once saved, they are refreshed like any job.
     """
-    if not naver:
+    if not search:
         return []
     retry_before = (dt.datetime.now(dt.UTC) - dt.timedelta(days=LEAD_RETRY_DAYS)).replace(microsecond=0).isoformat()
     rows = conn.execute(
@@ -2696,9 +2735,9 @@ def find_lead_originals(conn: sqlite3.Connection, today: dt.date,
                          (utc_now(), key))
             continue
         try:
-            url = search_original(title, institution, *naver, any_host=True)
+            url = search_original(title, institution, search, any_host=True)
         except Exception as exc:  # search is a bonus; never fail the run on it
-            print(f"naver search failed for saramin lead {key}: {exc}", file=sys.stderr)
+            print(f"web search failed for saramin lead {key}: {exc}", file=sys.stderr)
             continue
         conn.execute(
             "UPDATE saramin_leads SET status = ?, original_url = ?, checked_at = ? WHERE lead_key = ?",
@@ -3016,7 +3055,7 @@ def collect(args: argparse.Namespace) -> int:
                 args.saramin_count,
                 today,
                 args.active_only,
-                naver_keys(),
+                web_search(),
             )
             for key, value in saramin_stats.items():
                 stats[key] += value
@@ -3053,7 +3092,7 @@ def collect(args: argparse.Namespace) -> int:
         conn.commit()
         fields = fill_job_fields(conn, args.llm_backend if args.llm_fields else None, args.llm_limit)
         duplicates = assign_duplicate_groups(conn)
-        links = resolve_apply_urls(conn, naver_keys())
+        links = resolve_apply_urls(conn, web_search())
         conn.commit()
         print(
             f"fields: rules={fields['rules']} llm={fields['llm']} llm_failed={fields['llm_failed']} "

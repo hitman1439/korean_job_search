@@ -477,21 +477,16 @@ class DatabaseTests(unittest.TestCase):
                                         original_url="https://www.iakle.com/subList/1?nttSeq=21"))
         cj.assign_duplicate_groups(self.conn)
         calls = []
-        original = cj.naver_search
 
-        def fake_search(query, cid, secret):
+        def fake_search(query):
             calls.append(query)
             return [
                 {"link": "https://klp.korean.go.kr/x", "title": "서강대학교 한국어교육원 겨울학기 시간강사 선발"},
                 {"link": "https://korean.sogang.ac.kr/bbs/view/5", "title": "<b>서강대학교</b> 한국어교육원 2026 겨울학기 시간강사 선발 공고"},
             ]
 
-        cj.naver_search = fake_search
-        try:
-            cj.resolve_apply_urls(self.conn, ("id", "secret"))
-            cj.resolve_apply_urls(self.conn, ("id", "secret"))
-        finally:
-            cj.naver_search = original
+        cj.resolve_apply_urls(self.conn, fake_search)
+        cj.resolve_apply_urls(self.conn, fake_search)
         self.assertEqual(len(calls), 1)
         self.assertEqual(list(self.apply_rows().values()), ["https://korean.sogang.ac.kr/bbs/view/5 search"])
 
@@ -748,14 +743,14 @@ class SaraminLeadTests(unittest.TestCase):
                 raise AssertionError(f"fetched a Saramin page: {url}")
             return ACADEMY_PAGE
 
-        def fake_search(query, cid, secret):
+        def fake_search(query):
             searched.append(query)
             return search_results
 
-        with mock.patch.object(cj, "fetch_url", fake_fetch), mock.patch.object(cj, "naver_search", fake_search), \
+        with mock.patch.object(cj, "fetch_url", fake_fetch), \
                 mock.patch.dict(os.environ, {"SARAMIN_ACCESS_KEY": "KEY"}):
             stats = cj.collect_saramin(self.conn, 1, ["한국어 강사"], ["한국어"], ["채용", "모집"], [], 50, TODAY, True,
-                                       ("id", "secret"))
+                                       fake_search)
         return stats, fetched, searched
 
     def test_lead_leads_to_the_institution_notice(self):
@@ -812,15 +807,51 @@ class SaraminLeadTests(unittest.TestCase):
 
     def test_search_original_any_host_needs_the_institution_named(self):
         results = [{"link": "https://www.ganaedu.co.kr/notice/7", "title": "한국어 강사 채용 안내", "description": "강사 모집"}]
-        with mock.patch.object(cj, "naver_search", lambda *a: results):
-            # Not official, institution not named in the result → rejected.
-            self.assertIsNone(cj.search_original("가나어학원 한국어 강사 채용", "(주)가나어학원", "i", "s", any_host=True))
-            results[0]["description"] = "가나어학원 강사 모집"
-            self.assertEqual(cj.search_original("가나어학원 한국어 강사 채용", "(주)가나어학원", "i", "s", any_host=True),
-                             "https://www.ganaedu.co.kr/notice/7")
-            # Without any_host only official domains count, as before.
-            self.assertIsNone(cj.search_original("가나어학원 한국어 강사 채용", "(주)가나어학원", "i", "s"))
+        search = lambda query: results  # noqa: E731
+        # Not official, institution not named in the result → rejected.
+        self.assertIsNone(cj.search_original("가나어학원 한국어 강사 채용", "(주)가나어학원", search, any_host=True))
+        results[0]["description"] = "가나어학원 강사 모집"
+        self.assertEqual(cj.search_original("가나어학원 한국어 강사 채용", "(주)가나어학원", search, any_host=True),
+                         "https://www.ganaedu.co.kr/notice/7")
+        # Without any_host only official domains count, as before.
+        self.assertIsNone(cj.search_original("가나어학원 한국어 강사 채용", "(주)가나어학원", search))
+        # A generic Saramin title also matches some 군청 notice: an official
+        # domain still has to name the institution.
+        official = lambda query: [{"link": "https://www.geochang.go.kr/n/1",  # noqa: E731
+                                   "title": "한국어 강의 경력 강사 모집", "description": "다문화센터 강사 모집"}]
+        self.assertIsNone(cj.search_original("한국어 강의 경력 강사 모집", "윈터 한국어 교육센터", official, any_host=True))
 
+
+    def test_web_search_prefers_naver_then_falls_back_to_daum(self):
+        calls = []
+
+        def naver(q, i, s):
+            calls.append(("naver", q, i, s))
+            return []
+
+        def kakao(q, k):
+            calls.append(("kakao", q, k))
+            return []
+
+        with mock.patch.object(cj, "naver_search", naver), mock.patch.object(cj, "kakao_search", kakao):
+            with mock.patch.dict(os.environ, {"NAVER_CLIENT_ID": "", "NAVER_CLIENT_SECRET": "", "KAKAO_REST_API_KEY": ""}):
+                self.assertIsNone(cj.web_search())
+            with mock.patch.dict(os.environ, {"NAVER_CLIENT_ID": "", "NAVER_CLIENT_SECRET": "", "KAKAO_REST_API_KEY": "K"}):
+                cj.web_search()("q1")
+            with mock.patch.dict(os.environ, {"NAVER_CLIENT_ID": "i", "NAVER_CLIENT_SECRET": "s", "KAKAO_REST_API_KEY": "K"}):
+                cj.web_search()("q2")
+        self.assertEqual(calls, [("kakao", "q1", "K"), ("naver", "q2", "i", "s")])
+
+    def test_kakao_results_are_shaped_like_naver(self):
+        body = json.dumps({"documents": [{"url": "https://woosuk.ac.kr/n/1", "title": "<b>우석대</b> 강사 공고",
+                                          "contents": "강사 모집", "datetime": "2026-11-01T00:00:00.000+09:00"}]}).encode()
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = body
+        with mock.patch.object(cj.urllib.request, "urlopen", return_value=response) as urlopen:
+            items = cj.kakao_search("우석대 강사", "K")
+        self.assertEqual(urlopen.call_args[0][0].get_header("Authorization"), "KakaoAK K")
+        self.assertEqual(items, [{"link": "https://woosuk.ac.kr/n/1", "title": "<b>우석대</b> 강사 공고",
+                                  "description": "강사 모집"}])
 
 if __name__ == "__main__":
     unittest.main()
