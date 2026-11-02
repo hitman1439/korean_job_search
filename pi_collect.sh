@@ -42,6 +42,6 @@ if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
 fi
 if [ "$status" -eq 2 ]; then log "collect done, some sources failed (see source_errors); building"
 else log "collect done; building"; fi
-build site
+build site --with-overseas --with-saramin
 build site_test --test
 log "all done"
