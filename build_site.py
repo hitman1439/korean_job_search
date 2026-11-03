@@ -524,9 +524,10 @@ def alerts_on(config: dict) -> bool:
 
 def header(root: str, active: str, with_services: bool = False, with_alerts: bool = False,
            with_review: bool = False) -> str:
-    links = [("jobs", f"{root}index.html", "채용공고"), ("start", f"{root}start.html", "처음이세요?"),
-             ("pay", f"{root}pay.html", "실수령 계산기")]
+    links = [("jobs", f"{root}index.html", "채용공고"), ("pay", f"{root}pay.html", "실수령 계산기")]
     if with_review:
+        # Test build only, until reviewed: 공감 페이지 and 근무 후기.
+        links.insert(1, ("start", f"{root}start.html", "처음이세요?"))
         links.append(("review", f"{root}rating.html", "근무 후기"))
     if with_services:
         links += [
@@ -1526,7 +1527,7 @@ def render_sitemap(jobs: list[dict], config: dict, today: dt.date) -> str | None
     if not config.get("site_url"):
         return None
     service_pages = ["resume.html", "demo.html"] if services_on(config) else []
-    urls = ["index.html", "start.html", "pay.html"] + service_pages + [job["path"] for job in jobs if not job.get("external")]
+    urls = ["index.html", "pay.html"] + service_pages + [job["path"] for job in jobs if not job.get("external")]
     entries = "".join(f"<url><loc>{e(absolute(config, u))}</loc><lastmod>{today.isoformat()}</lastmod></url>" for u in urls)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{entries}</urlset>\n'
 
@@ -1562,11 +1563,11 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     write = lambda rel, text: (out_dir / rel).write_text(text, encoding="utf-8")
     write("index.html", render_index(jobs, config, collected_at))
     write("pay.html", render_pay(config))
-    write("start.html", render_start(jobs, config, today))
     if services_on(config):
         write("demo.html", render_demo(config))
         write("resume.html", render_resume(config))
     if config.get("test"):
+        write("start.html", render_start(jobs, config, today))
         write("rating.html", render_rating(config, orgs))
         write("review.html", render_review(config, orgs))
     files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)

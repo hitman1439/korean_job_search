@@ -206,7 +206,7 @@ class BuildTests(unittest.TestCase):
 
     def test_sitemap_and_canonical(self):
         sitemap = (self.out / "sitemap.xml").read_text(encoding="utf-8")
-        self.assertEqual(sitemap.count("<url>"), 5)  # index, start, pay + 2 jobs
+        self.assertEqual(sitemap.count("<url>"), 4)
         self.assertIn("<loc>https://jobs.example/pay.html</loc>", sitemap)
         self.assertIn('<link rel="canonical" href="https://jobs.example/index.html">', self.index)
 
@@ -258,24 +258,30 @@ class BuildTests(unittest.TestCase):
         self.assertIn("../rating.html?org=%EC%84%B8%EC%A2%85", job)
         self.assertIn("../review.html?org=%EC%84%B8%EC%A2%85", job)
 
-    def test_start_page_is_public_and_counts_live_jobs(self):
+    def test_start_page_is_test_only_and_counts_live_jobs(self):
         conn = sqlite3.connect(self.db)
         conn.execute("UPDATE jobs SET salary_text = '시간당 35,000원' WHERE title = '아주대 강사 모집'")
         conn.commit()
         conn.close()
         bs.build(self.db, self.out, self.config, TODAY, BUILT_AT)
-        start = (self.out / "start.html").read_text(encoding="utf-8")
+        # Public build: no page, no menu link, no sitemap entry, no assets.
+        self.assertFalse((self.out / "start.html").exists())
+        self.assertFalse((self.out / "assets" / "start.js").exists())
+        self.assertNotIn("start.html", (self.out / "index.html").read_text(encoding="utf-8"))
+        self.assertNotIn("start.html", (self.out / "sitemap.xml").read_text(encoding="utf-8"))
+        test_out = Path(self.tmp.name) / "site_test"
+        bs.build(self.db, test_out, {**self.config, "test": True}, TODAY, BUILT_AT)
+        start = (test_out / "start.html").read_text(encoding="utf-8")
         self.assertIn("assets/start.js?v=", start)
         self.assertIn("assets/start.css?v=", start)
-        self.assertIn('<link rel="canonical" href="https://jobs.example/start.html">', start)
-        self.assertNotIn("noindex", start)
-        self.assertTrue((self.out / "assets" / "start.js").is_file())
+        self.assertIn("noindex", start)
+        self.assertTrue((test_out / "assets" / "start.js").is_file())
         self.assertIn('href="start.html" aria-current="page">처음이세요?</a>', start)
-        self.assertIn('href="start.html">처음이세요?</a>', (self.out / "index.html").read_text(encoding="utf-8"))
-        self.assertIn("<loc>https://jobs.example/start.html</loc>", (self.out / "sitemap.xml").read_text(encoding="utf-8"))
-        # Section 07 counts what the board shows now: 2 live jobs, one names
-        # no hourly fee (50%), too few fees for a median.
-        self.assertIn('data-count="2">2</span><small>건</small></strong><span>지금 지원할 수 있는 공고', start)
+        self.assertIn('href="start.html">처음이세요?</a>', (test_out / "index.html").read_text(encoding="utf-8"))
+        # Section 07 counts what the board shows now: 3 live jobs (the test
+        # build lists overseas too); of the 2 at home one names no hourly fee
+        # (50%), too few fees for a median.
+        self.assertIn('data-count="3">3</span><small>건</small></strong><span>지금 지원할 수 있는 공고', start)
         self.assertIn('data-count="50">50</span><small>%</small></strong><span>강사료를 숫자로 밝히지 않은', start)
         self.assertNotIn("중간값", start)
         self.assertNotIn("신입 가능", start.split("<main")[1].split("</main>")[0].replace("신입 가능이라고", ""))
