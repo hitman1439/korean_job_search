@@ -1231,32 +1231,35 @@ def render_pay(config: dict) -> str:
 
 
 # --- 공감 페이지 (start.html) ---------------------------------------------------
+# Test build only. Leads to one thing for now: the e-book (coaching comes later).
 
 # Hourly fees a working teacher has seen, by kind of school (meeting notes,
 # 2026-11). Shown as experience, next to what the live notices say.
 FIELD_RATES = [("초·중등 방과후", 25_000), ("센터", 30_000), ("대학 어학당", 40_000), ("대학 학부", 55_000)]
 
 START_PAINS = [
-    ("경력이 없어요", "경력 없는 신입을 받아 주는 곳이 어딘지 모르겠어요."),
-    ("서류에서 떨어져요", "지원은 계속하는데 연락이 안 와요. 뭐가 문제인지도 모르겠어요."),
-    ("시범강의가 막막해요", "몇 분짜리를, 어떤 문법으로, 어떻게 준비해야 할지 모르겠어요."),
-    ("어학당 문턱이 높아요", "센터 경력은 쌓았는데, 어학당 서류는 번번이 안 돼요."),
-    ("시급이 맞나 싶어요", "제안받은 시급이 적정한지, 비교할 기준이 없어요."),
-    ("들어갔는데 낯설어요", "어학당에 합격은 했는데, 분위기도 조직도 처음이라 조심스러워요."),
+    ("경력이 없는데 어디에 지원하죠?", "신입을 받아 주는 곳이 있는지, 있다면 어디인지 모르겠어요."),
+    ("서류에서 자꾸 떨어져요", "지원은 하는데 연락이 오지 않아요. 무엇이 부족한지도 모르겠어요."),
+    ("시범강의는 어떻게 준비하죠?", "몇 분 동안, 어떤 문법으로, 어떤 흐름으로 해야 하는지 막막해요."),
+    ("어학당은 문턱이 높아요", "센터 경력은 쌓았는데, 어학당 서류는 계속 떨어져요."),
+    ("이 강사료, 적당한 걸까요?", "제시받은 시급이 많은 건지 적은 건지 비교할 기준이 없어요."),
+    ("합격 후가 더 걱정이에요", "어학당 분위기나 조직 문화는 어디서도 알려 주지 않아요."),
 ]
 START_GAPS = [
-    ("담임, 주임, 총괄 주임, 센터장", "처음 가면 용어부터 낯설어요. 누구에게 물어야 할지도 몰라요."),
-    ("학기마다 시수를 얼마나 받는지", "시수가 수입을 좌우한다는 것도 들어가서야 알아요."),
-    ("어학당은 첫 한 번이 가장 어렵다는 것", "첫 문을 어디서, 어떻게 두드릴지 몰라 헤매요."),
-    ("경력 없이 시작할 수 있는 곳", "그런 곳이 있다는 것조차 몰라요."),
+    ("어학당의 직책과 역할", "담임, 주임, 총괄 주임, 센터장. 누가 어떤 일을 맡는지, 무엇을 누구에게 물어야 하는지."),
+    ("시수와 수입의 관계", "학기마다 받는 시수에 따라 수입이 크게 달라져요. 시수가 어떻게 정해지는지도 미리 알아 두면 좋아요."),
+    ("첫 어학당에 들어가는 길", "어학당은 처음 한 곳에 들어가기가 가장 어려워요. 그 전에 어떤 경력을 쌓아 두면 좋은지."),
+    ("경력 없이 시작할 수 있는 곳", "경력이 없어도 수업을 시작할 수 있는 곳들이 있어요. 처음 경력을 쌓기에 좋은 곳들이에요."),
 ]
-START_HELP = [
-    ("이력서·자소서", "경력 한 줄을 어떻게 쓰면 읽히는지, 문장 단위로 봐 드려요."),
-    ("시범강의 교안", "시간 배분, 문법 제시, 연습 활동. 교안 흐름을 같이 다듬어요."),
-    ("시범강의 피드백", "실제로 해 본 수업을 보고, 고칠 점을 구체적으로 짚어요."),
-    ("면접", "자주 나오는 질문과, 선생님 경력에 맞는 답을 같이 준비해요."),
+# What the e-book covers, chapter by chapter.
+START_BOOK = [
+    ("지원할 곳 고르기", "경력이 없을 때, 센터 경력만 있을 때. 지금 내 상황에서 지원할 수 있는 곳."),
+    ("이력서와 자기소개서", "기관이 눈여겨보는 경력, 교육관을 쓰는 법, 자주 하는 실수."),
+    ("시범강의", "시간 배분, 문법 제시, 연습 활동까지. 교안을 짜는 흐름."),
+    ("면접", "자주 나오는 질문과, 내 경력에 맞게 답하는 법."),
+    ("합격 후 첫 학기", "어학당 조직과 분위기, 시수와 강사료, 처음 한 학기를 무난하게 보내는 법."),
 ]
-# Who teaches: career stages only. Never a name, school, company or year
+# Who wrote it: career stages only. Never a name, school, company or year
 # that could point to the person (owner's rule, 2026-11-03).
 START_TIMELINE = [
     ("01", "어학당 담임으로 시작", "정규 과정 초급부터 고급까지, 한 반을 맡아 학기를 끌고 갔어요."),
@@ -1268,33 +1271,21 @@ START_TIMELINE = [
     ("07", "지금도 현직", "10년이 넘은 지금도 강의실에 서고 있어요."),
 ]
 START_PATHS = ["여러 어학당", "담임 · 주임", "대학 학부·대학원", "기업 출강", "해외 교육원", "온라인 강좌", "교육 영상", "영어 직강"]
-START_STEPS = [
-    ("이력서·자소서", "서류에서 멈추지 않게, 경력을 읽히는 문장으로 바꿔요.", ["지원처에 맞는 경력 순서", "한 줄 요약", "교육관 문장"]),
-    ("시범강의", "정해진 시간 안에 수업 하나를 보여 주는 연습을 해요.", ["시간 배분", "문법 제시 방법", "학습자 참여 활동"]),
-    ("면접", "경력과 수업 철학을 짧고 분명하게 말하는 연습을 해요.", ["자주 나오는 질문", "내 경력에 맞는 답", "마지막 질문 준비"]),
-]
 START_PROMISES = [
-    ("시급은 있는 그대로", "기관마다, 시수마다 수입이 달라요. 좋은 경우만 골라 말하지 않아요."),
-    ("조직 이야기도 솔직하게", "어학당에는 어학당의 분위기가 있어요. 처음에는 “있는 듯 없는 듯”, 너무 앞서 나서지 않는 게 편할 때가 많아요."),
-    ("맞는 길을 같이 찾아요", "일하는 방식이 다른 곳(예: 외국계 기업)에서 오신 분은 처음에 낯설 수 있어요. 성향에 맞는 기관을 같이 고민해요."),
-    ("장담하지 않아요", "“무조건 합격”은 없어요. 대신 준비할 수 있는 건 빠짐없이 같이 챙겨요."),
+    ("강사료는 있는 그대로", "기관마다, 시수마다 수입이 달라요. 좋은 경우만 골라 적지 않았어요."),
+    ("조직 이야기도 솔직하게", "어학당에는 어학당의 분위기가 있어요. 처음에는 조용히 지켜보며 맞춰 가는 편이 편할 때가 많아요."),
+    ("성향에 맞는 곳도 함께", "외국계 기업처럼 일하는 방식이 다른 곳에서 오신 분은 처음에 낯설 수 있어요. 어떤 성향이 어떤 기관과 잘 맞는지도 적었어요."),
+    ("합격을 장담하지 않아요", "누구에게나 통하는 비법은 없어요. 대신 준비할 수 있는 것은 빠짐없이 담았어요."),
 ]
 START_COMMUNITY = [
-    ("chat", "오픈카톡방", "공고 소식, 지원 고민, 시강 질문을 편하게 나눠요."),
+    ("chat", "오픈카톡방", "공고 소식, 지원 고민, 시범강의 질문을 편하게 나눠요."),
     ("video", "온라인 밋업", "국내외 강사가 화면으로 만나 경험을 나눠요."),
     ("globe", "나라별 현지 이야기", "이번 주는 뉴질랜드, 다음 주는 스페인. 그 나라에서 일하는 선생님이 직접 들려줘요."),
-]
-START_TIERS = [
-    ("BASIC", "베이직", "서류에서 자꾸 멈추는 분", ["이력서 첨삭", "자기소개서 첨삭"], False),
-    ("DELUXE", "디럭스", "서류는 통과했는데 시강·면접이 걱정인 분", ["자기소개서 첨삭", "시범강의 코칭", "면접 코칭"], True),
-    ("ALL-IN-ONE", "올인원", "처음부터 끝까지 같이 가고 싶은 분", ["디럭스 전 과정", "대면 + 원격 병행", "지원 전략부터 합격 후 적응까지"], False),
 ]
 ICONS = {
     "chat": '<path d="M4 5h16v11H8l-4 4z"/>',
     "video": '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/>',
     "globe": '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>',
-    "book": '<path d="M2 5h6a4 4 0 0 1 4 4v11a3 3 0 0 0-3-3H2zM22 5h-6a4 4 0 0 0-4 4v11a3 3 0 0 1 3-3h7z"/>',
-    "map": '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
 }
 
 
@@ -1321,47 +1312,30 @@ def start_numbers(jobs: list[dict]) -> dict:
 
 def render_start(jobs: list[dict], config: dict, today: dt.date) -> str:
     n = start_numbers(jobs)
-    soon = '<a class="btn btn-lg btn-line" aria-disabled="true" tabindex="-1">{}</a>'
 
     def stagger(items: list[str]) -> str:
         return "".join(item.replace("<<i>>", str(i)) for i, item in enumerate(items))
+
+    def rows(pairs: list[tuple[str, str]]) -> str:
+        return stagger([
+            f'<div class="row" style="--i:<<i>>"><span class="n">{i + 1:02d}</span><h3>{e(t)}</h3><p>{e(d)}</p></div>'
+            for i, (t, d) in enumerate(pairs)
+        ])
 
     pains = stagger([
         f'<article class="pain" style="--i:<<i>>"><span class="q">Q{i + 1:02d}</span><h3>{e(t)}</h3><p>{e(d)}</p></article>'
         for i, (t, d) in enumerate(START_PAINS)
     ])
-    gaps = stagger([
-        f'<div class="row" style="--i:<<i>>"><span class="n">{i + 1:02d}</span><h3>{e(a)}</h3><p>{e(b)}</p></div>'
-        for i, (a, b) in enumerate(START_GAPS)
-    ])
-    helps = stagger([
-        f'<div class="row" style="--i:<<i>>"><span class="n">{i + 1:02d}</span><h3>{e(t)}</h3><p>{e(d)}</p></div>'
-        for i, (t, d) in enumerate(START_HELP)
-    ])
     timeline = stagger([
         f'<div class="tl" style="--i:<<i>>"><time>{y}</time><h3>{e(t)}</h3><p>{e(d)}</p></div>'
         for y, t, d in START_TIMELINE
-    ])
-    steps = stagger([
-        f'<div class="step" style="--i:<<i>>"><span class="dot">{i + 1}</span><div class="card"><h3>{e(t)}</h3>'
-        f'<p>{e(d)}</p><ul>{"".join(f"<li>{e(x)}</li>" for x in pts)}</ul></div></div>'
-        for i, (t, d, pts) in enumerate(START_STEPS)
-    ])
-    promises = stagger([
-        f'<div class="row" style="--i:<<i>>"><span class="n">{i + 1:02d}</span><h3>{e(t)}</h3><p>{e(d)}</p></div>'
-        for i, (t, d) in enumerate(START_PROMISES)
     ])
     community = stagger([
         f'<article class="card-c" style="--i:<<i>>"><span class="ic">{icon(ic)}</span><h3>{e(t)}</h3><p>{e(d)}</p>'
         f'<span class="tag">준비 중</span></article>'
         for ic, t, d in START_COMMUNITY
     ])
-    tiers = stagger([
-        f'<article class="tier{" pick" if pick else ""}" style="--i:<<i>>"><span class="lv">{lv}</span><h3>{e(name)}</h3>'
-        f'<p>{e(who)}</p><ul>{"".join(f"<li>{e(x)}</li>" for x in items)}</ul>'
-        f'<a class="btn btn-lg {"btn-white" if pick else "btn-gray"}" aria-disabled="true" tabindex="-1">준비 중</a></article>'
-        for lv, name, who, items, pick in START_TIERS
-    ])
+    chapters = "".join(f"<li><b>{i + 1:02d}</b>{e(t)}</li>" for i, (t, _) in enumerate(START_BOOK))
     top = max(rate for _, rate in FIELD_RATES)
     bars = stagger([
         f'<div class="bar-row" style="--i:<<i>>"><span class="label">{e(label)}</span>'
@@ -1378,63 +1352,63 @@ def render_start(jobs: list[dict], config: dict, today: dt.date) -> str:
     nums = "".join([
         num(n["live"], "건", "지금 지원할 수 있는 공고", 0),
         num(n["orgs"], "곳", "공고를 낸 기관", 1),
-        num(n["unpaid_pct"], "%", "강사료를 숫자로 밝히지 않은 국내·온라인 공고. 비교할 기준이 없는 게 당연해요", 2),
+        num(n["unpaid_pct"], "%", "강사료를 숫자로 적지 않은 국내·온라인 공고", 2),
         num(n["median"] if n["rated"] >= 5 else None, "원", f"시급이 적힌 공고 {n['rated']}건의 중간값", 3),
     ])
+    soon_book = '<a class="btn btn-lg {cls}" aria-disabled="true" tabindex="-1">전자책 준비 중</a>'
 
     body = f"""<div class="start-bar" aria-hidden="true"><i></i></div>
 <main class="start">
 
 <section class="hero-start">
 <div class="inner hero-copy" data-reveal>
-<span class="eyebrow fade">한국어 강사, 처음이세요?</span>
-<h1 class="h-xl" style="margin-top:22px"><span class="ln"><span style="--i:0">자격증은 땄는데,</span></span><span class="ln"><span style="--i:1">어디서부터 <span class="accent">시작하죠?</span></span></span></h1>
-<p class="lead fade">막막한 건 실력 탓이 아니에요. 아직 아무도 알려주지 않았을 뿐이에요.</p>
-<div class="hero-cta fade"><a class="btn btn-lg btn-dark" href="index.html">지금 올라온 공고 보기</a><a class="btn btn-lg btn-line" href="#pains">천천히 읽어 볼게요</a></div>
+<span class="eyebrow fade">한국어 강사를 준비하는 분께</span>
+<h1 class="h-xl" style="margin-top:22px"><span class="ln"><span style="--i:0">자격증은 땄는데,</span></span><span class="ln"><span style="--i:1">어디부터 <span class="accent">지원해야 할까요?</span></span></span></h1>
+<p class="lead fade">어디에 지원할지, 서류는 어떻게 쓰는지, 시범강의는 어떻게 하는지. 처음에는 다 막막해요. 현직 강사가 직접 겪으며 알게 된 것들을 정리했어요.</p>
+<div class="hero-cta fade"><a class="btn btn-lg btn-dark" href="#ebook">전자책 살펴보기</a><a class="btn btn-lg btn-line" href="index.html">지금 올라온 공고 보기</a></div>
 </div>
 <span class="scroll-cue" aria-hidden="true">SCROLL</span>
 </section>
 
 <section id="pains" class="soft">
 <div class="inner">
-<div class="sec-head" data-reveal><span class="eyebrow"><b>01</b> 혹시 이런 고민 있으세요?</span>
-<h2 class="h-lg">자격증은 땄는데,<br>다음 한 걸음이 안 보여요</h2>
-<p class="lead">많은 선생님이 같은 자리에서 멈춰요. 하나라도 해당되면, 이 페이지는 선생님을 위한 거예요.</p></div>
+<div class="sec-head" data-reveal><span class="eyebrow"><b>01</b> 이런 고민, 하고 계신가요?</span>
+<h2 class="h-lg">처음 준비할 때<br>누구나 부딪히는 고민들</h2>
+<p class="lead">하나라도 해당된다면 끝까지 읽어 보세요.</p></div>
 <div data-reveal><div class="pain-grid" data-stagger>{pains}</div></div>
 </div>
 </section>
 
 <section class="dark">
 <div class="inner">
-<span class="eyebrow" data-reveal><b>02</b> 왜 이렇게 막막할까요</span>
+<span class="eyebrow" data-reveal><b>02</b> 왜 막막할까요</span>
 <div class="scrub" data-scrub style="margin-top:28px">
-<p><span data-words>고민은 달라도 원인은 하나예요.</span></p>
-<p><span data-words>문제는 실력이 아니라</span> <span class="accent" data-words>정보예요.</span></p>
-<p><span data-words>현직자에게는 별것 아닌 정보가, 입문자에게는</span> <span class="accent" data-words>꿀팁이에요.</span></p>
+<p><span data-words>자격증 과정에서는 가르치는 법을 배워요.</span></p>
+<p><span data-words>하지만 어디에, 어떻게 지원하는지는</span> <span class="accent" data-words>배우지 않아요.</span></p>
 </div>
 <div class="split" style="margin-top:96px">
-<div class="sec-head" data-reveal><h3 class="h-lg" style="font-size:clamp(24px,2.6vw,34px)">현직자에게 당연한 것,<br>입문자는 처음 듣는 것</h3>
-<p class="lead">아무도 일부러 숨기지 않았어요. 다만 아무도 정리해 주지 않았을 뿐이에요.</p></div>
-<div data-reveal><div class="rows" data-stagger>{gaps}</div></div>
+<div class="sec-head" data-reveal><h3 class="h-lg" style="font-size:clamp(24px,2.6vw,34px)">현장에 가서야<br>알게 되는 것들</h3>
+<p class="lead">일을 시작하면 금방 알게 되지만, 시작하기 전에는 물어볼 곳이 마땅치 않은 이야기들이에요.</p></div>
+<div data-reveal><div class="rows" data-stagger>{rows(START_GAPS)}</div></div>
 </div>
 </div>
 </section>
 
 <section>
 <div class="inner split">
-<div class="sec-head" data-reveal><span class="eyebrow"><b>03</b> 혼자 고민하지 않게</span>
-<h2 class="h-lg">현직자가 직접<br>보고, 말해 드려요</h2>
-<p class="lead">인터넷 일반론이 아니라, 선생님 서류와 수업을 직접 보고 피드백해요.</p></div>
-<div data-reveal><div class="rows" data-stagger>{helps}</div></div>
+<div class="sec-head" data-reveal><span class="eyebrow"><b>03</b> 전자책에 담은 것</span>
+<h2 class="h-lg">지원부터 합격 후까지,<br>한 권에 정리했어요</h2>
+<p class="lead">인터넷에 흩어진 일반론이 아니라, 현장에서 직접 겪은 내용이에요.</p></div>
+<div data-reveal><div class="rows" data-stagger>{rows(START_BOOK)}</div></div>
 </div>
 </section>
 
 <section class="dark">
 <div class="inner profile">
 <div data-reveal>
-<span class="eyebrow"><b>04</b> 누가 알려주나요?</span>
+<span class="eyebrow"><b>04</b> 쓴 사람</span>
 <h2 class="h-lg">현장 10년,<br>현직 한국어 강사</h2>
-<p class="lead">어학당, 대학, 기업, 해외와 온라인까지. 한국어 강사가 가는 여러 길을 직접 걸어왔어요. 담임도, 주임도 해 봤기에 조직 안쪽 사정을 알아요.</p>
+<p class="lead">어학당, 대학, 기업, 해외와 온라인까지 여러 곳에서 가르쳤어요. 담임과 주임을 모두 해 봐서 어학당 조직이 어떻게 돌아가는지도 알아요.</p>
 <div class="stats-mini">
 <div><strong><span data-count="10">10</span>년+</strong><span>한국어 교육</span></div>
 <div><strong><span data-count="1">1</span>급</strong><span>한국어교원 자격</span></div>
@@ -1446,32 +1420,23 @@ def render_start(jobs: list[dict], config: dict, today: dt.date) -> str:
 </div>
 </section>
 
-<section class="soft">
-<div class="inner">
-<div class="sec-head center" data-reveal><span class="eyebrow"><b>05</b> 어떻게 준비하나요</span>
-<h2 class="h-lg">이력서부터 면접까지,<br>한 단계씩 같이 가요</h2>
-<p class="lead">한 번에 다 하려면 막막해요. 지금 선생님이 있는 단계부터 시작해요.</p></div>
-<div data-reveal><div class="steps" data-stagger><span class="steps-line" data-progress aria-hidden="true"></span>{steps}</div></div>
-</div>
-</section>
-
 <section>
 <div class="inner split">
-<div class="sec-head" data-reveal><span class="eyebrow"><b>06</b> 약속</span>
-<h2 class="h-lg">좋은 말만 하지 않아요.<br>현실 그대로 말해요</h2>
-<p class="lead">시급도, 조직 분위기도 있는 그대로 알려 드려요. 그래야 선생님이 맞는 선택을 할 수 있어요.</p></div>
-<div data-reveal><div class="rows" data-stagger>{promises}</div></div>
+<div class="sec-head" data-reveal><span class="eyebrow"><b>05</b> 쓰면서 지킨 것</span>
+<h2 class="h-lg">좋은 말만<br>쓰지 않았어요</h2>
+<p class="lead">강사료도, 조직 분위기도 있는 그대로 적었어요. 그래야 나에게 맞는 선택을 할 수 있으니까요.</p></div>
+<div data-reveal><div class="rows" data-stagger>{rows(START_PROMISES)}</div></div>
 </div>
 </section>
 
 <section class="dark">
 <div class="inner">
-<div class="sec-head" data-reveal><span class="eyebrow"><b>07</b> 숫자로 보면</span>
-<h2 class="h-lg">막연한 소문 말고,<br>공고 데이터로 봐요</h2>
+<div class="sec-head" data-reveal><span class="eyebrow"><b>06</b> 숫자로 보면</span>
+<h2 class="h-lg">지금 올라온 공고로<br>본 현실</h2>
 <p class="lead">이 사이트에 모인 실제 공고를 세어 봤어요. {today.year}년 {today.month}월 {today.day}일 기준이에요.</p></div>
 <div data-reveal><div class="nums" data-stagger>{nums}</div></div>
 <div class="pay-bars" data-reveal>
-<h3>현직자가 겪은 시간당 강사료, 높은 쪽 기준</h3>
+<h3>현직 강사가 겪은 시간당 강사료, 높은 쪽 기준</h3>
 <div data-stagger style="display:grid;gap:16px">{bars}</div>
 <p class="fine-dark">현직 강사가 직접 받거나 들은 금액이에요. 기관과 경력, 학위에 따라 달라요.</p>
 <p style="margin-top:28px"><a class="btn btn-lg btn-white" href="pay.html">내 강사료로 실수령 계산해 보기</a></p>
@@ -1479,35 +1444,36 @@ def render_start(jobs: list[dict], config: dict, today: dt.date) -> str:
 </div>
 </section>
 
-<section class="soft">
+<section id="ebook" class="soft">
 <div class="inner">
-<div class="sec-head" data-reveal><span class="eyebrow"><b>08</b> 같이 가요</span>
-<h2 class="h-lg">혼자 찾지 말고,<br>같이 나눠요</h2>
-<p class="lead">국내외 선생님들이 정보를 나누는 자리를 준비하고 있어요.</p></div>
-<div data-reveal><div class="cards" data-stagger>{community}</div></div>
+<div class="ebook" data-reveal>
+<div class="ebook-cover" aria-hidden="true"><span>한국어 강사</span><strong>처음<br>시작하는 법</strong><i>지원부터 합격 후까지</i></div>
+<div class="ebook-copy">
+<span class="eyebrow"><b>07</b> 전자책</span>
+<h2 class="h-lg">한국어 강사,<br>처음 시작하는 법</h2>
+<p class="lead">처음 준비할 때 알았으면 좋았을 것들을 한 권에 담고 있어요. 곧 나와요.</p>
+<ol class="chapters">{chapters}</ol>
+<div class="hero-cta" style="margin-top:32px">{soon_book.format(cls="btn-dark")}</div>
+</div>
+</div>
 </div>
 </section>
 
 <section>
 <div class="inner">
-<div class="sec-head center" data-reveal><span class="eyebrow"><b>09</b> 필요한 만큼만</span>
-<h2 class="h-lg">지금 선생님에게<br>필요한 만큼 골라요</h2>
-<p class="lead">무료로 시작해서, 더 필요할 때 한 단계씩. 억지로 권하지 않아요.</p></div>
-<div data-reveal><div class="cards" data-stagger style="margin-bottom:16px">
-<article class="card-c" style="--i:0"><span class="ic">{icon("map")}</span><h3>무료 가이드</h3><p>지원처 고르기, 시범강의 기본 구성, 어학당 용어 정리.</p><span class="tag">준비 중</span></article>
-<article class="card-c" style="--i:1"><span class="ic">{icon("book")}</span><h3>전자책</h3><p>이력서부터 면접까지 단계별 정리와 현직자 이야기.</p><span class="tag">준비 중</span></article>
-</div></div>
-<div data-reveal><div class="tiers" data-stagger>{tiers}</div></div>
-<p class="lead" style="margin:28px auto 0;text-align:center;font-size:15px">가격과 진행 방식은 곧 안내해 드릴게요.</p>
+<div class="sec-head" data-reveal><span class="eyebrow"><b>08</b> 함께 나눌 자리</span>
+<h2 class="h-lg">혼자 찾지 말고,<br>같이 나눠요</h2>
+<p class="lead">국내외 선생님들이 정보를 나누는 자리도 준비하고 있어요.</p></div>
+<div data-reveal><div class="cards" data-stagger>{community}</div></div>
 </div>
 </section>
 
 <section class="dark final">
 <div class="inner" data-reveal>
-<span class="eyebrow">첫 걸음</span>
-<h2 class="h-xl">혼자 막막해하지 마세요</h2>
-<p class="lead" style="margin-inline:auto">처음 한 번이 가장 어려워요. 그 한 번, 같이 넘어 봐요.</p>
-<div class="hero-cta"><a class="btn btn-lg btn-white" href="index.html">공고 보러 가기</a>{soon.format("오픈카톡방 (준비 중)").replace("btn-line", "btn-ghost")}</div>
+<span class="eyebrow">첫걸음</span>
+<h2 class="h-xl">처음이 가장 어려워요</h2>
+<p class="lead" style="margin-inline:auto">지원할 곳을 둘러보는 것부터 시작해 보세요.</p>
+<div class="hero-cta"><a class="btn btn-lg btn-white" href="index.html">공고 보러 가기</a>{soon_book.format(cls="btn-ghost")}</div>
 </div>
 </section>
 
@@ -1515,7 +1481,7 @@ def render_start(jobs: list[dict], config: dict, today: dt.date) -> str:
 <script src="assets/start.js?v={asset_version("start.js")}" defer></script>"""
     head = f'<link rel="stylesheet" href="assets/start.css?v={asset_version("start.css")}">'
     return page(f"처음이세요? 한국어 강사 첫 취업 준비 · {SITE_NAME}",
-                "한국어교원 자격증은 땄는데 막막하신가요? 현직 강사가 이력서, 시범강의, 면접 준비와 어학당 현실을 있는 그대로 알려 드려요.",
+                "한국어교원 자격증은 땄는데 어디부터 지원해야 할지 막막하신가요? 현직 강사가 지원처 고르기, 이력서, 시범강의, 면접, 합격 후 첫 학기까지 정리했어요.",
                 body, root="", config=config, canonical=absolute(config, "start.html"), active="start", extra_head=head)
 
 

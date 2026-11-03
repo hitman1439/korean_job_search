@@ -282,9 +282,13 @@ class BuildTests(unittest.TestCase):
         # build lists overseas too); of the 2 at home one names no hourly fee
         # (50%), too few fees for a median.
         self.assertIn('data-count="3">3</span><small>건</small></strong><span>지금 지원할 수 있는 공고', start)
-        self.assertIn('data-count="50">50</span><small>%</small></strong><span>강사료를 숫자로 밝히지 않은', start)
+        self.assertIn('data-count="50">50</span><small>%</small></strong><span>강사료를 숫자로 적지 않은', start)
         self.assertNotIn("중간값", start)
         self.assertNotIn("신입 가능", start.split("<main")[1].split("</main>")[0].replace("신입 가능이라고", ""))
+        # For now the page leads to the e-book only, not to paid coaching.
+        self.assertIn('id="ebook"', start)
+        for coaching in ("베이직", "디럭스", "올인원", "첨삭 신청"):
+            self.assertNotIn(coaching, start)
         # The teacher stays anonymous: no name, school, company or contact.
         self.assertIn("현직 한국어 강사", start)
         for clue in ("구다영", "경희대", "연성대", "인천대", "부천대", "숭실대", "서울대", "강서대", "국제언어대학원",
