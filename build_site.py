@@ -1233,10 +1233,6 @@ def render_pay(config: dict) -> str:
 # --- 공감 페이지 (start.html) ---------------------------------------------------
 # Test build only. Leads to one thing for now: the e-book (coaching comes later).
 
-# Hourly fees a working teacher has seen, by kind of school (meeting notes,
-# 2026-11). Shown as experience, next to what the live notices say.
-FIELD_RATES = [("초·중등 방과후", 25_000), ("센터", 30_000), ("대학 어학당", 40_000), ("대학 학부", 55_000)]
-
 START_PAINS = [
     ("경력이 없는데 어디에 지원하죠?", "신입을 받아 주는 곳이 있는지, 있다면 어디인지 모르겠어요."),
     ("서류에서 자꾸 떨어져요", "지원은 하는데 연락이 오지 않아요. 무엇이 부족한지도 모르겠어요."),
@@ -1271,12 +1267,6 @@ START_TIMELINE = [
     ("07", "지금도 현직", "10년이 넘은 지금도 강의실에 서고 있어요."),
 ]
 START_PATHS = ["여러 어학당", "담임 · 주임", "대학 학부·대학원", "기업 출강", "해외 교육원", "온라인 강좌", "교육 영상", "영어 직강"]
-START_PROMISES = [
-    ("강사료는 있는 그대로", "기관마다, 시수마다 수입이 달라요. 좋은 경우만 골라 적지 않았어요."),
-    ("조직 이야기도 솔직하게", "어학당에는 어학당의 분위기가 있어요. 처음에는 조용히 지켜보며 맞춰 가는 편이 편할 때가 많아요."),
-    ("성향에 맞는 곳도 함께", "외국계 기업처럼 일하는 방식이 다른 곳에서 오신 분은 처음에 낯설 수 있어요. 어떤 성향이 어떤 기관과 잘 맞는지도 적었어요."),
-    ("합격을 장담하지 않아요", "누구에게나 통하는 비법은 없어요. 대신 준비할 수 있는 것은 빠짐없이 담았어요."),
-]
 START_COMMUNITY = [
     ("chat", "오픈카톡방", "공고 소식, 지원 고민, 시범강의 질문을 편하게 나눠요."),
     ("video", "온라인 밋업", "국내외 강사가 화면으로 만나 경험을 나눠요."),
@@ -1294,24 +1284,7 @@ def icon(name: str) -> str:
             f'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{ICONS[name]}</svg>')
 
 
-def start_numbers(jobs: list[dict]) -> dict:
-    """What the live notices say, for section 07. Hourly fees only from
-    domestic and online notices (overseas pay is in other currencies).
-    No 신입 가능 or all-time counts: Saramin's 경력무관 staff posts inflate
-    the first, and closed notices leave the DB, so the second undercounts."""
-    home = [job for job in jobs if job["scope"] != "overseas"]
-    rates = sorted(max(job["rates"]) for job in home if job.get("rates"))
-    return {
-        "live": len(jobs),
-        "orgs": len({job["org"] for job in jobs if job.get("institution_name")}),
-        "unpaid_pct": round(100 * (len(home) - len(rates)) / len(home)) if home else None,
-        "rated": len(rates),
-        "median": rates[len(rates) // 2] if rates else None,
-    }
-
-
-def render_start(jobs: list[dict], config: dict, today: dt.date) -> str:
-    n = start_numbers(jobs)
+def render_start(config: dict) -> str:
 
     def stagger(items: list[str]) -> str:
         return "".join(item.replace("<<i>>", str(i)) for i, item in enumerate(items))
@@ -1336,25 +1309,6 @@ def render_start(jobs: list[dict], config: dict, today: dt.date) -> str:
         for ic, t, d in START_COMMUNITY
     ])
     chapters = "".join(f"<li><b>{i + 1:02d}</b>{e(t)}</li>" for i, (t, _) in enumerate(START_BOOK))
-    top = max(rate for _, rate in FIELD_RATES)
-    bars = stagger([
-        f'<div class="bar-row" style="--i:<<i>>"><span class="label">{e(label)}</span>'
-        f'<span class="track"><i style="--w:{rate / top * 100:.0f}%"></i></span><b>{rate // 10_000}만{f" {rate % 10_000 // 1000}천" if rate % 10_000 else ""}원</b></div>'
-        for label, rate in FIELD_RATES
-    ])
-
-    def num(value: int | None, unit: str, label: str, i: int) -> str:
-        if not value:
-            return ""
-        return (f'<div class="num" style="--i:{i}"><strong><span data-count="{value}">{value:,}</span><small>{unit}</small></strong>'
-                f'<span>{label}</span></div>')
-
-    nums = "".join([
-        num(n["live"], "건", "지금 지원할 수 있는 공고", 0),
-        num(n["orgs"], "곳", "공고를 낸 기관", 1),
-        num(n["unpaid_pct"], "%", "강사료를 숫자로 적지 않은 국내·온라인 공고", 2),
-        num(n["median"] if n["rated"] >= 5 else None, "원", f"시급이 적힌 공고 {n['rated']}건의 중간값", 3),
-    ])
     soon_book = '<a class="btn btn-lg {cls}" aria-disabled="true" tabindex="-1">전자책 준비 중</a>'
 
     body = f"""<div class="start-bar" aria-hidden="true"><i></i></div>
@@ -1420,36 +1374,12 @@ def render_start(jobs: list[dict], config: dict, today: dt.date) -> str:
 </div>
 </section>
 
-<section>
-<div class="inner split">
-<div class="sec-head" data-reveal><span class="eyebrow"><b>05</b> 쓰면서 지킨 것</span>
-<h2 class="h-lg">좋은 말만<br>쓰지 않았어요</h2>
-<p class="lead">강사료도, 조직 분위기도 있는 그대로 적었어요. 그래야 나에게 맞는 선택을 할 수 있으니까요.</p></div>
-<div data-reveal><div class="rows" data-stagger>{rows(START_PROMISES)}</div></div>
-</div>
-</section>
-
-<section class="dark">
-<div class="inner">
-<div class="sec-head" data-reveal><span class="eyebrow"><b>06</b> 숫자로 보면</span>
-<h2 class="h-lg">지금 올라온 공고로<br>본 현실</h2>
-<p class="lead">이 사이트에 모인 실제 공고를 세어 봤어요. {today.year}년 {today.month}월 {today.day}일 기준이에요.</p></div>
-<div data-reveal><div class="nums" data-stagger>{nums}</div></div>
-<div class="pay-bars" data-reveal>
-<h3>현직 강사가 겪은 시간당 강사료, 높은 쪽 기준</h3>
-<div data-stagger style="display:grid;gap:16px">{bars}</div>
-<p class="fine-dark">현직 강사가 직접 받거나 들은 금액이에요. 기관과 경력, 학위에 따라 달라요.</p>
-<p style="margin-top:28px"><a class="btn btn-lg btn-white" href="pay.html">내 강사료로 실수령 계산해 보기</a></p>
-</div>
-</div>
-</section>
-
 <section id="ebook" class="soft">
 <div class="inner">
 <div class="ebook" data-reveal>
 <div class="ebook-cover" aria-hidden="true"><span>한국어 강사</span><strong>처음<br>시작하는 법</strong><i>지원부터 합격 후까지</i></div>
 <div class="ebook-copy">
-<span class="eyebrow"><b>07</b> 전자책</span>
+<span class="eyebrow"><b>05</b> 전자책</span>
 <h2 class="h-lg">한국어 강사,<br>처음 시작하는 법</h2>
 <p class="lead">처음 준비할 때 알았으면 좋았을 것들을 한 권에 담고 있어요. 곧 나와요.</p>
 <ol class="chapters">{chapters}</ol>
@@ -1461,7 +1391,7 @@ def render_start(jobs: list[dict], config: dict, today: dt.date) -> str:
 
 <section>
 <div class="inner">
-<div class="sec-head" data-reveal><span class="eyebrow"><b>08</b> 함께 나눌 자리</span>
+<div class="sec-head" data-reveal><span class="eyebrow"><b>06</b> 함께 나눌 자리</span>
 <h2 class="h-lg">혼자 찾지 말고,<br>같이 나눠요</h2>
 <p class="lead">국내외 선생님들이 정보를 나누는 자리도 준비하고 있어요.</p></div>
 <div data-reveal><div class="cards" data-stagger>{community}</div></div>
@@ -1534,7 +1464,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
         write("demo.html", render_demo(config))
         write("resume.html", render_resume(config))
     if config.get("test"):
-        write("start.html", render_start(jobs, config, today))
+        write("start.html", render_start(config))
         write("rating.html", render_rating(config, orgs))
         write("review.html", render_review(config, orgs))
     files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)

@@ -258,12 +258,7 @@ class BuildTests(unittest.TestCase):
         self.assertIn("../rating.html?org=%EC%84%B8%EC%A2%85", job)
         self.assertIn("../review.html?org=%EC%84%B8%EC%A2%85", job)
 
-    def test_start_page_is_test_only_and_counts_live_jobs(self):
-        conn = sqlite3.connect(self.db)
-        conn.execute("UPDATE jobs SET salary_text = '시간당 35,000원' WHERE title = '아주대 강사 모집'")
-        conn.commit()
-        conn.close()
-        bs.build(self.db, self.out, self.config, TODAY, BUILT_AT)
+    def test_start_page_is_test_only(self):
         # Public build: no page, no menu link, no sitemap entry, no assets.
         self.assertFalse((self.out / "start.html").exists())
         self.assertFalse((self.out / "assets" / "start.js").exists())
@@ -278,13 +273,6 @@ class BuildTests(unittest.TestCase):
         self.assertTrue((test_out / "assets" / "start.js").is_file())
         self.assertIn('href="start.html" aria-current="page">처음이세요?</a>', start)
         self.assertIn('href="start.html">처음이세요?</a>', (test_out / "index.html").read_text(encoding="utf-8"))
-        # Section 07 counts what the board shows now: 3 live jobs (the test
-        # build lists overseas too); of the 2 at home one names no hourly fee
-        # (50%), too few fees for a median.
-        self.assertIn('data-count="3">3</span><small>건</small></strong><span>지금 지원할 수 있는 공고', start)
-        self.assertIn('data-count="50">50</span><small>%</small></strong><span>강사료를 숫자로 적지 않은', start)
-        self.assertNotIn("중간값", start)
-        self.assertNotIn("신입 가능", start.split("<main")[1].split("</main>")[0].replace("신입 가능이라고", ""))
         # For now the page leads to the e-book only, not to paid coaching.
         self.assertIn('id="ebook"', start)
         for coaching in ("베이직", "디럭스", "올인원", "첨삭 신청"):

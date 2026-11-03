@@ -128,22 +128,6 @@
 .tl h3 { margin-top: 6px; font-size: 19px; font-weight: 700; letter-spacing: -0.02em; word-break: keep-all; }
 .tl p { margin-top: 4px; font-size: 15px; line-height: 1.6; color: var(--ink-text); word-break: keep-all; }
 
-/* 07 numbers */
-.nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 1px; background: var(--ink-line); border: 1px solid var(--ink-line); border-radius: 20px; overflow: hidden; }
-.num { background: var(--ink); padding: 36px 28px; }
-.num strong { display: flex; align-items: baseline; gap: 4px; font-size: clamp(44px, 5.4vw, 72px); font-weight: 800; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; line-height: 1; }
-.num strong small { font-size: 0.36em; font-weight: 700; color: var(--ink-text); letter-spacing: 0; }
-.num > span { display: block; margin-top: 14px; font-size: 15px; color: var(--ink-text); line-height: 1.5; word-break: keep-all; }
-.pay-bars { margin-top: 56px; display: grid; gap: 18px; }
-.pay-bars h3 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
-.bar-row { display: grid; grid-template-columns: minmax(96px, 150px) 1fr 84px; gap: 16px; align-items: center; font-size: 15px; }
-.bar-row .track { height: 12px; border-radius: 99px; background: var(--ink-2); overflow: hidden; }
-.bar-row .track i { display: block; height: 100%; width: var(--w); border-radius: inherit; background: linear-gradient(90deg, #1b64da, #6ea8ff); transform-origin: left; transition: transform 1.2s cubic-bezier(.2, .8, .2, 1) calc(var(--i, 0) * 120ms); }
-.motion [data-reveal]:not(.is-in) .bar-row .track i { transform: scaleX(0); }
-.bar-row b { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
-.bar-row .label { color: rgba(255,255,255,.8); }
-.fine-dark { margin-top: 20px; font-size: 13px; line-height: 1.6; color: rgba(255,255,255,.45); word-break: keep-all; }
-
 /* Community cards */
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; }
 .card-c { padding: 30px 28px; border-radius: 18px; background: var(--bg); border: 1px solid var(--line-strong); }
@@ -208,6 +192,5 @@
   .row { grid-template-columns: 40px 1fr; padding: 26px 0; }
   .stats-mini { grid-template-columns: 1fr 1fr 1fr; }
   .stats-mini div { padding: 18px 12px; }
-  .bar-row { grid-template-columns: 84px 1fr 76px; gap: 10px; font-size: 14px; }
   .hero-start { min-height: auto; padding-block: 88px 112px !important; }
 }
