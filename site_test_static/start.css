@@ -204,3 +204,20 @@
 .course-steps a { padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--bg); color: var(--text-3); font-size: 15px; text-decoration: none; }
 .course-steps a:hover { border-color: var(--text); color: var(--text); }
 .tips { padding-block: clamp(72px, 9vw, 120px) !important; }
+.checks { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+@media (min-width: 640px) { .checks { grid-template-columns: 1fr 1fr; } }
+.checks li {
+  position: relative; display: flex; align-items: center; min-height: 64px; padding: 16px 20px 16px 56px;
+  border: 1px solid var(--line-strong); border-radius: 14px; background: var(--bg);
+  font-size: 17px; font-weight: 600; color: var(--text); word-break: keep-all;
+}
+.checks li::before {
+  content: ""; position: absolute; left: 20px; top: 50%; width: 20px; height: 20px; margin-top: -10px;
+  border: 2px solid var(--blue); border-radius: 6px;
+}
+.checks li::after {
+  content: ""; position: absolute; left: 26px; top: 50%; width: 8px; height: 4px; margin-top: -4px;
+  border-left: 2px solid var(--blue); border-bottom: 2px solid var(--blue); transform: rotate(-45deg);
+}
+.checks-more { margin-top: 20px; font-size: 15px; }
+.checks-more a { font-weight: 600; text-decoration: none; }

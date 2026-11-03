@@ -298,12 +298,15 @@ class BuildTests(unittest.TestCase):
         self.assertNotIn("근무 후기", nav)
         # Every step is a section of start.html; the menu jumps to it.
         start = (test_out / "start.html").read_text(encoding="utf-8")
-        for slug, title in [("prep-documents", "서류전형 준비"), ("prep-video", "시강영상 준비"),
+        for slug, title in [("prep-documents", "서류전형 checklist"), ("prep-video", "시강영상 준비"),
                             ("prep-lesson-plan", "교안 준비"), ("prep-demo", "대면시강 준비"), ("prep-interview", "면접 준비")]:
             self.assertIn(f'href="start.html#{slug}">{title}</a>', nav)
             self.assertIn(f'<section id="{slug}"', start)
             self.assertFalse((test_out / f"{slug}.html").exists())
-        self.assertIn("마감일과 마감 시각 확인", start)
+        # Checklist titles only; the why and how stay in the e-book.
+        self.assertIn("<li style=\"--i:0\">마감일과 마감 시각 확인</li>", start)
+        self.assertNotIn("도착 기준인지 발송 기준인지", start)
+        self.assertIn('href="start.html#prep-documents">서류전형 checklist</a>', nav)
         self.assertTrue((test_out / "rating.html").exists())
 
     def test_pay_calculator_is_public(self):
