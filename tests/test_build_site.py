@@ -240,7 +240,8 @@ class BuildTests(unittest.TestCase):
         self.assertIn("assets/large.css?v=", index)
         self.assertIn('<meta name="robots" content="noindex, nofollow">', index)
         self.assertIn("관리자만 볼 수 있어요", index)
-        self.assertIn('href="rating.html"', index)
+        # 근무 후기 has no menu entry: job pages and map bubbles link to it.
+        self.assertNotIn('href="rating.html"', index.split("</header>")[0])
         # Rows carry the institution so the map bubble can offer 후기 보기.
         self.assertIn('data-review="세종학당재단"', index)
         self.assertEqual((out / "robots.txt").read_text(encoding="utf-8"), "User-agent: *\nDisallow: /\n")
@@ -271,8 +272,8 @@ class BuildTests(unittest.TestCase):
         self.assertIn("assets/start.css?v=", start)
         self.assertIn("noindex", start)
         self.assertTrue((test_out / "assets" / "start.js").is_file())
-        self.assertIn('href="start.html" aria-current="page">처음이세요?</a>', start)
-        self.assertIn('href="start.html">처음이세요?</a>', (test_out / "index.html").read_text(encoding="utf-8"))
+        self.assertIn('href="start.html" aria-current="page">코스 소개</a>', start)
+        self.assertIn('<div class="menu is-here" data-menu>', start)
         # For now the page leads to the e-book only, not to paid coaching.
         self.assertIn('id="ebook"', start)
         for coaching in ("베이직", "디럭스", "올인원", "첨삭 신청"):
@@ -282,6 +283,29 @@ class BuildTests(unittest.TestCase):
         for clue in ("구다영", "경희대", "연성대", "인천대", "부천대", "숭실대", "서울대", "강서대", "국제언어대학원",
                      "IES", "쉐브론", "포스코", "LA 한국교육원", "비상교육", "010-", "@naver.com"):
             self.assertNotIn(clue, start)
+
+    def test_test_menu_has_course_dropdown_and_step_pages(self):
+        slugs = [slug for slug, _, _, _ in bs.COURSE_PAGES]
+        # Public build: no dropdown, no step pages.
+        self.assertNotIn("data-menu", self.index)
+        for slug in slugs:
+            self.assertFalse((self.out / f"{slug}.html").exists())
+        test_out = Path(self.tmp.name) / "site_test"
+        bs.build(self.db, test_out, {**self.config, "test": True}, TODAY, BUILT_AT)
+        index = (test_out / "index.html").read_text(encoding="utf-8")
+        nav = index.split('<nav class="nav"')[1].split("</nav>")[0]
+        # 채용공고 → 합격대비 코스(드롭다운) → 실수령 계산기; 근무 후기 has no menu entry.
+        self.assertLess(nav.index("채용공고"), nav.index("합격대비 코스"))
+        self.assertLess(nav.index("합격대비 코스"), nav.index("실수령 계산기"))
+        self.assertIn('aria-expanded="false" aria-controls="menuCourse"', nav)
+        self.assertNotIn("근무 후기", nav)
+        for slug, title in [("prep-documents", "서류전형 준비"), ("prep-video", "시강영상 준비"),
+                            ("prep-lesson-plan", "교안 준비"), ("prep-demo", "대면시강 준비"), ("prep-interview", "면접 준비")]:
+            self.assertIn(f'href="{slug}.html">{title}</a>', nav)
+            page = (test_out / f"{slug}.html").read_text(encoding="utf-8")
+            self.assertIn(f'href="{slug}.html" aria-current="page">{title}</a>', page)
+            self.assertIn("noindex", page)
+        self.assertTrue((test_out / "rating.html").exists())
 
     def test_pay_calculator_is_public(self):
         conn = sqlite3.connect(self.db)

@@ -522,21 +522,60 @@ def alerts_on(config: dict) -> bool:
     return bool(config.get("alert_endpoint"))
 
 
+# 합격대비 코스(가제): test build only. Each step gets its own page.
+COURSE_PAGES = [
+    ("prep-documents", "서류전형 준비", "서류에서 멈추지 않게, 이력서와 자기소개서를 준비해요.", [
+        ("경력을 쓰는 순서", "지원하는 기관에 맞춰 어떤 경력을 먼저, 얼마나 자세히 쓸지."),
+        ("자기소개서와 교육관", "기관이 읽고 싶어 하는 내용과 흔히 하는 실수."),
+        ("기관마다 달라지는 점", "어학당, 센터, 학교, 온라인. 같은 경력도 쓰는 법이 달라요."),
+        ("제출 서류 확인", "자격증 사본, 경력증명서, 학위증명서처럼 미리 챙겨 둘 서류."),
+    ]),
+    ("prep-video", "시강영상 준비", "영상으로 시범강의를 내라는 곳이 늘고 있어요. 찍기 전에 알아 둘 것들이에요.", [
+        ("영상의 길이와 구성", "정해진 시간 안에 수업 하나를 보여 주는 흐름."),
+        ("촬영 환경", "화면, 소리, 판서가 잘 보이게 찍는 법. 비싼 장비가 없어도 돼요."),
+        ("학습자 없이 수업하기", "카메라 앞에서 혼자 수업할 때 어색하지 않게 진행하는 법."),
+        ("제출 형식", "파일 형식과 용량, 링크로 낼 때 주의할 점."),
+    ]),
+    ("prep-lesson-plan", "교안 준비", "시범강의의 바탕이 되는 교안을 짜는 법이에요.", [
+        ("교안 양식", "기관이 양식을 줄 때와 주지 않을 때."),
+        ("수업의 흐름", "도입, 제시, 연습, 활용, 마무리. 단계마다 무엇을 보여 줄지."),
+        ("시간 배분", "10분, 15분, 20분. 시간에 맞춰 덜어 내는 법."),
+        ("자주 나오는 문법 항목", "급수별로 시범강의에 자주 주어지는 항목."),
+    ]),
+    ("prep-demo", "대면시강 준비", "심사위원 앞에서 직접 하는 시범강의를 준비해요.", [
+        ("시작과 진행", "인사부터 마무리까지, 실제 수업처럼 진행하는 법."),
+        ("판서와 시선", "칠판과 화면 쓰는 법, 심사위원을 학습자처럼 대하는 법."),
+        ("시간 지키기", "준비한 것을 다 못 해도 당황하지 않는 법."),
+        ("시강 뒤 질문", "왜 그렇게 가르쳤는지 묻는 질문에 답하는 법."),
+    ]),
+    ("prep-interview", "면접 준비", "서류와 시강을 통과했다면 마지막 단계예요.", [
+        ("자주 나오는 질문", "지원 동기, 수업 경험, 학습자 관리, 동료와의 협업."),
+        ("내 경력에 맞는 답", "경력이 짧아도, 길어도 설득력 있게 말하는 법."),
+        ("기관마다 다른 분위기", "어학당, 센터, 학교 면접에서 보는 것이 조금씩 달라요."),
+        ("마지막 질문", "“궁금한 점 있으세요?”에 무엇을 물어볼지."),
+    ]),
+]
+
+
 def header(root: str, active: str, with_services: bool = False, with_alerts: bool = False,
-           with_review: bool = False) -> str:
-    links = [("jobs", f"{root}index.html", "채용공고"), ("pay", f"{root}pay.html", "실수령 계산기")]
-    if with_review:
-        # Test build only, until reviewed: 공감 페이지 and 근무 후기.
-        links.insert(1, ("start", f"{root}start.html", "처음이세요?"))
-        links.append(("review", f"{root}rating.html", "근무 후기"))
+           with_course: bool = False) -> str:
+    def link(key: str, href: str, label: str) -> str:
+        return f'<a href="{href}"{" aria-current=\"page\"" if key == active else ""}>{label}</a>'
+
+    nav = link("jobs", f"{root}index.html", "채용공고")
+    if with_course:
+        # Test build only: 합격대비 코스 opens on click (app.js). 근무 후기 has
+        # no menu entry; job pages and map pins link to it.
+        here = active == "start" or any(active == slug for slug, _, _, _ in COURSE_PAGES)
+        items = [("start", "start.html", "코스 소개")] + [(slug, f"{slug}.html", title) for slug, title, _, _ in COURSE_PAGES]
+        panel = "".join(link(key, f"{root}{href}", label) for key, href, label in items)
+        nav += (f'<div class="menu{" is-here" if here else ""}" data-menu>'
+                f'<button type="button" class="menu-btn" aria-expanded="false" aria-controls="menuCourse">합격대비 코스'
+                f'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'
+                f'<div class="menu-panel" id="menuCourse" hidden>{panel}</div></div>')
+    nav += link("pay", f"{root}pay.html", "실수령 계산기")
     if with_services:
-        links += [
-            ("resume", f"{root}resume.html", "이력서·자소서 첨삭"),
-            ("demo", f"{root}demo.html", "시강 교안 AI"),
-        ]
-    nav = "".join(
-        f'<a href="{href}"{" aria-current=\"page\"" if key == active else ""}>{label}</a>' for key, href, label in links
-    )
+        nav += link("resume", f"{root}resume.html", "이력서·자소서 첨삭") + link("demo", f"{root}demo.html", "시강 교안 AI")
     return f"""<header class="top"><div class="wrap">
 <a class="logo" href="{root}index.html">{SITE_NAME}</a>
 <nav class="nav" aria-label="주요 메뉴">{nav}</nav>
@@ -1414,6 +1453,48 @@ def render_start(config: dict) -> str:
                 body, root="", config=config, canonical=absolute(config, "start.html"), active="start", extra_head=head)
 
 
+def render_course_page(config: dict, slug: str, title: str, intro: str, topics: list[tuple[str, str]]) -> str:
+    """One step of 합격대비 코스 (test build only). For now a short outline of
+    what the step covers; the full guide comes with the e-book."""
+    steps = [(s, t) for s, t, _, _ in COURSE_PAGES]
+    i = next(n for n, (s, _) in enumerate(steps) if s == slug)
+    prev_link = f'<a class="btn btn-line" href="{steps[i - 1][0]}.html">‹ {e(steps[i - 1][1])}</a>' if i else '<span></span>'
+    next_link = (f'<a class="btn btn-line" href="{steps[i + 1][0]}.html">{e(steps[i + 1][1])} ›</a>'
+                 if i + 1 < len(steps) else '<a class="btn btn-line" href="index.html">공고 보러 가기 ›</a>')
+    rows = "".join(
+        f'<div class="row" style="--i:{n}"><span class="n">{n + 1:02d}</span><h3>{e(t)}</h3><p>{e(d)}</p></div>'
+        for n, (t, d) in enumerate(topics)
+    )
+    chips = "".join(
+        f'<a href="{s}.html"{" aria-current=\"page\"" if s == slug else ""}>{n + 1}. {e(t)}</a>' for n, (s, t) in enumerate(steps)
+    )
+    body = f"""<main class="start course">
+<section class="course-head">
+<div class="inner">
+<nav class="course-steps" aria-label="합격대비 코스 단계">{chips}</nav>
+<div data-reveal>
+<span class="eyebrow"><b>STEP {i + 1}</b> 합격대비 코스</span>
+<h1 class="h-lg">{e(title)}</h1>
+<p class="lead">{e(intro)}</p>
+</div>
+</div>
+</section>
+<section class="course-body">
+<div class="inner split">
+<div class="sec-head" data-reveal><h2 class="h-lg" style="font-size:clamp(24px,2.6vw,34px)">이 단계에서<br>다룰 내용</h2>
+<p class="lead">자세한 내용은 정리하고 있어요. 전자책에도 함께 담을 예정이에요.</p>
+<p style="margin-top:24px"><a class="btn btn-dark" href="start.html#ebook">전자책 살펴보기</a></p></div>
+<div data-reveal><div class="rows" data-stagger>{rows}</div></div>
+</div>
+<div class="inner course-nav">{prev_link}{next_link}</div>
+</section>
+</main>
+<script src="assets/start.js?v={asset_version("start.js")}" defer></script>"""
+    head = f'<link rel="stylesheet" href="assets/start.css?v={asset_version("start.css")}">'
+    return page(f"{title} · 합격대비 코스 · {SITE_NAME}", f"한국어 강사 {title}: {intro}", body, root="", config=config,
+                canonical=absolute(config, f"{slug}.html"), active=slug, extra_head=head)
+
+
 def absolute(config: dict, path: str) -> str | None:
     base = config.get("site_url")
     return f"{base.rstrip('/')}/{path}" if base else None
@@ -1464,6 +1545,8 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
         write("resume.html", render_resume(config))
     if config.get("test"):
         write("start.html", render_start(config))
+        for slug, title, intro, topics in COURSE_PAGES:
+            write(f"{slug}.html", render_course_page(config, slug, title, intro, topics))
         write("rating.html", render_rating(config, orgs))
         write("review.html", render_review(config, orgs))
     files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)

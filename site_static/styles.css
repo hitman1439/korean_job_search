@@ -344,3 +344,23 @@ button, input, select { font: inherit; }
 .pm-out dd span { font-size: 13px; color: var(--text-4); font-variant-numeric: tabular-nums; }
 .pm-note { margin-top: 10px; font-size: 13px; line-height: 1.5; color: var(--text-4); }
 .pm-more { display: inline-flex; align-items: center; min-height: 44px; font-size: 15px; font-weight: 600; color: var(--blue); text-decoration: none; }
+
+/* Header dropdown (합격대비 코스, test build): opens on click via app.js */
+.menu { position: relative; display: flex; }
+.menu-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 12px 0; border: 0; background: none;
+  color: var(--text-3); font-size: inherit; cursor: pointer;
+}
+.menu-btn svg { transition: transform .2s; }
+.menu-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
+.menu.is-here .menu-btn, .menu-btn[aria-expanded="true"] { color: var(--text); font-weight: 600; }
+.menu-panel {
+  position: absolute; top: calc(100% + 6px); left: -14px; z-index: 40; display: grid; min-width: 220px;
+  max-width: calc(100vw - 32px); padding: 8px; border: 1px solid var(--line-strong); border-radius: 14px;
+  background: var(--bg); box-shadow: 0 18px 40px -16px rgba(11, 15, 23, .28);
+}
+.menu-panel[hidden] { display: none; }
+.nav .menu-panel a { padding: 11px 14px; border-radius: 10px; color: var(--text-2); white-space: nowrap; }
+.nav .menu-panel a:hover { background: var(--fill); color: var(--text); }
+.nav .menu-panel a[aria-current="page"] { background: var(--blue-soft); color: var(--blue); font-weight: 600; }
+.nav .menu-panel a:first-child { margin-bottom: 4px; border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0; }

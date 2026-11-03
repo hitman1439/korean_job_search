@@ -882,3 +882,40 @@
     });
   }
 })();
+
+// Header dropdown (합격대비 코스, test build): click to open, click outside or
+// Esc to close. Without this script the menu stays closed.
+(function () {
+  "use strict";
+  var menus = document.querySelectorAll("[data-menu]");
+  if (!menus.length) return;
+  function close(menu) {
+    menu.querySelector(".menu-btn").setAttribute("aria-expanded", "false");
+    menu.querySelector(".menu-panel").hidden = true;
+  }
+  Array.prototype.forEach.call(menus, function (menu) {
+    var btn = menu.querySelector(".menu-btn");
+    btn.addEventListener("click", function () {
+      var open = btn.getAttribute("aria-expanded") === "true";
+      Array.prototype.forEach.call(menus, close);
+      if (!open) {
+        btn.setAttribute("aria-expanded", "true");
+        menu.querySelector(".menu-panel").hidden = false;
+      }
+    });
+  });
+  document.addEventListener("click", function (event) {
+    Array.prototype.forEach.call(menus, function (menu) {
+      if (!menu.contains(event.target)) close(menu);
+    });
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") return;
+    Array.prototype.forEach.call(menus, function (menu) {
+      if (menu.querySelector(".menu-btn").getAttribute("aria-expanded") === "true") {
+        close(menu);
+        menu.querySelector(".menu-btn").focus();
+      }
+    });
+  });
+})();
