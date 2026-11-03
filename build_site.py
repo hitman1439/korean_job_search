@@ -524,7 +524,8 @@ def alerts_on(config: dict) -> bool:
 
 def header(root: str, active: str, with_services: bool = False, with_alerts: bool = False,
            with_review: bool = False) -> str:
-    links = [("jobs", f"{root}index.html", "채용공고"), ("pay", f"{root}pay.html", "실수령 계산기")]
+    links = [("jobs", f"{root}index.html", "채용공고"), ("start", f"{root}start.html", "처음이세요?"),
+             ("pay", f"{root}pay.html", "실수령 계산기")]
     if with_review:
         links.append(("review", f"{root}rating.html", "근무 후기"))
     if with_services:
@@ -1228,6 +1229,294 @@ def render_pay(config: dict) -> str:
                 body, root="", config=config, canonical=absolute(config, "pay.html"), active="pay", extra_head=head)
 
 
+# --- 공감 페이지 (start.html) ---------------------------------------------------
+
+# Hourly fees a working teacher has seen, by kind of school (meeting notes,
+# 2026-11). Shown as experience, next to what the live notices say.
+FIELD_RATES = [("초·중등 방과후", 25_000), ("센터", 30_000), ("대학 어학당", 40_000), ("대학 학부", 55_000)]
+
+START_PAINS = [
+    ("경력이 없어요", "경력 없는 신입을 받아 주는 곳이 어딘지 모르겠어요."),
+    ("서류에서 떨어져요", "지원은 계속하는데 연락이 안 와요. 뭐가 문제인지도 모르겠어요."),
+    ("시범강의가 막막해요", "몇 분짜리를, 어떤 문법으로, 어떻게 준비해야 할지 모르겠어요."),
+    ("어학당 문턱이 높아요", "센터 경력은 쌓았는데, 어학당 서류는 번번이 안 돼요."),
+    ("시급이 맞나 싶어요", "제안받은 시급이 적정한지, 비교할 기준이 없어요."),
+    ("들어갔는데 낯설어요", "어학당에 합격은 했는데, 분위기도 조직도 처음이라 조심스러워요."),
+]
+START_GAPS = [
+    ("담임, 주임, 총괄 주임, 센터장", "처음 가면 용어부터 낯설어요. 누구에게 물어야 할지도 몰라요."),
+    ("학기마다 시수를 얼마나 받는지", "시수가 수입을 좌우한다는 것도 들어가서야 알아요."),
+    ("어학당은 첫 한 번이 가장 어렵다는 것", "첫 문을 어디서, 어떻게 두드릴지 몰라 헤매요."),
+    ("경력 없이 시작할 수 있는 곳", "그런 곳이 있다는 것조차 몰라요."),
+]
+START_HELP = [
+    ("이력서·자소서", "경력 한 줄을 어떻게 쓰면 읽히는지, 문장 단위로 봐 드려요."),
+    ("시범강의 교안", "시간 배분, 문법 제시, 연습 활동. 교안 흐름을 같이 다듬어요."),
+    ("시범강의 피드백", "실제로 해 본 수업을 보고, 고칠 점을 구체적으로 짚어요."),
+    ("면접", "자주 나오는 질문과, 선생님 경력에 맞는 답을 같이 준비해요."),
+]
+# 구다영 선생님 경력 (이력서, 2026-10-26). Name and career only: no photo or contact.
+START_TIMELINE = [
+    ("2015", "한국어 교육 시작", "경희대 한국어학 학사 · 한국어교원 2급, 연성대 어학당 담임 (1~4급)"),
+    ("2017", "인천대 어학당 초급 주임", "경희대 국제한국언어문화 석사, 담임에서 주임으로"),
+    ("2018", "부천대 어학당 담임 · 5년", "정규 과정 1~5급 담임. 2020년 한국어교원 1급"),
+    ("2023", "숭실대 · 서울대 언어교육원", "어학당 네 번째, 다섯 번째 자리. 포스코 인재창조원 출강"),
+    ("2024", "기업과 온라인으로", "쉐브론 코리아 출강, 온라인 세종학당 비즈니스 한국어"),
+    ("2025", "대학 강단과 해외", "국제언어대학원대 초빙 교수, 강서대 초빙 강사, LA 한국교육원 TOPIK, 비상교육 영상 강의"),
+    ("2026", "지금도 현직", "IES Global 초빙 교수 · 영어로 가르치는 한국어"),
+]
+START_PATHS = ["어학당 5곳", "담임 · 주임", "대학 학부·대학원", "기업 출강", "해외 교육원", "온라인 세종학당", "교육 영상", "영어 직강"]
+START_STEPS = [
+    ("이력서·자소서", "서류에서 멈추지 않게, 경력을 읽히는 문장으로 바꿔요.", ["지원처에 맞는 경력 순서", "한 줄 요약", "교육관 문장"]),
+    ("시범강의", "정해진 시간 안에 수업 하나를 보여 주는 연습을 해요.", ["시간 배분", "문법 제시 방법", "학습자 참여 활동"]),
+    ("면접", "경력과 수업 철학을 짧고 분명하게 말하는 연습을 해요.", ["자주 나오는 질문", "내 경력에 맞는 답", "마지막 질문 준비"]),
+]
+START_PROMISES = [
+    ("시급은 있는 그대로", "기관마다, 시수마다 수입이 달라요. 좋은 경우만 골라 말하지 않아요."),
+    ("조직 이야기도 솔직하게", "어학당에는 어학당의 분위기가 있어요. 처음에는 “있는 듯 없는 듯”, 너무 앞서 나서지 않는 게 편할 때가 많아요."),
+    ("맞는 길을 같이 찾아요", "일하는 방식이 다른 곳(예: 외국계 기업)에서 오신 분은 처음에 낯설 수 있어요. 성향에 맞는 기관을 같이 고민해요."),
+    ("장담하지 않아요", "“무조건 합격”은 없어요. 대신 준비할 수 있는 건 빠짐없이 같이 챙겨요."),
+]
+START_COMMUNITY = [
+    ("chat", "오픈카톡방", "공고 소식, 지원 고민, 시강 질문을 편하게 나눠요."),
+    ("video", "온라인 밋업", "국내외 강사가 화면으로 만나 경험을 나눠요."),
+    ("globe", "나라별 현지 이야기", "이번 주는 뉴질랜드, 다음 주는 스페인. 그 나라에서 일하는 선생님이 직접 들려줘요."),
+]
+START_TIERS = [
+    ("BASIC", "베이직", "서류에서 자꾸 멈추는 분", ["이력서 첨삭", "자기소개서 첨삭"], False),
+    ("DELUXE", "디럭스", "서류는 통과했는데 시강·면접이 걱정인 분", ["자기소개서 첨삭", "시범강의 코칭", "면접 코칭"], True),
+    ("ALL-IN-ONE", "올인원", "처음부터 끝까지 같이 가고 싶은 분", ["디럭스 전 과정", "대면 + 원격 병행", "지원 전략부터 합격 후 적응까지"], False),
+]
+ICONS = {
+    "chat": '<path d="M4 5h16v11H8l-4 4z"/>',
+    "video": '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/>',
+    "globe": '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>',
+    "book": '<path d="M2 5h6a4 4 0 0 1 4 4v11a3 3 0 0 0-3-3H2zM22 5h-6a4 4 0 0 0-4 4v11a3 3 0 0 1 3-3h7z"/>',
+    "map": '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+}
+
+
+def icon(name: str) -> str:
+    return (f'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '
+            f'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{ICONS[name]}</svg>')
+
+
+def start_numbers(jobs: list[dict]) -> dict:
+    """What the live notices say, for section 07. Hourly fees only from
+    domestic and online notices (overseas pay is in other currencies).
+    No 신입 가능 or all-time counts: Saramin's 경력무관 staff posts inflate
+    the first, and closed notices leave the DB, so the second undercounts."""
+    home = [job for job in jobs if job["scope"] != "overseas"]
+    rates = sorted(max(job["rates"]) for job in home if job.get("rates"))
+    return {
+        "live": len(jobs),
+        "orgs": len({job["org"] for job in jobs if job.get("institution_name")}),
+        "unpaid_pct": round(100 * (len(home) - len(rates)) / len(home)) if home else None,
+        "rated": len(rates),
+        "median": rates[len(rates) // 2] if rates else None,
+    }
+
+
+def render_start(jobs: list[dict], config: dict, today: dt.date) -> str:
+    n = start_numbers(jobs)
+    soon = '<a class="btn btn-lg btn-line" aria-disabled="true" tabindex="-1">{}</a>'
+
+    def stagger(items: list[str]) -> str:
+        return "".join(item.replace("<<i>>", str(i)) for i, item in enumerate(items))
+
+    pains = stagger([
+        f'<article class="pain" style="--i:<<i>>"><span class="q">Q{i + 1:02d}</span><h3>{e(t)}</h3><p>{e(d)}</p></article>'
+        for i, (t, d) in enumerate(START_PAINS)
+    ])
+    gaps = stagger([
+        f'<div class="row" style="--i:<<i>>"><span class="n">{i + 1:02d}</span><h3>{e(a)}</h3><p>{e(b)}</p></div>'
+        for i, (a, b) in enumerate(START_GAPS)
+    ])
+    helps = stagger([
+        f'<div class="row" style="--i:<<i>>"><span class="n">{i + 1:02d}</span><h3>{e(t)}</h3><p>{e(d)}</p></div>'
+        for i, (t, d) in enumerate(START_HELP)
+    ])
+    timeline = stagger([
+        f'<div class="tl" style="--i:<<i>>"><time>{y}</time><h3>{e(t)}</h3><p>{e(d)}</p></div>'
+        for y, t, d in START_TIMELINE
+    ])
+    steps = stagger([
+        f'<div class="step" style="--i:<<i>>"><span class="dot">{i + 1}</span><div class="card"><h3>{e(t)}</h3>'
+        f'<p>{e(d)}</p><ul>{"".join(f"<li>{e(x)}</li>" for x in pts)}</ul></div></div>'
+        for i, (t, d, pts) in enumerate(START_STEPS)
+    ])
+    promises = stagger([
+        f'<div class="row" style="--i:<<i>>"><span class="n">{i + 1:02d}</span><h3>{e(t)}</h3><p>{e(d)}</p></div>'
+        for i, (t, d) in enumerate(START_PROMISES)
+    ])
+    community = stagger([
+        f'<article class="card-c" style="--i:<<i>>"><span class="ic">{icon(ic)}</span><h3>{e(t)}</h3><p>{e(d)}</p>'
+        f'<span class="tag">준비 중</span></article>'
+        for ic, t, d in START_COMMUNITY
+    ])
+    tiers = stagger([
+        f'<article class="tier{" pick" if pick else ""}" style="--i:<<i>>"><span class="lv">{lv}</span><h3>{e(name)}</h3>'
+        f'<p>{e(who)}</p><ul>{"".join(f"<li>{e(x)}</li>" for x in items)}</ul>'
+        f'<a class="btn btn-lg {"btn-white" if pick else "btn-gray"}" aria-disabled="true" tabindex="-1">준비 중</a></article>'
+        for lv, name, who, items, pick in START_TIERS
+    ])
+    top = max(rate for _, rate in FIELD_RATES)
+    bars = stagger([
+        f'<div class="bar-row" style="--i:<<i>>"><span class="label">{e(label)}</span>'
+        f'<span class="track"><i style="--w:{rate / top * 100:.0f}%"></i></span><b>{rate // 10_000}만{f" {rate % 10_000 // 1000}천" if rate % 10_000 else ""}원</b></div>'
+        for label, rate in FIELD_RATES
+    ])
+
+    def num(value: int | None, unit: str, label: str, i: int) -> str:
+        if not value:
+            return ""
+        return (f'<div class="num" style="--i:{i}"><strong><span data-count="{value}">{value:,}</span><small>{unit}</small></strong>'
+                f'<span>{label}</span></div>')
+
+    nums = "".join([
+        num(n["live"], "건", "지금 지원할 수 있는 공고", 0),
+        num(n["orgs"], "곳", "공고를 낸 기관", 1),
+        num(n["unpaid_pct"], "%", "강사료를 숫자로 밝히지 않은 국내·온라인 공고. 비교할 기준이 없는 게 당연해요", 2),
+        num(n["median"] if n["rated"] >= 5 else None, "원", f"시급이 적힌 공고 {n['rated']}건의 중간값", 3),
+    ])
+
+    body = f"""<div class="start-bar" aria-hidden="true"><i></i></div>
+<main class="start">
+
+<section class="hero-start">
+<div class="inner hero-copy" data-reveal>
+<span class="eyebrow fade">한국어 강사, 처음이세요?</span>
+<h1 class="h-xl" style="margin-top:22px"><span class="ln"><span style="--i:0">자격증은 땄는데,</span></span><span class="ln"><span style="--i:1">어디서부터 <span class="accent">시작하죠?</span></span></span></h1>
+<p class="lead fade">막막한 건 실력 탓이 아니에요. 아직 아무도 알려주지 않았을 뿐이에요.</p>
+<div class="hero-cta fade"><a class="btn btn-lg btn-dark" href="index.html">지금 올라온 공고 보기</a><a class="btn btn-lg btn-line" href="#pains">천천히 읽어 볼게요</a></div>
+</div>
+<span class="scroll-cue" aria-hidden="true">SCROLL</span>
+</section>
+
+<section id="pains" class="soft">
+<div class="inner">
+<div class="sec-head" data-reveal><span class="eyebrow"><b>01</b> 혹시 이런 고민 있으세요?</span>
+<h2 class="h-lg">자격증은 땄는데,<br>다음 한 걸음이 안 보여요</h2>
+<p class="lead">많은 선생님이 같은 자리에서 멈춰요. 하나라도 해당되면, 이 페이지는 선생님을 위한 거예요.</p></div>
+<div data-reveal><div class="pain-grid" data-stagger>{pains}</div></div>
+</div>
+</section>
+
+<section class="dark">
+<div class="inner">
+<span class="eyebrow" data-reveal><b>02</b> 왜 이렇게 막막할까요</span>
+<div class="scrub" data-scrub style="margin-top:28px">
+<p><span data-words>고민은 달라도 원인은 하나예요.</span></p>
+<p><span data-words>문제는 실력이 아니라</span> <span class="accent" data-words>정보예요.</span></p>
+<p><span data-words>현직자에게는 별것 아닌 정보가, 입문자에게는</span> <span class="accent" data-words>꿀팁이에요.</span></p>
+</div>
+<div class="split" style="margin-top:96px">
+<div class="sec-head" data-reveal><h3 class="h-lg" style="font-size:clamp(24px,2.6vw,34px)">현직자에게 당연한 것,<br>입문자는 처음 듣는 것</h3>
+<p class="lead">아무도 일부러 숨기지 않았어요. 다만 아무도 정리해 주지 않았을 뿐이에요.</p></div>
+<div data-reveal><div class="rows" data-stagger>{gaps}</div></div>
+</div>
+</div>
+</section>
+
+<section>
+<div class="inner split">
+<div class="sec-head" data-reveal><span class="eyebrow"><b>03</b> 혼자 고민하지 않게</span>
+<h2 class="h-lg">현직자가 직접<br>보고, 말해 드려요</h2>
+<p class="lead">인터넷 일반론이 아니라, 선생님 서류와 수업을 직접 보고 피드백해요.</p></div>
+<div data-reveal><div class="rows" data-stagger>{helps}</div></div>
+</div>
+</section>
+
+<section class="dark">
+<div class="inner profile">
+<div data-reveal>
+<span class="eyebrow"><b>04</b> 누가 알려주나요?</span>
+<h2 class="h-lg">구다영 선생님</h2>
+<p class="lead">어학당, 대학, 기업, 해외와 온라인까지. 한국어 강사가 가는 여러 길을 직접 걸어왔어요. 담임도, 주임도 해 봤기에 조직 안쪽 사정을 알아요.</p>
+<div class="stats-mini">
+<div><strong><span data-count="11">11</span>년+</strong><span>한국어 교육</span></div>
+<div><strong><span data-count="5">5</span>곳</strong><span>어학당 근무</span></div>
+<div><strong><span data-count="1">1</span>급</strong><span>한국어교원 자격</span></div>
+</div>
+<div class="badge-list">{"".join(f"<span>{e(p)}</span>" for p in START_PATHS)}</div>
+</div>
+<div data-reveal><div class="timeline" data-progress data-stagger>{timeline}</div></div>
+</div>
+</section>
+
+<section class="soft">
+<div class="inner">
+<div class="sec-head center" data-reveal><span class="eyebrow"><b>05</b> 어떻게 준비하나요</span>
+<h2 class="h-lg">이력서부터 면접까지,<br>한 단계씩 같이 가요</h2>
+<p class="lead">한 번에 다 하려면 막막해요. 지금 선생님이 있는 단계부터 시작해요.</p></div>
+<div data-reveal><div class="steps" data-stagger><span class="steps-line" data-progress aria-hidden="true"></span>{steps}</div></div>
+</div>
+</section>
+
+<section>
+<div class="inner split">
+<div class="sec-head" data-reveal><span class="eyebrow"><b>06</b> 약속</span>
+<h2 class="h-lg">좋은 말만 하지 않아요.<br>현실 그대로 말해요</h2>
+<p class="lead">시급도, 조직 분위기도 있는 그대로 알려 드려요. 그래야 선생님이 맞는 선택을 할 수 있어요.</p></div>
+<div data-reveal><div class="rows" data-stagger>{promises}</div></div>
+</div>
+</section>
+
+<section class="dark">
+<div class="inner">
+<div class="sec-head" data-reveal><span class="eyebrow"><b>07</b> 숫자로 보면</span>
+<h2 class="h-lg">막연한 소문 말고,<br>공고 데이터로 봐요</h2>
+<p class="lead">이 사이트에 모인 실제 공고를 세어 봤어요. {today.year}년 {today.month}월 {today.day}일 기준이에요.</p></div>
+<div data-reveal><div class="nums" data-stagger>{nums}</div></div>
+<div class="pay-bars" data-reveal>
+<h3>현직자가 겪은 시간당 강사료, 높은 쪽 기준</h3>
+<div data-stagger style="display:grid;gap:16px">{bars}</div>
+<p class="fine-dark">현직 강사가 직접 받거나 들은 금액이에요. 기관과 경력, 학위에 따라 달라요.</p>
+<p style="margin-top:28px"><a class="btn btn-lg btn-white" href="pay.html">내 강사료로 실수령 계산해 보기</a></p>
+</div>
+</div>
+</section>
+
+<section class="soft">
+<div class="inner">
+<div class="sec-head" data-reveal><span class="eyebrow"><b>08</b> 같이 가요</span>
+<h2 class="h-lg">혼자 찾지 말고,<br>같이 나눠요</h2>
+<p class="lead">국내외 선생님들이 정보를 나누는 자리를 준비하고 있어요.</p></div>
+<div data-reveal><div class="cards" data-stagger>{community}</div></div>
+</div>
+</section>
+
+<section>
+<div class="inner">
+<div class="sec-head center" data-reveal><span class="eyebrow"><b>09</b> 필요한 만큼만</span>
+<h2 class="h-lg">지금 선생님에게<br>필요한 만큼 골라요</h2>
+<p class="lead">무료로 시작해서, 더 필요할 때 한 단계씩. 억지로 권하지 않아요.</p></div>
+<div data-reveal><div class="cards" data-stagger style="margin-bottom:16px">
+<article class="card-c" style="--i:0"><span class="ic">{icon("map")}</span><h3>무료 가이드</h3><p>지원처 고르기, 시범강의 기본 구성, 어학당 용어 정리.</p><span class="tag">준비 중</span></article>
+<article class="card-c" style="--i:1"><span class="ic">{icon("book")}</span><h3>전자책</h3><p>이력서부터 면접까지 단계별 정리와 현직자 이야기.</p><span class="tag">준비 중</span></article>
+</div></div>
+<div data-reveal><div class="tiers" data-stagger>{tiers}</div></div>
+<p class="lead" style="margin:28px auto 0;text-align:center;font-size:15px">가격과 진행 방식은 곧 안내해 드릴게요.</p>
+</div>
+</section>
+
+<section class="dark final">
+<div class="inner" data-reveal>
+<span class="eyebrow">첫 걸음</span>
+<h2 class="h-xl">혼자 막막해하지 마세요</h2>
+<p class="lead" style="margin-inline:auto">처음 한 번이 가장 어려워요. 그 한 번, 같이 넘어 봐요.</p>
+<div class="hero-cta"><a class="btn btn-lg btn-white" href="index.html">공고 보러 가기</a>{soon.format("오픈카톡방 (준비 중)").replace("btn-line", "btn-ghost")}</div>
+</div>
+</section>
+
+</main>
+<script src="assets/start.js?v={asset_version("start.js")}" defer></script>"""
+    head = f'<link rel="stylesheet" href="assets/start.css?v={asset_version("start.css")}">'
+    return page(f"처음이세요? 한국어 강사 첫 취업 준비 · {SITE_NAME}",
+                "한국어교원 자격증은 땄는데 막막하신가요? 현직 강사가 이력서, 시범강의, 면접 준비와 어학당 현실을 있는 그대로 알려 드려요.",
+                body, root="", config=config, canonical=absolute(config, "start.html"), active="start", extra_head=head)
+
+
 def absolute(config: dict, path: str) -> str | None:
     base = config.get("site_url")
     return f"{base.rstrip('/')}/{path}" if base else None
@@ -1237,7 +1526,7 @@ def render_sitemap(jobs: list[dict], config: dict, today: dt.date) -> str | None
     if not config.get("site_url"):
         return None
     service_pages = ["resume.html", "demo.html"] if services_on(config) else []
-    urls = ["index.html", "pay.html"] + service_pages + [job["path"] for job in jobs if not job.get("external")]
+    urls = ["index.html", "start.html", "pay.html"] + service_pages + [job["path"] for job in jobs if not job.get("external")]
     entries = "".join(f"<url><loc>{e(absolute(config, u))}</loc><lastmod>{today.isoformat()}</lastmod></url>" for u in urls)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{entries}</urlset>\n'
 
@@ -1273,6 +1562,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     write = lambda rel, text: (out_dir / rel).write_text(text, encoding="utf-8")
     write("index.html", render_index(jobs, config, collected_at))
     write("pay.html", render_pay(config))
+    write("start.html", render_start(jobs, config, today))
     if services_on(config):
         write("demo.html", render_demo(config))
         write("resume.html", render_resume(config))
