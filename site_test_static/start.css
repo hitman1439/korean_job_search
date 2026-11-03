@@ -115,8 +115,8 @@
 .badge-list span { padding: 8px 14px; border-radius: 999px; background: var(--ink-2); border: 1px solid var(--ink-line); font-size: 14px; color: rgba(255,255,255,.82); }
 .stats-mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 40px; background: var(--ink-line); border: 1px solid var(--ink-line); border-radius: 16px; overflow: hidden; }
 .stats-mini div { background: var(--ink); padding: 22px 18px; }
-.stats-mini strong { display: block; font-size: clamp(30px, 3.4vw, 42px); font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
-.stats-mini div > span { display: block; margin-top: 4px; font-size: 13px; color: var(--ink-text); }
+.stats-mini strong { display: block; white-space: nowrap; font-size: clamp(28px, 2.8vw, 38px); font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.stats-mini div > span { display: block; word-break: keep-all; margin-top: 4px; font-size: 13px; color: var(--ink-text); }
 .timeline { position: relative; padding-left: 32px; }
 .timeline::before, .timeline::after { content: ""; position: absolute; left: 5px; top: 8px; bottom: 8px; width: 2px; }
 .timeline::before { background: var(--ink-line); }

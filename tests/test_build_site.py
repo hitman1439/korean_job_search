@@ -285,10 +285,11 @@ class BuildTests(unittest.TestCase):
         self.assertIn('data-count="50">50</span><small>%</small></strong><span>강사료를 숫자로 밝히지 않은', start)
         self.assertNotIn("중간값", start)
         self.assertNotIn("신입 가능", start.split("<main")[1].split("</main>")[0].replace("신입 가능이라고", ""))
-        # Name and career only, never the resume's contact details.
-        self.assertIn("구다영 선생님", start)
-        self.assertNotIn("010-", start)
-        self.assertNotIn("@naver.com", start)
+        # The teacher stays anonymous: no name, school, company or contact.
+        self.assertIn("현직 한국어 강사", start)
+        for clue in ("구다영", "경희대", "연성대", "인천대", "부천대", "숭실대", "서울대", "강서대", "국제언어대학원",
+                     "IES", "쉐브론", "포스코", "LA 한국교육원", "비상교육", "010-", "@naver.com"):
+            self.assertNotIn(clue, start)
 
     def test_pay_calculator_is_public(self):
         conn = sqlite3.connect(self.db)
