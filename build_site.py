@@ -1337,12 +1337,11 @@ def render_start(config: dict) -> str:
 <div class="inner">
 <span class="eyebrow" data-reveal><b>02</b> 왜 막막할까요</span>
 <div class="scrub" data-scrub style="margin-top:28px">
-<p><span data-words>자격증 과정에서는 가르치는 법을 배워요.</span></p>
-<p><span data-words>하지만 어디에, 어떻게 지원하는지는</span> <span class="accent" data-words>배우지 않아요.</span></p>
+<p><span data-words>현장에 가서야</span></p>
+<p style="margin-top:0"><span class="accent" data-words>알게 되는 것들</span></p>
 </div>
-<div class="split" style="margin-top:96px">
-<div class="sec-head" data-reveal><h3 class="h-lg" style="font-size:clamp(24px,2.6vw,34px)">현장에 가서야<br>알게 되는 것들</h3>
-<p class="lead">일을 시작하면 금방 알게 되지만, 시작하기 전에는 물어볼 곳이 마땅치 않은 이야기들이에요.</p></div>
+<div class="split" style="margin-top:80px">
+<div class="sec-head" data-reveal><p class="lead" style="margin-top:0">일을 시작하면 금방 알게 되지만, 시작하기 전에는 물어볼 곳이 마땅치 않은 이야기들이에요.</p></div>
 <div data-reveal><div class="rows" data-stagger>{rows(START_GAPS)}</div></div>
 </div>
 </div>
