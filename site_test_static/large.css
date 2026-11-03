@@ -105,3 +105,6 @@ body { line-height: 1.5; }
 .map-pop .btn + .btn { margin-top: 8px; }
 .map-pop li .go.review { background: #d9480f; }
 .map-pop li .go.review:hover { background: #b83d0c; }
+
+/* Header stays on screen so the 합격으로 가는 길 menu can jump at any point. */
+.top { position: sticky; top: 0; z-index: 30; background: rgba(255, 255, 255, .92); backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px); }

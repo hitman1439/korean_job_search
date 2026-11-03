@@ -195,12 +195,12 @@
   .hero-start { min-height: auto; padding-block: 88px 112px !important; }
 }
 
-/* 합격대비 코스 step pages */
-.course-head { padding-block: clamp(48px, 7vw, 88px) clamp(40px, 6vw, 72px) !important; background: var(--soft); }
-.course-head .lead { max-width: 720px; }
-.course-steps { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 40px; }
+/* 합격으로 가는 길: one page, the menu jumps to each tip section */
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+.start section[id] { scroll-margin-top: 76px; }
+@media (max-width: 700px) { .start section[id] { scroll-margin-top: 136px; } }
+.way { background: var(--soft); padding-block: clamp(72px, 10vw, 128px) clamp(48px, 7vw, 80px) !important; }
+.course-steps { display: flex; flex-wrap: wrap; gap: 8px; }
 .course-steps a { padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--bg); color: var(--text-3); font-size: 15px; text-decoration: none; }
 .course-steps a:hover { border-color: var(--text); color: var(--text); }
-.course-steps a[aria-current="page"] { background: var(--text); border-color: var(--text); color: #fff; font-weight: 600; }
-.course-body { padding-block: clamp(56px, 8vw, 104px) !important; }
-.course-nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 40px; }
+.tips { padding-block: clamp(72px, 9vw, 120px) !important; }

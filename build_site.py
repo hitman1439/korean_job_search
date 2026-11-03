@@ -522,8 +522,9 @@ def alerts_on(config: dict) -> bool:
     return bool(config.get("alert_endpoint"))
 
 
-# 합격으로 가는 길(가제): test build only. Short, basic tips per step: the
-# owner shares experience, not lessons; the detail lives in the e-book.
+# 합격으로 가는 길(가제): test build only. One long page (start.html): the
+# 들어가며 part, then a section of short, basic tips per step; the menu jumps
+# to each. The owner shares experience, not lessons; detail is in the e-book.
 WAY_NAME = "합격으로 가는 길"
 COURSE_PAGES = [
     ("prep-documents", "서류전형 준비", "서류는 내용보다 먼저 형식에서 떨어지는 경우가 많아요. 제출 전에 이것부터 확인해 보세요.", [
@@ -583,8 +584,8 @@ def header(root: str, active: str, with_services: bool = False, with_alerts: boo
     if with_course:
         # Test build only: 합격으로 가는 길 opens on click (app.js). 근무 후기 has
         # no menu entry; job pages and map pins link to it.
-        here = active == "start" or any(active == slug for slug, _, _, _ in COURSE_PAGES)
-        items = [("start", "start.html", "들어가며")] + [(slug, f"{slug}.html", title) for slug, title, _, _ in COURSE_PAGES]
+        here = active == "start"
+        items = [("start", "start.html", "들어가며")] + [(slug, f"start.html#{slug}", title) for slug, title, _, _ in COURSE_PAGES]
         panel = "".join(link(key, f"{root}{href}", label) for key, href, label in items)
         nav += (f'<div class="menu{" is-here" if here else ""}" data-menu>'
                 f'<button type="button" class="menu-btn" aria-expanded="false" aria-controls="menuCourse">{WAY_NAME}'
@@ -1366,6 +1367,19 @@ def render_start(config: dict) -> str:
     ])
     chapters = "".join(f"<li><b>{i + 1:02d}</b>{e(t)}</li>" for i, (t, _) in enumerate(START_BOOK))
     soon_book = '<a class="btn btn-lg {cls}" aria-disabled="true" tabindex="-1">전자책 준비 중</a>'
+    way_chips = "".join(f'<a href="#{slug}">{n + 1}. {e(title)}</a>' for n, (slug, title, _, _) in enumerate(COURSE_PAGES))
+    tip_sections = "".join(
+        f'''<section id="{slug}" class="tips{" soft" if n % 2 else ""}">
+<div class="inner split">
+<div class="sec-head" data-reveal><span class="eyebrow"><b>{n + 1}/{len(COURSE_PAGES)}</b> {WAY_NAME}</span>
+<h2 class="h-lg">{e(title)}</h2>
+<p class="lead">{e(intro)}</p></div>
+<div data-reveal><div class="rows" data-stagger>{rows(tips)}</div></div>
+</div>
+</section>
+'''
+        for n, (slug, title, intro, tips) in enumerate(COURSE_PAGES)
+    )
 
     body = f"""<div class="start-bar" aria-hidden="true"><i></i></div>
 <main class="start">
@@ -1429,6 +1443,15 @@ def render_start(config: dict) -> str:
 </div>
 </section>
 
+<section id="way" class="way">
+<div class="inner" data-reveal>
+<span class="eyebrow">{WAY_NAME}</span>
+<h2 class="h-lg">서류부터 면접까지,<br>단계마다 꼭 챙길 TIP</h2>
+<p class="lead">기본적이지만 놓치기 쉬운 것들만 짧게 모았어요. 더 자세한 이야기는 전자책에 담고 있어요.</p>
+<nav class="course-steps" aria-label="{WAY_NAME} 단계" style="margin:32px 0 0">{way_chips}</nav>
+</div>
+</section>
+{tip_sections}
 <section id="ebook" class="soft">
 <div class="inner">
 <div class="ebook" data-reveal>
@@ -1468,48 +1491,6 @@ def render_start(config: dict) -> str:
     return page(f"{WAY_NAME} · 한국어 강사 첫 취업 준비 · {SITE_NAME}",
                 "한국어교원 자격증은 땄는데 어디부터 지원해야 할지 막막하신가요? 현직 강사가 지원처 고르기, 이력서, 시범강의, 면접, 합격 후 첫 학기까지 정리했어요.",
                 body, root="", config=config, canonical=absolute(config, "start.html"), active="start", extra_head=head)
-
-
-def render_course_page(config: dict, slug: str, title: str, intro: str, topics: list[tuple[str, str]]) -> str:
-    """One step of 합격으로 가는 길 (test build only): short, basic tips.
-    The fuller story is in the e-book."""
-    steps = [(s, t) for s, t, _, _ in COURSE_PAGES]
-    i = next(n for n, (s, _) in enumerate(steps) if s == slug)
-    prev_link = f'<a class="btn btn-line" href="{steps[i - 1][0]}.html">‹ {e(steps[i - 1][1])}</a>' if i else '<span></span>'
-    next_link = (f'<a class="btn btn-line" href="{steps[i + 1][0]}.html">{e(steps[i + 1][1])} ›</a>'
-                 if i + 1 < len(steps) else '<a class="btn btn-line" href="index.html">공고 보러 가기 ›</a>')
-    rows = "".join(
-        f'<div class="row" style="--i:{n}"><span class="n">{n + 1:02d}</span><h3>{e(t)}</h3><p>{e(d)}</p></div>'
-        for n, (t, d) in enumerate(topics)
-    )
-    chips = "".join(
-        f'<a href="{s}.html"{" aria-current=\"page\"" if s == slug else ""}>{n + 1}. {e(t)}</a>' for n, (s, t) in enumerate(steps)
-    )
-    body = f"""<main class="start course">
-<section class="course-head">
-<div class="inner">
-<nav class="course-steps" aria-label="{WAY_NAME} 단계">{chips}</nav>
-<div data-reveal>
-<span class="eyebrow"><b>{i + 1:02d}</b> {WAY_NAME}</span>
-<h1 class="h-lg">{e(title)}</h1>
-<p class="lead">{e(intro)}</p>
-</div>
-</div>
-</section>
-<section class="course-body">
-<div class="inner split">
-<div class="sec-head" data-reveal><h2 class="h-lg" style="font-size:clamp(24px,2.6vw,34px)">꼭 챙길 TIP</h2>
-<p class="lead">기본적이지만 놓치기 쉬운 것들이에요. 더 자세한 이야기는 전자책에 담고 있어요.</p>
-<p style="margin-top:24px"><a class="btn btn-line" href="start.html#ebook">전자책 살펴보기</a></p></div>
-<div data-reveal><div class="rows" data-stagger>{rows}</div></div>
-</div>
-<div class="inner course-nav">{prev_link}{next_link}</div>
-</section>
-</main>
-<script src="assets/start.js?v={asset_version("start.js")}" defer></script>"""
-    head = f'<link rel="stylesheet" href="assets/start.css?v={asset_version("start.css")}">'
-    return page(f"{title} TIP · {WAY_NAME} · {SITE_NAME}", f"한국어 강사 {title}: {intro}", body, root="", config=config,
-                canonical=absolute(config, f"{slug}.html"), active=slug, extra_head=head)
 
 
 def absolute(config: dict, path: str) -> str | None:
@@ -1562,8 +1543,6 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
         write("resume.html", render_resume(config))
     if config.get("test"):
         write("start.html", render_start(config))
-        for slug, title, intro, topics in COURSE_PAGES:
-            write(f"{slug}.html", render_course_page(config, slug, title, intro, topics))
         write("rating.html", render_rating(config, orgs))
         write("review.html", render_review(config, orgs))
     files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)

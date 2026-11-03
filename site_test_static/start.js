@@ -26,7 +26,7 @@
       if (entry.target.hasAttribute("data-count")) count(entry.target);
       seen.unobserve(entry.target);
     });
-  }, { threshold: 0.18, rootMargin: "0px 0px -8% 0px" });
+  }, { threshold: 0, rootMargin: "0px 0px -12% 0px" });
   document.querySelectorAll("[data-reveal]").forEach(function (el) { seen.observe(el); });
 
   function count(el) {

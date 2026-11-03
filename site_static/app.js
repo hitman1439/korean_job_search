@@ -895,6 +895,10 @@
   }
   Array.prototype.forEach.call(menus, function (menu) {
     var btn = menu.querySelector(".menu-btn");
+    // Links that jump within the same page leave no reload to close the menu.
+    menu.querySelector(".menu-panel").addEventListener("click", function (event) {
+      if (event.target.closest("a")) close(menu);
+    });
     btn.addEventListener("click", function () {
       var open = btn.getAttribute("aria-expanded") === "true";
       Array.prototype.forEach.call(menus, close);

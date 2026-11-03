@@ -284,12 +284,9 @@ class BuildTests(unittest.TestCase):
                      "IES", "쉐브론", "포스코", "LA 한국교육원", "비상교육", "010-", "@naver.com"):
             self.assertNotIn(clue, start)
 
-    def test_test_menu_has_course_dropdown_and_step_pages(self):
-        slugs = [slug for slug, _, _, _ in bs.COURSE_PAGES]
-        # Public build: no dropdown, no step pages.
+    def test_test_menu_jumps_to_tip_sections_on_one_page(self):
+        # Public build: no dropdown.
         self.assertNotIn("data-menu", self.index)
-        for slug in slugs:
-            self.assertFalse((self.out / f"{slug}.html").exists())
         test_out = Path(self.tmp.name) / "site_test"
         bs.build(self.db, test_out, {**self.config, "test": True}, TODAY, BUILT_AT)
         index = (test_out / "index.html").read_text(encoding="utf-8")
@@ -299,12 +296,14 @@ class BuildTests(unittest.TestCase):
         self.assertLess(nav.index("합격으로 가는 길"), nav.index("실수령 계산기"))
         self.assertIn('aria-expanded="false" aria-controls="menuCourse"', nav)
         self.assertNotIn("근무 후기", nav)
+        # Every step is a section of start.html; the menu jumps to it.
+        start = (test_out / "start.html").read_text(encoding="utf-8")
         for slug, title in [("prep-documents", "서류전형 준비"), ("prep-video", "시강영상 준비"),
                             ("prep-lesson-plan", "교안 준비"), ("prep-demo", "대면시강 준비"), ("prep-interview", "면접 준비")]:
-            self.assertIn(f'href="{slug}.html">{title}</a>', nav)
-            page = (test_out / f"{slug}.html").read_text(encoding="utf-8")
-            self.assertIn(f'href="{slug}.html" aria-current="page">{title}</a>', page)
-            self.assertIn("noindex", page)
+            self.assertIn(f'href="start.html#{slug}">{title}</a>', nav)
+            self.assertIn(f'<section id="{slug}"', start)
+            self.assertFalse((test_out / f"{slug}.html").exists())
+        self.assertIn("마감일과 마감 시각 확인", start)
         self.assertTrue((test_out / "rating.html").exists())
 
     def test_pay_calculator_is_public(self):
