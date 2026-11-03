@@ -522,37 +522,54 @@ def alerts_on(config: dict) -> bool:
     return bool(config.get("alert_endpoint"))
 
 
-# 합격대비 코스(가제): test build only. Each step gets its own page.
+# 합격으로 가는 길(가제): test build only. Short, basic tips per step: the
+# owner shares experience, not lessons; the detail lives in the e-book.
+WAY_NAME = "합격으로 가는 길"
 COURSE_PAGES = [
-    ("prep-documents", "서류전형 준비", "서류에서 멈추지 않게, 이력서와 자기소개서를 준비해요.", [
-        ("경력을 쓰는 순서", "지원하는 기관에 맞춰 어떤 경력을 먼저, 얼마나 자세히 쓸지."),
-        ("자기소개서와 교육관", "기관이 읽고 싶어 하는 내용과 흔히 하는 실수."),
-        ("기관마다 달라지는 점", "어학당, 센터, 학교, 온라인. 같은 경력도 쓰는 법이 달라요."),
-        ("제출 서류 확인", "자격증 사본, 경력증명서, 학위증명서처럼 미리 챙겨 둘 서류."),
+    ("prep-documents", "서류전형 준비", "서류는 내용보다 먼저 형식에서 떨어지는 경우가 많아요. 제출 전에 이것부터 확인해 보세요.", [
+        ("마감일과 마감 시각 확인", "날짜만 보지 말고 시각까지 보세요. 도착 기준인지 발송 기준인지도 공고마다 달라요."),
+        ("제출 방법 확인", "이메일, 우편, 방문, 온라인 접수 중 기관이 정한 방법으로만 받는 곳이 많아요."),
+        ("지정 양식 사용", "기관 양식이 있다면 꼭 그 양식으로 내세요. 내 이력서를 그대로 내면 다시 써야 할 수 있어요."),
+        ("파일 이름과 형식", "공고에 파일 이름 규칙(예: 이름_지원분야)이나 PDF 같은 형식이 정해져 있는지 보세요."),
+        ("증빙 서류는 미리", "자격증 사본, 경력증명서, 학위증명서는 발급에 며칠 걸릴 수 있어요."),
+        ("지원 자격 다시 읽기", "학위, 자격 급수, 경력 시간 요건을 다시 확인하세요. 애매하면 지원 전에 기관에 물어보는 편이 나아요."),
+        ("제출 후 접수 확인", "이메일로 냈다면 접수 확인 회신이 왔는지 보세요. 오지 않으면 정중하게 확인을 요청해도 괜찮아요."),
     ]),
-    ("prep-video", "시강영상 준비", "영상으로 시범강의를 내라는 곳이 늘고 있어요. 찍기 전에 알아 둘 것들이에요.", [
-        ("영상의 길이와 구성", "정해진 시간 안에 수업 하나를 보여 주는 흐름."),
-        ("촬영 환경", "화면, 소리, 판서가 잘 보이게 찍는 법. 비싼 장비가 없어도 돼요."),
-        ("학습자 없이 수업하기", "카메라 앞에서 혼자 수업할 때 어색하지 않게 진행하는 법."),
-        ("제출 형식", "파일 형식과 용량, 링크로 낼 때 주의할 점."),
+    ("prep-video", "시강영상 준비", "시범강의를 영상으로 받는 곳이 있어요. 찍기 전에 이것만은 챙기세요.", [
+        ("요구 조건부터 확인", "영상 길이, 대상 급수, 문법 항목, 편집 허용 여부를 먼저 보세요."),
+        ("정해진 길이 지키기", "길이를 넘기면 내용이 좋아도 감점될 수 있어요."),
+        ("화질보다 소리", "목소리가 또렷하게 들리는 게 먼저예요. 조용한 곳에서, 마이크를 가까이 두세요."),
+        ("얼굴과 판서가 함께 보이게", "칠판이나 자료가 화면에 잘 들어오는지, 역광은 아닌지 확인하세요."),
+        ("학습자가 있다고 생각하고", "질문하고 잠시 기다리는 흐름을 살리면 혼자 찍어도 수업처럼 보여요."),
+        ("편집은 최소한으로", "편집을 허용하지 않는 곳도 있어요. 처음부터 끝까지 한 번에 찍는 연습을 해 두세요."),
+        ("제출 전 끝까지 다시 보기", "소리 끊김, 파일 재생, 링크 공개 범위를 마지막으로 확인하세요."),
     ]),
-    ("prep-lesson-plan", "교안 준비", "시범강의의 바탕이 되는 교안을 짜는 법이에요.", [
-        ("교안 양식", "기관이 양식을 줄 때와 주지 않을 때."),
-        ("수업의 흐름", "도입, 제시, 연습, 활용, 마무리. 단계마다 무엇을 보여 줄지."),
-        ("시간 배분", "10분, 15분, 20분. 시간에 맞춰 덜어 내는 법."),
-        ("자주 나오는 문법 항목", "급수별로 시범강의에 자주 주어지는 항목."),
+    ("prep-lesson-plan", "교안 준비", "교안은 시범강의의 설계도예요. 기본 틀만 잘 잡아도 흐름이 분명해져요.", [
+        ("대상과 목표를 한 줄로", "몇 급 학습자가 수업이 끝나면 무엇을 할 수 있게 되는지 먼저 적으세요."),
+        ("수업 흐름 잡기", "도입, 제시, 연습, 활용, 마무리. 단계가 보이게 나누세요."),
+        ("단계별 시간 적기", "각 단계에 몇 분을 쓸지 적어 두면 실제 시강에서 시간을 지키기 쉬워요."),
+        ("예문은 수준에 맞게", "예문 속 어휘가 목표 급수를 넘지 않는지 확인하세요."),
+        ("교사 말과 학습자 활동 구분", "교사가 할 말과 학습자가 할 활동이 한눈에 구분되게 쓰세요."),
+        ("양식과 분량 지키기", "기관이 정한 양식과 쪽수가 있다면 그대로 맞추세요."),
+        ("출력본 준비", "대면 시강이라면 심사위원 수만큼 출력해 가면 좋아요."),
     ]),
-    ("prep-demo", "대면시강 준비", "심사위원 앞에서 직접 하는 시범강의를 준비해요.", [
-        ("시작과 진행", "인사부터 마무리까지, 실제 수업처럼 진행하는 법."),
-        ("판서와 시선", "칠판과 화면 쓰는 법, 심사위원을 학습자처럼 대하는 법."),
-        ("시간 지키기", "준비한 것을 다 못 해도 당황하지 않는 법."),
-        ("시강 뒤 질문", "왜 그렇게 가르쳤는지 묻는 질문에 답하는 법."),
+    ("prep-demo", "대면시강 준비", "심사위원 앞에서 하는 시범강의예요. 긴장을 줄이는 기본기를 정리했어요.", [
+        ("일찍 도착해서 환경 확인", "판서 도구, 화면 연결, 자료가 제대로 나오는지 미리 보세요."),
+        ("심사위원을 학습자로", "심사위원에게 설명하지 말고, 실제 학생에게 하듯 수업하세요."),
+        ("판서는 크고 정리되게", "뒤에서도 보이는 크기로, 쓸 위치를 미리 정해 두세요."),
+        ("말은 천천히, 쉬운 말로", "학습자 수준에 맞는 교사 말을 쓰는지 보는 곳이 많아요."),
+        ("시간을 눈으로 확인", "시계를 보이는 곳에 두고 단계마다 남은 시간을 확인하세요."),
+        ("끝까지 마무리하기", "준비한 것을 다 못 했더라도 정리하고 마무리하는 단계는 꼭 보여 주세요."),
+        ("질문에는 짧게 이유를", "왜 그렇게 가르쳤는지 물으면 의도를 짧고 분명하게 설명하세요."),
     ]),
-    ("prep-interview", "면접 준비", "서류와 시강을 통과했다면 마지막 단계예요.", [
-        ("자주 나오는 질문", "지원 동기, 수업 경험, 학습자 관리, 동료와의 협업."),
-        ("내 경력에 맞는 답", "경력이 짧아도, 길어도 설득력 있게 말하는 법."),
-        ("기관마다 다른 분위기", "어학당, 센터, 학교 면접에서 보는 것이 조금씩 달라요."),
-        ("마지막 질문", "“궁금한 점 있으세요?”에 무엇을 물어볼지."),
+    ("prep-interview", "면접 준비", "서류와 시강을 지났다면 마지막 단계예요. 기본만 챙겨도 훨씬 편해져요.", [
+        ("기관 알아보기", "교육 과정, 급수 체계, 학습자 구성을 기관 누리집에서 미리 보세요."),
+        ("지원 동기 정리", "왜 이 기관인지 한두 문장으로 말할 수 있게 준비하세요."),
+        ("경력은 1분 안에", "내 경력을 짧게 소개하는 말을 미리 연습해 두세요."),
+        ("자주 나오는 질문", "학습자 관리, 수업 중 문제 상황, 동료와의 협업에 대한 질문이 자주 나와요."),
+        ("가능한 근무 조건 정리", "가능한 요일과 시간대, 원하는 시수를 미리 정리해 두세요."),
+        ("단정한 복장과 시간 엄수", "기본이지만 첫인상을 좌우해요."),
+        ("마지막 질문 하나", "“궁금한 점 있으세요?”에 물어볼 것을 하나쯤 준비해 가세요."),
     ]),
 ]
 
@@ -564,13 +581,13 @@ def header(root: str, active: str, with_services: bool = False, with_alerts: boo
 
     nav = link("jobs", f"{root}index.html", "채용공고")
     if with_course:
-        # Test build only: 합격대비 코스 opens on click (app.js). 근무 후기 has
+        # Test build only: 합격으로 가는 길 opens on click (app.js). 근무 후기 has
         # no menu entry; job pages and map pins link to it.
         here = active == "start" or any(active == slug for slug, _, _, _ in COURSE_PAGES)
-        items = [("start", "start.html", "코스 소개")] + [(slug, f"{slug}.html", title) for slug, title, _, _ in COURSE_PAGES]
+        items = [("start", "start.html", "들어가며")] + [(slug, f"{slug}.html", title) for slug, title, _, _ in COURSE_PAGES]
         panel = "".join(link(key, f"{root}{href}", label) for key, href, label in items)
         nav += (f'<div class="menu{" is-here" if here else ""}" data-menu>'
-                f'<button type="button" class="menu-btn" aria-expanded="false" aria-controls="menuCourse">합격대비 코스'
+                f'<button type="button" class="menu-btn" aria-expanded="false" aria-controls="menuCourse">{WAY_NAME}'
                 f'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'
                 f'<div class="menu-panel" id="menuCourse" hidden>{panel}</div></div>')
     nav += link("pay", f"{root}pay.html", "실수령 계산기")
@@ -1448,14 +1465,14 @@ def render_start(config: dict) -> str:
 </main>
 <script src="assets/start.js?v={asset_version("start.js")}" defer></script>"""
     head = f'<link rel="stylesheet" href="assets/start.css?v={asset_version("start.css")}">'
-    return page(f"처음이세요? 한국어 강사 첫 취업 준비 · {SITE_NAME}",
+    return page(f"{WAY_NAME} · 한국어 강사 첫 취업 준비 · {SITE_NAME}",
                 "한국어교원 자격증은 땄는데 어디부터 지원해야 할지 막막하신가요? 현직 강사가 지원처 고르기, 이력서, 시범강의, 면접, 합격 후 첫 학기까지 정리했어요.",
                 body, root="", config=config, canonical=absolute(config, "start.html"), active="start", extra_head=head)
 
 
 def render_course_page(config: dict, slug: str, title: str, intro: str, topics: list[tuple[str, str]]) -> str:
-    """One step of 합격대비 코스 (test build only). For now a short outline of
-    what the step covers; the full guide comes with the e-book."""
+    """One step of 합격으로 가는 길 (test build only): short, basic tips.
+    The fuller story is in the e-book."""
     steps = [(s, t) for s, t, _, _ in COURSE_PAGES]
     i = next(n for n, (s, _) in enumerate(steps) if s == slug)
     prev_link = f'<a class="btn btn-line" href="{steps[i - 1][0]}.html">‹ {e(steps[i - 1][1])}</a>' if i else '<span></span>'
@@ -1471,9 +1488,9 @@ def render_course_page(config: dict, slug: str, title: str, intro: str, topics: 
     body = f"""<main class="start course">
 <section class="course-head">
 <div class="inner">
-<nav class="course-steps" aria-label="합격대비 코스 단계">{chips}</nav>
+<nav class="course-steps" aria-label="{WAY_NAME} 단계">{chips}</nav>
 <div data-reveal>
-<span class="eyebrow"><b>STEP {i + 1}</b> 합격대비 코스</span>
+<span class="eyebrow"><b>{i + 1:02d}</b> {WAY_NAME}</span>
 <h1 class="h-lg">{e(title)}</h1>
 <p class="lead">{e(intro)}</p>
 </div>
@@ -1481,9 +1498,9 @@ def render_course_page(config: dict, slug: str, title: str, intro: str, topics: 
 </section>
 <section class="course-body">
 <div class="inner split">
-<div class="sec-head" data-reveal><h2 class="h-lg" style="font-size:clamp(24px,2.6vw,34px)">이 단계에서<br>다룰 내용</h2>
-<p class="lead">자세한 내용은 정리하고 있어요. 전자책에도 함께 담을 예정이에요.</p>
-<p style="margin-top:24px"><a class="btn btn-dark" href="start.html#ebook">전자책 살펴보기</a></p></div>
+<div class="sec-head" data-reveal><h2 class="h-lg" style="font-size:clamp(24px,2.6vw,34px)">꼭 챙길 TIP</h2>
+<p class="lead">기본적이지만 놓치기 쉬운 것들이에요. 더 자세한 이야기는 전자책에 담고 있어요.</p>
+<p style="margin-top:24px"><a class="btn btn-line" href="start.html#ebook">전자책 살펴보기</a></p></div>
 <div data-reveal><div class="rows" data-stagger>{rows}</div></div>
 </div>
 <div class="inner course-nav">{prev_link}{next_link}</div>
@@ -1491,7 +1508,7 @@ def render_course_page(config: dict, slug: str, title: str, intro: str, topics: 
 </main>
 <script src="assets/start.js?v={asset_version("start.js")}" defer></script>"""
     head = f'<link rel="stylesheet" href="assets/start.css?v={asset_version("start.css")}">'
-    return page(f"{title} · 합격대비 코스 · {SITE_NAME}", f"한국어 강사 {title}: {intro}", body, root="", config=config,
+    return page(f"{title} TIP · {WAY_NAME} · {SITE_NAME}", f"한국어 강사 {title}: {intro}", body, root="", config=config,
                 canonical=absolute(config, f"{slug}.html"), active=slug, extra_head=head)
 
 

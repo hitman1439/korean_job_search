@@ -203,4 +203,4 @@
 .course-steps a:hover { border-color: var(--text); color: var(--text); }
 .course-steps a[aria-current="page"] { background: var(--text); border-color: var(--text); color: #fff; font-weight: 600; }
 .course-body { padding-block: clamp(56px, 8vw, 104px) !important; }
-.course-nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 64px; padding-top: 28px; border-top: 1px solid var(--line-strong); }
+.course-nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 40px; }

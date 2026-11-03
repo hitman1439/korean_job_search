@@ -272,7 +272,7 @@ class BuildTests(unittest.TestCase):
         self.assertIn("assets/start.css?v=", start)
         self.assertIn("noindex", start)
         self.assertTrue((test_out / "assets" / "start.js").is_file())
-        self.assertIn('href="start.html" aria-current="page">코스 소개</a>', start)
+        self.assertIn('href="start.html" aria-current="page">들어가며</a>', start)
         self.assertIn('<div class="menu is-here" data-menu>', start)
         # For now the page leads to the e-book only, not to paid coaching.
         self.assertIn('id="ebook"', start)
@@ -294,9 +294,9 @@ class BuildTests(unittest.TestCase):
         bs.build(self.db, test_out, {**self.config, "test": True}, TODAY, BUILT_AT)
         index = (test_out / "index.html").read_text(encoding="utf-8")
         nav = index.split('<nav class="nav"')[1].split("</nav>")[0]
-        # 채용공고 → 합격대비 코스(드롭다운) → 실수령 계산기; 근무 후기 has no menu entry.
-        self.assertLess(nav.index("채용공고"), nav.index("합격대비 코스"))
-        self.assertLess(nav.index("합격대비 코스"), nav.index("실수령 계산기"))
+        # 채용공고 → 합격으로 가는 길(드롭다운) → 실수령 계산기; 근무 후기 has no menu entry.
+        self.assertLess(nav.index("채용공고"), nav.index("합격으로 가는 길"))
+        self.assertLess(nav.index("합격으로 가는 길"), nav.index("실수령 계산기"))
         self.assertIn('aria-expanded="false" aria-controls="menuCourse"', nav)
         self.assertNotIn("근무 후기", nav)
         for slug, title in [("prep-documents", "서류전형 준비"), ("prep-video", "시강영상 준비"),
