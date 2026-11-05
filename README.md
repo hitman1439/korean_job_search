@@ -311,3 +311,21 @@ python3 build_site.py --test   # 테스트 사이트 → site_test/ (noindex, �
 - 결과 페이지는 `GET /test/api/ratings?org=…`(문장별 합계·응답 수, 근무 조건 집계, 한마디와 작성 월)를 읽습니다. 모인 후기를 터미널에서 보려면 `python3 serve.py --reviews`
 - **강사료 실수령 계산기** (`pay.html`, 공개 사이트에도 있음): 시간당 강사료, 시수(주당·한 달 중 선택), 계약 형태(프리랜서 3.3% · 4대보험 근로자)를 고르면 한 주·한 달 실수령액과 세전을 크게 보여 주고, 공제 항목과 계산식은 접어 둡니다. 계산은 `site_static/pay.js` 한 곳에 있고(`tests/test_pay.py`가 node로 검사), 보험료율은 파일 맨 위 `RATES`에 있어 **매년 1월·7월에 확인**해야 합니다. 소득세는 간이세액표 산식을 1인 가구로 근사한 값입니다. 공고에 "시간당 ○○원"이 있으면 공고 상세의 강의료 옆에 `실수령 계산` 링크가 붙고, 오른쪽 사이드에 그 공고 시급으로 주당 시수만 넣으면 주급·월급(3.3% 실수령과 세전)이 나오는 작은 계산 칸이 뜹니다(시급이 여러 개면 골라 씀).
 - 큰 글씨를 공개 사이트에 반영할 때는 `large.css`의 규칙을 `site_static/styles.css`에 합치고 `page()`의 `large.css` 링크를 없애면 됩니다.
+
+## 순방문자 (`traffic_report.py`, `/admin`)
+
+Cloudflare의 visits는 검색·광고·스크래퍼 봇까지 다 세어서 실제 독자 수와 크게 다릅니다. `traffic_report.py`가 Cloudflare GraphQL API에서 최근 7일 요청을 받아 아래를 빼고 **오늘 · 최근 3일 · 최근 7일** 순방문자(IP 기준)와 페이지뷰를 냅니다. 날짜는 한국 시간 기준입니다.
+
+- **대표님**: 최근 30일 동안 `/test`나 `/admin`을 비밀번호로 연 IP, 그리고 그 IP에서 쓴 안드로이드 기기(UA에 `Build/`가 있는 것)
+- **Cloudflare 요청**: `/cdn-cgi/*` (Web Analytics 비콘, Bot Fight Mode 검사)
+- **해킹 탐색**: `wp-`·`.php`·`.env`·`.git` 같은 경로, 이상한 포트, 비밀번호 없는 `/test`·`/admin` 시도를 한 IP는 그 IP의 요청을 모두 뺌
+- **봇**: 봇 UA와 Cloudflare 인증 봇, HTML만 받아 가는 IP, 15쪽 이상 훑는 IP, 데이터센터 IP, 오래된·가짜 브라우저 UA, 비콘 없는 해외 IP
+
+```bash
+python3 traffic_report.py          # 표로 보기
+python3 traffic_report.py --json   # JSON
+```
+
+- `secrets.env`에 `CLOUDFLARE_API_TOKEN`(권한: Zone Analytics Read)이 있어야 합니다. 영역 ID는 자동으로 찾고, `CLOUDFLARE_ZONE_ID`로 지정할 수도 있습니다.
+- `serve.py`의 **`/admin`**이 같은 값을 보여 줍니다. `/test`와 같은 관리자 비밀번호가 필요하고, 응답은 캐시되지 않습니다. 계산 결과는 10분 동안 재사용하며 `/admin?refresh=1`로 바로 새로 받습니다. 공개 `robots.txt`도 `/admin`을 막습니다.
+- 휴대폰은 IP가 자주 바뀌어 한 사람이 여러 명으로 잡힐 수 있습니다. 판정 기준은 `traffic_report.py` 맨 위 정규식에 있습니다.

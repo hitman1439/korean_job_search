@@ -1218,6 +1218,8 @@ def saramin_jobs(leads: list[dict], jobs: list[dict], today: dt.date) -> list[di
             "institution_name": lead.get("institution_name"),
             "location_text": "온라인" if online else location or None,
             "is_overseas": 1 if location.startswith("해외") else 0,
+            # "해외 > 일본" → 일본, so it joins the other 일본 jobs on the country cards.
+            "country": (location.removeprefix("해외").split() or [None])[0] if location.startswith("해외") else None,
             "deadline": deadline,
             "posted_at": lead.get("posted_at"),
             "first_seen_at": lead.get("first_seen_at"),
@@ -1508,9 +1510,21 @@ def render_sitemap(jobs: list[dict], config: dict, today: dt.date) -> str | None
     return f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{entries}</urlset>\n'
 
 
+# Crawlers that bring no visitors: AI training (not AI search, which can cite the
+# site) and SEO backlink tools. Google-Extended only opts out of AI training;
+# Googlebot search and Mediapartners-Google (AdSense) stay allowed.
+BLOCKED_BOTS = (
+    "GPTBot", "ClaudeBot", "anthropic-ai", "CCBot", "Google-Extended", "GoogleOther",
+    "Applebot-Extended", "Bytespider", "meta-externalagent", "cohere-ai", "Diffbot",
+    "AhrefsBot", "SemrushBot", "serpstatbot", "MJ12bot", "DotBot", "BLEXBot", "DataForSeoBot",
+)
+
+
 def render_robots(config: dict) -> str:
     sitemap = absolute(config, "sitemap.xml")
-    return "User-agent: *\nAllow: /\nDisallow: /test/\n" + (f"Sitemap: {sitemap}\n" if sitemap else "")
+    blocked = "".join(f"User-agent: {bot}\n" for bot in BLOCKED_BOTS) + "Disallow: /\n\n"
+    return (blocked + "User-agent: *\nAllow: /\nDisallow: /test/\nDisallow: /admin\n"
+            + (f"Sitemap: {sitemap}\n" if sitemap else ""))
 
 
 # --- build -------------------------------------------------------------------

@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import review_items  # noqa: E402
 import serve  # noqa: E402
+import traffic_report  # noqa: E402
 
 CLIENT = "0123456789abcdef0123456789abcdef"
 
@@ -132,7 +133,7 @@ class AdminGateTests(unittest.TestCase):
             (base / name / "index.html").write_text(text, encoding="utf-8")
         handler = type("H", (serve.Handler,), {
             "test_dir": base / "site_test", "reviews_path": base / "reviews.sqlite3", "admin": ("admin", "pw"),
-            "log_message": lambda *a: None,
+            "log_message": lambda *a: None, "traffic_cache": {}, "build_traffic": lambda self: cls.fake_report(),
         })
         cls.handler = handler
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), partial(handler, directory=str(base / "site")))
@@ -194,8 +195,51 @@ class AdminGateTests(unittest.TestCase):
         self.handler.admin = None
         try:
             self.assertEqual(self.fetch("/test/index.html", "pw")[0], 404)
+            self.assertEqual(self.fetch("/admin", "pw")[0], 404)
         finally:
             self.handler.admin = ("admin", "pw")
+
+    calls = 0
+
+    @classmethod
+    def fake_report(cls):
+        cls.calls += 1
+        if cls.calls > 99:
+            raise traffic_report.TrafficError("down")
+        window = lambda n: {"days": n, "from": "2026-11-01", "visitors": n * 10 + cls.calls, "pageviews": n * 30,
+                            "countries": [("KR", 5)], "devices": {"PC": 5}, "noise": {"owner": 1, "bot": 2, "attack": 3}}
+        return {"today": "2026-11-05", "generated_at": "2026-11-05 12:00", "windows": [window(1), window(3), window(7)],
+                "daily": [{"date": "2026-11-05", "visitors": 4, "pageviews": 9}], "pages": [("첫 화면", 3)]}
+
+    def test_admin_needs_the_password(self):
+        for path in ("/admin", "/admin/", "/%61dmin"):
+            self.assertEqual(self.fetch(path)[0], 401)
+        self.assertEqual(self.fetch("/admin", "wrong")[0], 401)
+
+    def test_admin_shows_net_visitors_uncached_and_reuses_the_report(self):
+        type(self).calls = 0
+        self.handler.traffic_cache.clear()
+        status, text, headers = self.fetch("/admin", "pw")
+        self.assertEqual(status, 200)
+        self.assertIn("no-store", headers["Cache-Control"])
+        self.assertIn("noindex", text)
+        for label in ("오늘", "최근 3일", "최근 7일"):
+            self.assertIn(label, text)
+        self.assertIn("11<span>명", text)
+        self.fetch("/admin/", "pw")
+        self.assertEqual(type(self).calls, 1)
+        self.assertIn("12<span>명", self.fetch("/admin?refresh=1", "pw")[1])
+        self.assertEqual(self.fetch("/admin/other", "pw")[0], 404)
+
+    def test_admin_keeps_the_last_report_when_cloudflare_fails(self):
+        self.handler.traffic_cache.clear()
+        type(self).calls = 0
+        self.fetch("/admin", "pw")
+        type(self).calls = 100
+        status, text, _ = self.fetch("/admin?refresh=1", "pw")
+        self.assertEqual(status, 200)
+        self.assertIn("down", text)
+        self.assertIn(">11<span>명", text)  # the first report, kept
 
 
 if __name__ == "__main__":

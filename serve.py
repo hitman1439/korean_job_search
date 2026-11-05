@@ -11,6 +11,9 @@ still have it saved"; nothing about the visitor is kept.
 secrets.env. Without a password set, /test does not exist. Reviews sent from
 /test/review.html land in reviews.sqlite3 with the day only, no visitor data.
 
+/admin shows net visitors for the last 1 / 3 / 7 days (traffic_report.py,
+from Cloudflare) behind the same password.
+
   python serve.py                      # serve site/ on 127.0.0.1:8080
   python serve.py --report             # print save counts per job
   python serve.py --reviews            # print 근무 후기 per institution
@@ -28,6 +31,8 @@ import os
 import re
 import sqlite3
 import sys
+import threading
+import time
 from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -35,6 +40,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import review_items
+import traffic_report
 
 
 ROOT = Path(__file__).resolve().parent
@@ -45,6 +51,8 @@ DEFAULT_TEST = ROOT / "site_test"
 DEFAULT_REVIEWS = ROOT / "reviews.sqlite3"
 DEFAULT_SECRETS = ROOT / "secrets.env"
 TEST_PREFIX = "/test"
+ADMIN_PREFIX = "/admin"
+TRAFFIC_TTL = 600  # seconds a Cloudflare report is reused
 
 JOB_ID = re.compile(r"\d{1,9}")
 CLIENT_ID = re.compile(r"[0-9a-f]{32}")
@@ -179,15 +187,26 @@ def test_path(raw: str) -> str | None:
     return None
 
 
+def admin_page(raw: str) -> str | None:
+    """The path for an /admin URL, else None."""
+    path = unquote(urlsplit(raw).path)
+    if path == ADMIN_PREFIX or path.startswith(ADMIN_PREFIX + "/"):
+        return path
+    return None
+
+
 class Handler(SimpleHTTPRequestHandler):
     stats_path: Path = DEFAULT_STATS
     reviews_path: Path = DEFAULT_REVIEWS
     test_dir: Path = DEFAULT_TEST
     admin: tuple[str, str] | None = None
+    secrets_path: Path = DEFAULT_SECRETS
+    traffic_cache: dict = {}
+    traffic_lock = threading.Lock()
 
     def end_headers(self) -> None:
         # Admin pages must never sit in a shared cache (Cloudflare, proxies).
-        if test_path(self.path) is not None:
+        if test_path(self.path) is not None or admin_page(self.path) is not None:
             self.send_header("Cache-Control", "no-store, private")
         super().end_headers()
 
@@ -203,8 +222,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.directory = site
 
     def admin_gate(self) -> bool:
-        """For /test URLs: True if the request may go on; otherwise the reply is sent."""
-        if test_path(self.path) is None:
+        """For /test and /admin URLs: True if the request may go on; otherwise the reply is sent."""
+        if test_path(self.path) is None and admin_page(self.path) is None:
             return True
         if not self.admin:
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -227,6 +246,13 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.admin_gate():
             return
         url = urlsplit(self.path)
+        page = admin_page(self.path)
+        if page is not None:
+            if page in (ADMIN_PREFIX, ADMIN_PREFIX + "/"):
+                self.get_admin("refresh" in parse_qs(url.query))
+            else:
+                self.send_error(HTTPStatus.NOT_FOUND)
+            return
         if url.path == TEST_PREFIX + "/api/ratings":
             self.get_ratings(parse_qs(url.query).get("org", [""])[0].strip())
             return
@@ -246,9 +272,34 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def build_traffic(self) -> dict:
+        return traffic_report.build_report(self.secrets_path)
+
+    def get_admin(self, refresh: bool) -> None:
+        """Net visitors from Cloudflare, rebuilt at most every TRAFFIC_TTL seconds."""
+        cache = type(self).traffic_cache
+        with type(self).traffic_lock:
+            report, error = cache.get("report"), None
+            if refresh or not report or time.monotonic() - cache.get("at", 0) > TRAFFIC_TTL:
+                try:
+                    report = self.build_traffic()
+                    cache.update(report=report, at=time.monotonic())
+                except traffic_report.TrafficError as err:
+                    error = f"새 값을 받지 못했어요: {err}" + (" (이전 값을 보여 드려요)" if report else "")
+        body = traffic_report.render_html(report, error).encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_HEAD(self) -> None:
-        if self.admin_gate():
-            super().do_HEAD()
+        if not self.admin_gate():
+            return
+        if admin_page(self.path) is not None:
+            self.send_error(HTTPStatus.METHOD_NOT_ALLOWED)
+            return
+        super().do_HEAD()
 
     def read_body(self, limit: int) -> bytes | None:
         try:
@@ -365,7 +416,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--db", default=str(DEFAULT_JOBS), help="Jobs database, for titles in --report")
     parser.add_argument("--test-site", default=str(DEFAULT_TEST), help="Admin-only staging build served at /test/")
     parser.add_argument("--reviews-db", default=str(DEFAULT_REVIEWS), help="근무 후기 database")
-    parser.add_argument("--secrets", default=str(DEFAULT_SECRETS), help="KEY=value file with ADMIN_PASSWORD")
+    parser.add_argument("--secrets", default=str(DEFAULT_SECRETS),
+                        help="KEY=value file with ADMIN_PASSWORD (and CLOUDFLARE_API_TOKEN for /admin)")
     parser.add_argument("--report", action="store_true", help="Print save counts and exit")
     parser.add_argument("--reviews", action="store_true", help="Print 근무 후기 per institution and exit")
     args = parser.parse_args(argv)
@@ -383,8 +435,9 @@ def main(argv: list[str] | None = None) -> int:
     Handler.reviews_path = Path(args.reviews_db)
     Handler.test_dir = Path(args.test_site)
     Handler.admin = load_admin(Path(args.secrets))
+    Handler.secrets_path = Path(args.secrets)
     if not Handler.admin:
-        print("note: ADMIN_PASSWORD is not set, so /test is off", file=sys.stderr)
+        print("note: ADMIN_PASSWORD is not set, so /test and /admin are off", file=sys.stderr)
     elif not (Handler.test_dir / "index.html").is_file():
         print(f"note: no test build at {Handler.test_dir.resolve()}; run python build_site.py --test", file=sys.stderr)
     server = ThreadingHTTPServer((args.bind, args.port), partial(Handler, directory=str(site)))

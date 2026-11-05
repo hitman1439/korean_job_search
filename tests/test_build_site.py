@@ -167,6 +167,25 @@ class BuildTests(unittest.TestCase):
         self.assertIn('Powered by <a href="http://www.saramin.co.kr"', page)
         self.assertNotIn("application/ld+json", page)
 
+    def test_saramin_postings_count_in_their_scope(self):
+        self.add_leads()
+        conn = cj.init_db(self.db)
+        url = "https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx="
+        base = {"institution_name": "다라", "posted_at": "2026-10-20", "keyword": "한국어강사", "deadline": "2026-11-20"}
+        cj.save_lead(conn, {**base, "lead_key": "6", "title": "일본 한국어 강사", "location_text": "해외 > 일본",
+                            "saramin_url": url + "6"})
+        cj.save_lead(conn, {**base, "lead_key": "7", "title": "온라인 화상 한국어 튜터", "location_text": "서울 > 전체",
+                            "saramin_url": url + "7"})
+        conn.commit()
+        conn.close()
+        out = Path(self.tmp.name) / "site_test"
+        stats = bs.build(self.db, out, {**self.config, "test": True}, TODAY, BUILT_AT)
+        self.assertEqual(stats["jobs"], stats["domestic"] + stats["overseas"] + stats["online"])
+        index = (out / "index.html").read_text(encoding="utf-8")
+        self.assertIn('data-id="s6" data-scope="overseas" data-country="일본"', index)
+        self.assertIn('data-id="s7" data-scope="online"', index)
+        self.assertIn('data-id="s1" data-scope="domestic"', index)
+
     def test_saramin_postings_stay_off_public_and_ad_builds(self):
         self.add_leads()
         public = Path(self.tmp.name) / "public"
@@ -231,7 +250,13 @@ class BuildTests(unittest.TestCase):
             self.assertNotIn("review.html", page)
             self.assertNotIn("rating.html", page)
             self.assertNotIn("data-review=", page)
-        self.assertIn("Disallow: /test/", (self.out / "robots.txt").read_text(encoding="utf-8"))
+        robots = (self.out / "robots.txt").read_text(encoding="utf-8")
+        self.assertIn("Disallow: /test/", robots)
+        # AI-training and SEO bots are shut out; search and AdSense crawlers are not named.
+        self.assertIn("User-agent: GPTBot\n", robots)
+        self.assertIn("User-agent: AhrefsBot\n", robots)
+        self.assertNotIn("Googlebot", robots)
+        self.assertNotIn("Mediapartners", robots)
 
     def test_test_build_adds_large_type_and_review(self):
         out = Path(self.tmp.name) / "site_test"
