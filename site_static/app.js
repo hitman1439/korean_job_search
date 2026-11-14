@@ -629,14 +629,7 @@
       search.addEventListener("compositionend", onSearch);
       search.addEventListener("search", onSearch);
     }
-    rows.forEach(function (row) {
-      row.querySelector(".pick").addEventListener("click", function () {
-        select(row.getAttribute("data-id"), true);
-        if (window.matchMedia("(max-width: 900px)").matches && mapBox) {
-          mapBox.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      });
-    });
+    // A tap on a list row is a plain link to the job page (no JS needed).
 
     var placed = jobs.filter(hasPlace);
     if (mapBox && placed.length) {

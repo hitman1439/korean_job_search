@@ -158,7 +158,9 @@ button, input, select { font: inherit; }
 .job-row .pick {
   flex: 1; min-width: 0; text-align: left; border: 0; background: transparent;
   padding: 14px 4px 14px 12px; color: var(--text); cursor: pointer;
+  display: block; text-decoration: none; border-radius: 16px;
 }
+.job-row .pick:hover { background: var(--fill); }
 .job-row .go {
   flex: 0 0 auto; align-self: center; margin: 0 10px 0 4px; padding: 8px 14px; min-height: 36px;
   display: inline-flex; align-items: center; border-radius: 10px; background: var(--fill);

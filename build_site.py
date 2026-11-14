@@ -632,12 +632,12 @@ def job_row(job: dict, root: str, review: bool = False) -> str:
     region = region_of(job)
     country_attr += f' data-region="{region}"' if region else ""
     return f"""<li class="job-row" data-id="{job['job_id']}" data-scope="{job['scope']}"{country_attr} data-newcomer="{1 if job.get('newcomer_ok') == 1 else 0}" data-demo="{1 if job.get('demo_lesson') == 1 else 0}" data-lat="{lat}" data-lng="{lng}" data-deadline="{e(job.get('deadline') or '')}" data-rate="{max(job['rates']) if job.get('rates') else ''}" data-posted="{e(posted_date(job))}" data-name="{e(job['org'])}" data-title="{e(job.get('title'))}" data-org="{e(job['org'] + ' · ' + job['place'])}" data-search="{e(search)}"{review_attr}>
-<button type="button" class="pick">
+<a class="pick" href="{root}{job["path"]}">
 <span class="badge {job['badge_class']}" data-badge="{e(job.get('deadline') or '')}">{e(job['badge'])}</span>
 <span class="job-title">{e(job.get('title'))}</span>
 <span class="job-org">{e(job['org'])} · {e(job['place'])}</span>
 <span class="chips">{chips}</span>
-</button>
+</a>
 {go_link(job, root)}
 </li>"""
 
