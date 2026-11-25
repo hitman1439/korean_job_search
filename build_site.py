@@ -192,17 +192,50 @@ def display_title(title: str | None) -> str:
     text = re.sub(r"^\(?제?\s*[\d\-]+\s*호\)\s*", "", text)
     # KBoard list titles end with the board's own status: "… 접수중 2026.07.22~2026.07.29".
     text = re.sub(r"\s+(?:접수중|접수\s*마감|마감|모집중)?\s*\d{4}\.\d{1,2}\.\d{1,2}\s*~\s*\d{4}\.\d{1,2}\.\d{1,2}\s*$", "", text)
+    # Boards that prefix their own label: "고려대학교 한국어 강사 채용 | [국제팀] 2026년 …".
+    head, bar, rest = text.partition(" | ")
+    if bar and rest.strip() and re.search(r"(?:채용|모집|초빙)$", head.strip()):
+        text = rest.strip()
+    # Short tags in front ("[공고]", "[국제팀]") and decorative bullets.
+    text = re.sub(r"^(?:\[[^\]]{1,8}\]\s*)+", "", text)
+    text = re.sub(r"\s*[⦁•●◆◇■□▶▷★☆※]+\s*", " ", text).strip()
     return text or "제목 미확인"
+
+
+# Names a notice sometimes leaves where the institution should be.
+VAGUE_ORGS = {"한국어", "한국어교육", "한국어강사", "한국어 강사", "강사", "채용", "기관", "교육원"}
+
+
+def display_org(job: dict) -> str:
+    """The institution as a reader would name it, without the board that carried it."""
+    org = (job.get("institution_name") or "").strip()
+    # "한국어교원소식 - 부산광역시교육청 다문화교육지원센터" → the part after the board's name.
+    org = re.sub(r"^[^-]{2,15}(?:소식|게시판|구인정보|채용정보)\s*-\s*", "", org)
+    if org and org not in VAGUE_ORGS:
+        return org
+    # The university's own news board ("영남대학교 소식") names it; a repost board does not.
+    source = job.get("source_name") or ""
+    found = re.match(r"(\S+(?:대학교|대학))\s", source)
+    if found and "재게시" not in source:
+        return found.group(1)
+    return org or "기관 미확인"
+
+
+# A deadline this far off is a misread date (a 2028 term start, say), not a deadline.
+MAX_DEADLINE_DAYS = 180
 
 
 def prepare(job: dict, today: dt.date) -> dict:
     job["title"] = display_title(job.get("title"))
+    far = days_until(job.get("deadline"), today)
+    if far is not None and far > MAX_DEADLINE_DAYS:
+        job["deadline"] = None
     job["scope"] = job_scope(job)
     days = days_until(job.get("deadline"), today)
     job["sort_days"] = days if days is not None else (10_000 if job.get("deadline") == "rolling" else 20_000)
     job["badge"], job["badge_class"] = deadline_badge(job.get("deadline"), today)
     job["place"] = place_text(job)
-    job["org"] = job.get("institution_name") or "기관 미확인"
+    job["org"] = display_org(job)
     job["path"] = f"jobs/{job['job_id']}.html"
     email = job.get("apply_email") or ""
     job["apply_email"] = email if re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", email) else None
@@ -637,8 +670,31 @@ def detail_facts(job: dict) -> list[tuple[str, str]]:
     return [(k, v) for k, v in facts if v]
 
 
+def row_meta(job: dict) -> str:
+    """The list row's second line: where, how much, and the two marks people filter by."""
+    items = [f'<span class="job-org">{e(job["org"])} · {e(job["place"])}</span>']
+    rates = job.get("rates")
+    if rates:
+        pay = f"{min(rates):,}~{max(rates):,}원" if len(rates) > 1 else f"{rates[0]:,}원"
+        items.append(f'<span class="meta-pay">시급 {pay}</span>')
+    if job.get("newcomer_ok") == 1:
+        items.append('<span class="flag">신입 가능</span>')
+    if job.get("demo_lesson") == 1:
+        items.append('<span class="flag">모의수업</span>')
+    if job.get("external"):
+        items.append('<span class="flag">사람인</span>')
+    return "".join(items)
+
+
+def row_badge(job: dict) -> str:
+    # No badge when the deadline is unknown: a grey "마감일 미정" on half the
+    # rows is only noise. The opened row still says so.
+    if not job.get("deadline"):
+        return ""
+    return f'<span class="badge {job["badge_class"]}" data-badge="{e(job["deadline"])}">{e(job["badge"])}</span>'
+
+
 def job_row(job: dict, root: str, review: bool = False) -> str:
-    chips = "".join(f'<span class="chip">{e(c)}</span>' for c in job["chips"])
     search = " ".join(str(x) for x in (job.get("title"), job["org"], job["place"], job.get("location_text")) if x).lower()
     lat = job["latitude"] if job["has_place"] else ""
     lng = job["longitude"] if job["has_place"] else ""
@@ -656,10 +712,8 @@ def job_row(job: dict, root: str, review: bool = False) -> str:
     return f"""<li class="job-row" data-id="{job['job_id']}" data-scope="{job['scope']}"{country_attr} data-newcomer="{1 if job.get('newcomer_ok') == 1 else 0}" data-demo="{1 if job.get('demo_lesson') == 1 else 0}" data-lat="{lat}" data-lng="{lng}" data-deadline="{e(job.get('deadline') or '')}" data-rate="{max(job['rates']) if job.get('rates') else ''}" data-posted="{e(posted_date(job))}" data-name="{e(job['org'])}" data-title="{e(job.get('title'))}" data-org="{e(job['org'] + ' · ' + job['place'])}" data-search="{e(search)}"{review_attr}>
 <div class="row-head">
 <a class="pick" href="{root}{job["path"]}" aria-expanded="false" aria-controls="{detail_id}">
-<span class="badge {job['badge_class']}" data-badge="{e(job.get('deadline') or '')}">{e(job['badge'])}</span>
-<span class="job-title">{e(job.get('title'))}</span>
-<span class="job-org">{e(job['org'])} · {e(job['place'])}</span>
-<span class="chips">{chips}</span>
+<span class="job-title">{row_badge(job)}{e(job.get('title'))}</span>
+<span class="job-meta">{row_meta(job)}</span>
 </a>
 {go_link(job, root)}
 </div>
@@ -702,7 +756,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
         scopes.append(("overseas", "해외", counts["overseas"]))
     scopes.append(("online", "온라인", counts["online"]))
     scope_buttons = "".join(
-        f'<button type="button" data-scope-btn="{key}" aria-pressed="{"true" if key == "all" else "false"}">{label} {count}</button>'
+        f'<button type="button" data-scope-btn="{key}" aria-pressed="{"true" if key == "all" else "false"}">{label} <span class="n">{count}</span></button>'
         for key, label, count in scopes
     )
     countries_view = f"""<div class="alt-view" data-view="countries" hidden>
@@ -720,33 +774,33 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 </form>
 <p class="alert-done" data-alert-done role="status" hidden></p>
 </section>""" if alerts_on(config) else ""
-    body = f"""<main class="wrap" data-board>
+    body = f"""<main class="wrap home" data-board>
 <section class="hero" aria-labelledby="headline">
-<div>
 <p class="eyebrow">{collected_at.month}월 {collected_at.day}일 {collected_at.hour}시에 새로 모았어요</p>
-<h1 id="headline" class="title-xl">지금 지원할 수 있는<br>한국어 강사 공고 <em>{len(jobs)}개</em></h1>
-</div>
+<h1 id="headline" class="title-xl">지금 지원할 수 있는 한국어 강사 공고 <em>{len(jobs)}개</em></h1>
 <div class="filters">
 <div class="seg" role="group" aria-label="근무 형태">{scope_buttons}</div>
+<label class="search"><span class="sr-only">기관명이나 지역 검색</span><input type="search" data-search-input placeholder="기관명, 지역으로 찾기"></label>
+</div>
+<div class="toggles" role="group" aria-label="조건">
 <button type="button" class="toggle" data-toggle="newcomer" aria-pressed="false">신입 가능</button>
 <button type="button" class="toggle" data-toggle="demo" aria-pressed="false">모의수업 있음</button>
 <button type="button" class="toggle" data-toggle="paid" aria-pressed="false">시급 나온 공고</button>
 <button type="button" class="toggle" data-toggle="saved" aria-pressed="false">저장한 공고 <span data-saved-count></span></button>
-<label class="search"><span class="sr-only">기관명이나 지역 검색</span><input type="search" data-search-input placeholder="기관명, 지역으로 찾기"></label>
 </div>
 </section>
 
 <div class="board">
 {countries_view}
 <section class="list-panel" aria-labelledby="listTitle">
-<div class="panel-head"><h2 id="listTitle">공고 목록</h2><span data-count>{len(jobs)}개</span></div>
-<div class="sort-bar" role="group" aria-label="정렬">
-<button type="button" data-sort="deadline" aria-pressed="true">마감순</button>
-<button type="button" data-sort="newest" aria-pressed="false">최신순</button>
-<button type="button" data-sort="pay" aria-pressed="false">시급순</button>
-<button type="button" data-sort="name" aria-pressed="false">가나다순</button>
-<button type="button" data-sort="near" aria-pressed="false">가까운순</button>
-</div>
+<div class="panel-head"><h2 id="listTitle"><span class="sr-only">공고 목록 </span><span data-count>{len(jobs)}개</span></h2>
+<label class="sort"><span class="sr-only">정렬</span><select data-sort-select>
+<option value="deadline">마감 빠른 순</option>
+<option value="newest">최신순</option>
+<option value="pay">시급 높은 순</option>
+<option value="name">가나다순</option>
+<option value="near">가까운 순 (내 위치)</option>
+</select></label></div>
 <p class="sort-note" data-sort-note role="status" hidden></p>
 <p class="local-note" data-saved-note hidden>저장한 공고와 지원 표시는 <strong>이 브라우저에만</strong> 남아요. 다른 기기나 다른 브라우저에서는 보이지 않고, 방문 기록·쿠키를 지우면 사라져요.</p>
 <div class="empty" data-empty hidden><p data-empty-title>조건에 맞는 공고가 아직 없어요</p><p data-empty-desc>{"알림을 켜 두면 올라오는 대로 알려 드려요." if alerts_on(config) else "다른 조건으로 찾아보세요."}</p></div>
@@ -763,7 +817,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 </main>"""
     description = f"한국어 강사·한국어교원 채용 공고 {len(jobs)}개. 어학당, 대학 언어교육원, 가족센터, 교육청 공고를 지도와 마감일 순으로 모았어요."
     return page(f"{SITE_NAME} · 한국어 강사 채용 공고 모음", description, body, root="", config=config,
-                canonical=absolute(config, "index.html"), active="jobs")
+                canonical=absolute(config, "index.html"), active="jobs", body_attrs=' class="page-home"')
 
 
 def service_blocks(config: dict, root: str) -> str:

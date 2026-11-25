@@ -153,7 +153,7 @@ class BuildTests(unittest.TestCase):
         self.assertIn('data-id="s1"', index)
         self.assertIn('href="jobs/s1.html"', index)
         self.assertIn('data-rate="30000"', index)
-        self.assertIn('<span class="chip">사람인</span>', index)
+        self.assertIn('<span class="flag">사람인</span>', index)
         self.assertIn('data-id="s3"', index)
         self.assertIn('data-deadline="rolling"', index)
         for left_out in ("지난 공고", "링크 없는 공고", "rec_idx=5"):
@@ -359,10 +359,10 @@ class BuildTests(unittest.TestCase):
         # The list: the highest fee for 시급순, a fee chip, the filter and sort buttons.
         index = (self.out / "index.html").read_text(encoding="utf-8")
         self.assertIn('data-rate="40000"', index)
-        self.assertIn('<span class="chip">시급 35,000~40,000원</span>', index)
+        self.assertIn('<span class="meta-pay">시급 35,000~40,000원</span>', index)
         self.assertIn('data-rate=""', index)
         self.assertIn('data-toggle="paid"', index)
-        self.assertIn('data-sort="pay"', index)
+        self.assertIn('<option value="pay">', index)
         other = self.job_page("세종학당재단")
         self.assertNotIn("data-pay-mini", other)
         self.assertNotIn("pay.js", other)
@@ -463,7 +463,7 @@ class BuildTests(unittest.TestCase):
         self.assertIn("모의수업이 있는 공고예요", job)
 
     def test_rows_carry_sort_keys(self):
-        self.assertIn('data-sort="near"', self.index)
+        self.assertIn('<option value="near">', self.index)
         self.assertRegex(self.index, r'data-posted="\d{4}-\d{2}-\d{2}" data-name="[^"]+"')
 
     def test_kakao_key_reaches_page_config(self):
@@ -535,6 +535,28 @@ class BadgeTests(unittest.TestCase):
             bs.display_title("성신여자대학교 국제교육원 한국어강사 모집 공고 접수중 2026.07.22~2026.07.29"),
             "성신여자대학교 국제교육원 한국어강사 모집 공고",
         )
+        self.assertEqual(bs.display_title("[공고] 숭실대학교 한국어교육원 한국어강사 채용 공고"), "숭실대학교 한국어교육원 한국어강사 채용 공고")
+        self.assertEqual(
+            bs.display_title("고려대학교 한국어 강사 채용 | [국제팀] 2026년 겨울학기 한국어 강사 모집공고"),
+            "2026년 겨울학기 한국어 강사 모집공고",
+        )
+        self.assertEqual(bs.display_title("명지대학교 한국어강사 모집 공고 ⦁ 인문(서울)캠퍼스 ⦁"), "명지대학교 한국어강사 모집 공고 인문(서울)캠퍼스")
+        # A bar that is part of the title itself stays.
+        self.assertEqual(bs.display_title("한국어 강사 | 서울"), "한국어 강사 | 서울")
+
+    def test_display_org_drops_board_names_and_vague_names(self):
+        self.assertEqual(bs.display_org({"institution_name": "한국어교원소식 - 부산광역시교육청 다문화교육지원센터"}),
+                         "부산광역시교육청 다문화교육지원센터")
+        self.assertEqual(bs.display_org({"institution_name": "한국어", "source_name": "영남대학교 소식(한국어 검색)"}), "영남대학교")
+        self.assertEqual(bs.display_org({"institution_name": "한국어", "source_name": "동신대학교 국제한국어학과 재게시"}), "한국어")
+        self.assertEqual(bs.display_org({"institution_name": None}), "기관 미확인")
+
+    def test_far_off_deadline_is_treated_as_unknown(self):
+        job = bs.prepare({"job_id": 1, "title": "강사", "deadline": "2028-06-14", "institution_name": "가"}, TODAY)
+        self.assertIsNone(job["deadline"])
+        self.assertEqual(job["badge"], "마감일 미정")
+        near = bs.prepare({"job_id": 2, "title": "강사", "deadline": "2026-12-01", "institution_name": "가"}, TODAY)
+        self.assertEqual(near["deadline"], "2026-12-01")
 
     def test_script_json_cannot_close_tag(self):
         self.assertNotIn("</script>", bs.json_for_script({"x": "</script><b>"}))

@@ -26,13 +26,14 @@ body { line-height: 1.5; }
 .job-row .go { padding: 8px 16px; min-height: 44px; font-size: 17px; }
 .job-title { font-size: 19px; }
 .mark { font-size: 15px; }
-.sort-bar button { min-height: 44px; padding: 0 14px; font-size: 17px; }
+.sort select { min-height: 48px; font-size: 17px; }
+.toggles .toggle { min-height: 46px; font-size: 17px; }
 .sort-note { font-size: 16px; }
 .dist { font-size: 16px; }
 .detail-sum, .detail-facts div { font-size: 18px; }
 .detail-facts div { grid-template-columns: 110px minmax(0, 1fr); }
 .local-note { font-size: 17px; }
-.job-org { font-size: 17px; }
+.job-meta { font-size: 17px; }
 .chip { font-size: 16px; }
 .badge { font-size: 16px; }
 .empty p:first-child { font-size: 19px; }
@@ -88,7 +89,8 @@ body { line-height: 1.5; }
 
 /* Narrow phones: larger text needs the label above its value. */
 @media (max-width: 480px) {
-  .facts div, .detail-facts div { grid-template-columns: minmax(0, 1fr); }
+  .facts div { grid-template-columns: minmax(0, 1fr); }
+  .detail-facts div { grid-template-columns: 84px minmax(0, 1fr); }
 }
 
 /* 기관 평가 entry points (test build only): orange so it reads apart from 자세히 보기. */

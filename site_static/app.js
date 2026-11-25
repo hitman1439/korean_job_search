@@ -263,15 +263,18 @@
           mapEl = el("div", "row-map-canvas");
           slot.appendChild(mapEl);
           map = new kakao.maps.Map(mapEl, { center: pos, level: 5 });
-          map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
-          var tag = el("span", "pin", "");
+          // On a phone the zoom bar covers half of this small map; pinch instead.
+          if (!window.matchMedia("(max-width: 600px)").matches) {
+            map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
+          }
+          // The row above already names the place, so the pin stays short.
+          var tag = el("span", "pin", "근무지");
           tag.setAttribute("aria-pressed", "true");
           pin = new kakao.maps.CustomOverlay({ position: pos, content: tag, yAnchor: 1 });
           pin.setMap(map);
         } else if (mapEl.parentNode !== slot) {
           slot.appendChild(mapEl);
         }
-        pin.getContent().textContent = job.name;
         pin.setPosition(pos);
         map.relayout();
         map.setLevel(5);
@@ -296,6 +299,7 @@
     // --- sorting ---------------------------------------------------------
     var list = board.querySelector(".jobs");
     var sortNote = board.querySelector("[data-sort-note]");
+    var sortSelect = board.querySelector("[data-sort-select]");
     // The visitor's position, asked for only when they pick 가까운순 and
     // kept in this page alone.
     var here = null;
@@ -345,9 +349,7 @@
       var ad = list.querySelector(".ad-slot");
       jobs.forEach(function (job) { list.appendChild(job.row); });
       if (ad && list.children[3]) list.insertBefore(ad, list.children[3]);
-      board.querySelectorAll("[data-sort]").forEach(function (b) {
-        b.setAttribute("aria-pressed", b.getAttribute("data-sort") === key ? "true" : "false");
-      });
+      if (sortSelect) sortSelect.value = key;
       showDistances(key === "near");
       if (key !== "near") sortNoteText("");
       // 가까운순 is not remembered, so a later visit never opens with a location prompt.
@@ -383,17 +385,18 @@
       }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 });
     }
 
-    board.querySelectorAll("[data-sort]").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var key = btn.getAttribute("data-sort");
+    if (sortSelect) {
+      sortSelect.addEventListener("change", function () {
+        var key = sortSelect.value;
         if (key !== "near") { sortBy(key); return; }
         askHere(function (ok, why) {
-          if (!ok) { sortNoteText(why); return; }
+          // Without a location the list keeps its order, so the menu goes back too.
+          if (!ok) { sortSelect.value = state.sort; sortNoteText(why); return; }
           sortBy("near");
           sortNoteText("내 위치에서 가까운 순이에요. 위치는 이 화면에서만 쓰고 저장하지 않아요. 온라인 공고는 맨 뒤에 있어요.");
         });
       });
-    });
+    }
 
     board.querySelectorAll("[data-scope-btn]").forEach(function (btn) {
       btn.addEventListener("click", function () {
