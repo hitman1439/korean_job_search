@@ -644,9 +644,10 @@ def job_row(job: dict, root: str, review: bool = False) -> str:
 
 def go_link(job: dict, root: str) -> str:
     # Tapping the row opens the job page; this button shows the job on the map
-    # instead. Jobs without a place (online, or not yet located) get none.
+    # instead. Jobs without a place (online, or not yet located) say so with a
+    # plain label, so the missing button doesn't look like a fault.
     if not job["has_place"]:
-        return ""
+        return '<span class="go none">지도 없음</span>'
     return f'<button type="button" class="go" data-map aria-label="{e(job["org"])} 위치를 지도에서 보기">지도보기</button>'
 
 

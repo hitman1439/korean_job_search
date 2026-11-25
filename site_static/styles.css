@@ -168,6 +168,7 @@ button, input, select { font: inherit; }
   border: 0; cursor: pointer;
 }
 .job-row .go:hover { background: var(--blue-soft); color: var(--blue); }
+.job-row .go.none, .job-row .go.none:hover { background: transparent; color: var(--text-4); font-weight: 500; cursor: default; }
 .job-title { display: block; margin-top: 8px; font-size: 16px; font-weight: 600; line-height: 1.45; }
 .marks { display: flex; gap: 6px; }
 .marks:not(:empty) { margin-top: 6px; }
