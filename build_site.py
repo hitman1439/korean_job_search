@@ -196,6 +196,10 @@ def display_title(title: str | None) -> str:
     head, bar, rest = text.partition(" | ")
     if bar and rest.strip() and re.search(r"(?:채용|모집|초빙)$", head.strip()):
         text = rest.strip()
+    # A repost board's own name around the title:
+    # "한국어교원소식 - 일본인 대상 … 채용 공고 | 국제한국어학과".
+    text = re.sub(r"^[^-|]{2,15}(?:소식|게시판)\s*-\s*", "", text)
+    text = re.sub(r"\s*\|\s*[^|]{2,12}(?:학과|학부|센터|게시판)$", "", text)
     # Short tags in front ("[공고]", "[국제팀]") and decorative bullets.
     text = re.sub(r"^(?:\[[^\]]{1,8}\]\s*)+", "", text)
     text = re.sub(r"\s*[⦁•●◆◇■□▶▷★☆※]+\s*", " ", text).strip()
@@ -532,7 +536,7 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
 </head>
 <body{body_attrs}>
 {private_bar}
-{header(root, active, services_on(config), alerts_on(config), bool(test))}
+{header(root, active, services_on(config), alerts_on(config), bool(test), board_on(config))}
 {body}
 {footer(root)}
 <script>window.SITE = {json_for_script(site_config)};</script>
@@ -547,6 +551,12 @@ def services_on(config: dict) -> bool:
     shows only the free job board. --with-services turns them on; the private
     build always shows them so they can be worked on."""
     return bool(config.get("services") or config.get("private"))
+
+
+def board_on(config: dict) -> bool:
+    """The TIP 게시판 is hidden on the public site for now: the test and
+    private builds show it, and --with-board puts it on the public site."""
+    return bool(config.get("board") or config.get("test") or config.get("private"))
 
 
 def alerts_on(config: dict) -> bool:
@@ -609,7 +619,7 @@ COURSE_PAGES = [
 
 
 def header(root: str, active: str, with_services: bool = False, with_alerts: bool = False,
-           with_course: bool = False) -> str:
+           with_course: bool = False, with_board: bool = False) -> str:
     def link(key: str, href: str, label: str) -> str:
         return f'<a href="{href}"{" aria-current=\"page\"" if key == active else ""}>{label}</a>'
 
@@ -625,7 +635,8 @@ def header(root: str, active: str, with_services: bool = False, with_alerts: boo
                 f'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'
                 f'<div class="menu-panel" id="menuCourse" hidden>{panel}</div></div>')
     nav += link("pay", f"{root}pay.html", "실수령 계산기")
-    nav += link("board", f"{root}board/index.html", BOARD_NAME)
+    if with_board:
+        nav += link("board", f"{root}board/index.html", BOARD_NAME)
     if with_services:
         nav += link("resume", f"{root}resume.html", "이력서·자소서 첨삭") + link("demo", f"{root}demo.html", "시강 교안 AI")
     return f"""<header class="top"><div class="wrap">
@@ -1806,8 +1817,8 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     write = lambda rel, text: (out_dir / rel).write_text(text, encoding="utf-8")
     write("index.html", render_index(jobs, config, collected_at))
     write("pay.html", render_pay(config))
-    posts = load_posts(Path(config.get("board_dir") or BOARD_DIR), today)
-    board_paths = write_board(out_dir, posts, config, today)
+    posts = load_posts(Path(config.get("board_dir") or BOARD_DIR), today) if board_on(config) else []
+    board_paths = write_board(out_dir, posts, config, today) if board_on(config) else []
     if services_on(config):
         write("demo.html", render_demo(config))
         write("resume.html", render_resume(config))
@@ -1870,6 +1881,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show overseas postings (해외 tab, 나라별 카드) on the public site; the test and private builds always do",
     )
     parser.add_argument(
+        "--with-board",
+        action="store_true",
+        help="Publish the TIP 게시판 (board/) on the public site; the test and private builds always show it",
+    )
+    parser.add_argument(
         "--with-saramin",
         action="store_true",
         help="Mix Saramin API postings into the list (the test build always does); never with ads (ADSENSE_CLIENT)",
@@ -1898,6 +1914,7 @@ def main() -> int:
         "services": args.with_services,
         "saramin": args.with_saramin,
         "overseas": args.with_overseas,
+        "board": args.with_board,
         "ad_slots": args.ad_slots,
     }
     out = Path(args.out) if args.out else (PRIVATE_OUT if args.private else TEST_OUT if args.test else DEFAULT_OUT)

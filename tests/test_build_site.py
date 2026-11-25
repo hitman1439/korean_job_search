@@ -226,7 +226,7 @@ class BuildTests(unittest.TestCase):
 
     def test_sitemap_and_canonical(self):
         sitemap = (self.out / "sitemap.xml").read_text(encoding="utf-8")
-        self.assertEqual(sitemap.count("<url>"), 5)  # + board/index.html
+        self.assertEqual(sitemap.count("<url>"), 4)
         self.assertIn("<loc>https://jobs.example/pay.html</loc>", sitemap)
         self.assertIn('<link rel="canonical" href="https://jobs.example/index.html">', self.index)
 
@@ -346,7 +346,7 @@ class BuildTests(unittest.TestCase):
         self.write_post(board, 2, "오래된 글", "2026-10-01")
         self.write_post(board, 3, "새 글 <b>", "2026-10-28", body="첫 줄\n**굵게**\n\n- 하나\n- 둘")
         self.write_post(board, 4, "예약 글", "2026-11-30")
-        config = dict(self.config, board_dir=str(board))
+        config = dict(self.config, board_dir=str(board), board=True)
         stats = bs.build(self.db, self.out, config, TODAY, BUILT_AT)
         self.assertEqual(stats["posts"], 3)
         listing = (self.out / "board" / "index.html").read_text(encoding="utf-8")
@@ -372,10 +372,20 @@ class BuildTests(unittest.TestCase):
         board = Path(self.tmp.name) / "board"
         for n in range(1, 18):
             self.write_post(board, n, f"글 {n}", "2026-10-01")
-        bs.build(self.db, self.out, dict(self.config, board_dir=str(board)), TODAY, BUILT_AT)
+        bs.build(self.db, self.out, dict(self.config, board_dir=str(board), board=True), TODAY, BUILT_AT)
         self.assertTrue((self.out / "board" / "list2.html").exists())
         second = (self.out / "board" / "list2.html").read_text(encoding="utf-8")
         self.assertIn('<td class="bd-no">1</td>', second)
+
+    def test_board_hidden_on_public_site_until_asked(self):
+        board = Path(self.tmp.name) / "board"
+        self.write_post(board, 1, "숨은 글", "2026-10-01")
+        bs.build(self.db, self.out, dict(self.config, board_dir=str(board)), TODAY, BUILT_AT)
+        self.assertFalse((self.out / "board").exists())
+        self.assertNotIn("board/", (self.out / "index.html").read_text(encoding="utf-8"))
+        self.assertNotIn("board/", (self.out / "sitemap.xml").read_text(encoding="utf-8"))
+        bs.build(self.db, self.out, dict(self.config, board_dir=str(board), test=True), TODAY, BUILT_AT)
+        self.assertTrue((self.out / "board" / "1.html").exists())
 
     def test_post_without_date_fails_loudly(self):
         board = Path(self.tmp.name) / "board"
@@ -591,6 +601,8 @@ class BadgeTests(unittest.TestCase):
             "2026년 겨울학기 한국어 강사 모집공고",
         )
         self.assertEqual(bs.display_title("명지대학교 한국어강사 모집 공고 ⦁ 인문(서울)캠퍼스 ⦁"), "명지대학교 한국어강사 모집 공고 인문(서울)캠퍼스")
+        self.assertEqual(bs.display_title("한국어교원소식 - 일본인 대상 온라인 한국어 레슨 한글넷 채용 공고 | 국제한국어학과"),
+                         "일본인 대상 온라인 한국어 레슨 한글넷 채용 공고")
         # A bar that is part of the title itself stays.
         self.assertEqual(bs.display_title("한국어 강사 | 서울"), "한국어 강사 | 서울")
 
