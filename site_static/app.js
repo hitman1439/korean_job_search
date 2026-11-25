@@ -118,7 +118,7 @@
         search: row.getAttribute("data-search") || "",
         title: row.getAttribute("data-title"),
         org: row.getAttribute("data-org"),
-        url: row.querySelector(".go").getAttribute("href"),
+        url: row.querySelector(".pick").getAttribute("href"),
         // Institution for 근무 후기; only the /test build sets it.
         review: row.getAttribute("data-review") || "",
         chips: Array.prototype.map.call(row.querySelectorAll(".chip"), function (c) { return c.textContent; }),
@@ -279,8 +279,8 @@
       if (!overlays[chosen.id]) {
         closePopup();
         mapToast(chosen.scope === "online"
-          ? "온라인·재택 공고라 지도에 표시할 곳이 없어요. '자세히'에서 내용을 확인하세요."
-          : "이 공고는 근무지 위치를 아직 확인하지 못해 지도에 없어요. '자세히'에서 내용을 확인하세요.");
+          ? "온라인·재택 공고라 지도에 표시할 곳이 없어요. 공고를 눌러 내용을 확인하세요."
+          : "이 공고는 근무지 위치를 아직 확인하지 못해 지도에 없어요. 공고를 눌러 내용을 확인하세요.");
         return;
       }
       // Picked from the list: centre the map on it, zooming in (further if
@@ -629,7 +629,18 @@
       search.addEventListener("compositionend", onSearch);
       search.addEventListener("search", onSearch);
     }
-    // A tap on a list row is a plain link to the job page (no JS needed).
+    // A tap on a list row is a plain link to the job page (no JS needed);
+    // its 지도보기 button centres the map on that job instead.
+    rows.forEach(function (row) {
+      var btn = row.querySelector("[data-map]");
+      if (!btn) return;
+      btn.addEventListener("click", function () {
+        select(row.getAttribute("data-id"), true);
+        if (window.matchMedia("(max-width: 900px)").matches && mapBox) {
+          mapBox.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      });
+    });
 
     var placed = jobs.filter(hasPlace);
     if (mapBox && placed.length) {

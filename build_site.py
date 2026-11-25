@@ -643,7 +643,11 @@ def job_row(job: dict, root: str, review: bool = False) -> str:
 
 
 def go_link(job: dict, root: str) -> str:
-    return f'<a class="go" href="{root}{job["path"]}" aria-label="{e(job["org"])} 공고 자세히 보기">자세히</a>'
+    # Tapping the row opens the job page; this button shows the job on the map
+    # instead. Jobs without a place (online, or not yet located) get none.
+    if not job["has_place"]:
+        return ""
+    return f'<button type="button" class="go" data-map aria-label="{e(job["org"])} 위치를 지도에서 보기">지도보기</button>'
 
 
 # --- pages -------------------------------------------------------------------
