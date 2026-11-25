@@ -672,7 +672,7 @@ def detail_facts(job: dict) -> list[tuple[str, str]]:
 
 def row_meta(job: dict) -> str:
     """The list row's second line: where, how much, and the two marks people filter by."""
-    items = [f'<span class="job-org">{e(job["org"])} · {e(job["place"])}</span>']
+    items = [f'<span class="job-org">{e(job["org"])} · {e(job["place"])}</span>', row_badge(job, "meta")]
     rates = job.get("rates")
     if rates:
         pay = f"{min(rates):,}~{max(rates):,}원" if len(rates) > 1 else f"{rates[0]:,}원"
@@ -686,12 +686,16 @@ def row_meta(job: dict) -> str:
     return "".join(items)
 
 
-def row_badge(job: dict) -> str:
+def row_badge(job: dict, where: str) -> str:
     # No badge when the deadline is unknown: a grey "마감일 미정" on half the
-    # rows is only noise. The opened row still says so.
+    # rows is only noise. The opened row still says so. The badge is drawn
+    # twice: before the title on wide screens, on the facts line on phones
+    # (where the title line holds the title alone); CSS shows one.
     if not job.get("deadline"):
         return ""
-    return f'<span class="badge {job["badge_class"]}" data-badge="{e(job["deadline"])}">{e(job["badge"])}</span>'
+    hidden = ' aria-hidden="true"' if where == "meta" else ""
+    return (f'<span class="badge badge-{where} {job["badge_class"]}" data-badge="{e(job["deadline"])}"{hidden}>'
+            f'{e(job["badge"])}</span>')
 
 
 def job_row(job: dict, root: str, review: bool = False) -> str:
@@ -712,7 +716,7 @@ def job_row(job: dict, root: str, review: bool = False) -> str:
     return f"""<li class="job-row" data-id="{job['job_id']}" data-scope="{job['scope']}"{country_attr} data-newcomer="{1 if job.get('newcomer_ok') == 1 else 0}" data-demo="{1 if job.get('demo_lesson') == 1 else 0}" data-lat="{lat}" data-lng="{lng}" data-deadline="{e(job.get('deadline') or '')}" data-rate="{max(job['rates']) if job.get('rates') else ''}" data-posted="{e(posted_date(job))}" data-name="{e(job['org'])}" data-title="{e(job.get('title'))}" data-org="{e(job['org'] + ' · ' + job['place'])}" data-search="{e(search)}"{review_attr}>
 <div class="row-head">
 <a class="pick" href="{root}{job["path"]}" aria-expanded="false" aria-controls="{detail_id}">
-<span class="job-title">{row_badge(job)}{e(job.get('title'))}</span>
+<span class="job-title">{row_badge(job, "title")}{e(job.get('title'))}</span>
 <span class="job-meta">{row_meta(job)}</span>
 </a>
 {go_link(job, root)}
@@ -776,8 +780,8 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 </section>""" if alerts_on(config) else ""
     body = f"""<main class="wrap home" data-board>
 <section class="hero" aria-labelledby="headline">
-<p class="eyebrow">{collected_at.month}월 {collected_at.day}일 {collected_at.hour}시에 새로 모았어요</p>
-<h1 id="headline" class="title-xl">지금 지원할 수 있는 한국어 강사 공고 <em>{len(jobs)}개</em></h1>
+<h1 id="headline" class="title-xl">한국어 강사 채용공고</h1>
+<p class="hero-meta">지원 가능 <strong>{len(jobs)}개</strong> · {collected_at.month}월 {collected_at.day}일 {collected_at.hour}시 업데이트</p>
 <div class="filters">
 <div class="seg" role="group" aria-label="근무 형태">{scope_buttons}</div>
 <label class="search"><span class="sr-only">기관명이나 지역 검색</span><input type="search" data-search-input placeholder="기관명, 지역으로 찾기"></label>
@@ -959,7 +963,7 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
     side.insert(0, pay_box(job, root))
 
     body = f"""<main class="wrap">
-<a class="back" href="{root}index.html">‹ 지도로 돌아가기</a>
+<a class="back" href="{root}index.html">‹ 공고 목록으로</a>
 <div class="detail">
 <div class="detail-main">
 <section class="sec" aria-labelledby="jobTitle">

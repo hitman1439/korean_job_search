@@ -38,7 +38,9 @@
   document.querySelectorAll("[data-badge]").forEach(function (el) {
     var b = badgeFor(el.getAttribute("data-badge"));
     el.textContent = b.text;
-    el.className = "badge" + (b.cls ? " " + b.cls : "");
+    // Keep the badge's other classes (badge-title / badge-meta place it).
+    el.classList.remove("urgent", "rolling");
+    if (b.cls) el.classList.add(b.cls);
   });
 
   // --- storage (per-viewer conveniences only) ----------------------------
