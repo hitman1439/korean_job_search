@@ -16,13 +16,6 @@ body { line-height: 1.5; }
 .search input { font-size: 18px; }
 .map-note { font-size: 18px; }
 .pin { min-width: 48px; min-height: 40px; padding: 0 14px; font-size: 17px; }
-.map-pop { width: 340px; max-width: 84vw; font-size: 18px; }
-.map-pop .x { top: 4px; right: 4px; width: 44px; height: 44px; font-size: 24px; }
-.map-pop .t { padding-right: 32px; font-size: 19px; }
-.map-pop .o { font-size: 17px; }
-.map-pop li .t { font-size: 18px; }
-.map-pop li .go { padding: 10px 14px; font-size: 17px; }
-.map-pop .head { font-size: 19px; padding-right: 36px; }
 .panel-head h2 { font-size: 22px; }
 .panel-head span { font-size: 17px; }
 .countries { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
@@ -36,9 +29,8 @@ body { line-height: 1.5; }
 .sort-bar button { min-height: 44px; padding: 0 14px; font-size: 17px; }
 .sort-note { font-size: 16px; }
 .dist { font-size: 16px; }
-.map-toast { font-size: 17px; }
-.here-btn { min-height: 52px; padding: 0 20px; border-radius: 26px; font-size: 18px; }
-.here-note { bottom: 92px; max-width: 400px; font-size: 16px; }
+.detail-sum, .detail-facts div { font-size: 18px; }
+.detail-facts div { grid-template-columns: 110px minmax(0, 1fr); }
 .local-note { font-size: 17px; }
 .job-org { font-size: 17px; }
 .chip { font-size: 16px; }
@@ -96,15 +88,12 @@ body { line-height: 1.5; }
 
 /* Narrow phones: larger text needs the label above its value. */
 @media (max-width: 480px) {
-  .facts div { grid-template-columns: minmax(0, 1fr); }
+  .facts div, .detail-facts div { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* 기관 평가 entry points (test build only): orange so it reads apart from 자세히 보기. */
 .btn-review { background: #d9480f; color: #fff; }
 .btn-review:hover { background: #b83d0c; color: #fff; }
-.map-pop .btn + .btn { margin-top: 8px; }
-.map-pop li .go.review { background: #d9480f; }
-.map-pop li .go.review:hover { background: #b83d0c; }
 
 /* Header stays on screen so the 합격으로 가는 길 menu can jump at any point. */
 .top { position: sticky; top: 0; z-index: 30; background: rgba(255, 255, 255, .92); backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px); }

@@ -93,12 +93,7 @@
 
   function initBoard(board) {
     var rows = Array.prototype.slice.call(board.querySelectorAll(".job-row"));
-    var state = { scope: "all", country: "", newcomer: false, demo: false, paid: false, saved: false, q: "", selected: null, sort: "deadline" };
-    var map = null;
-    var clusterer = null;
-    var overlays = {};
-    var popup = null;
-    var mapBox = board.querySelector(".map-box");
+    var state = { scope: "all", country: "", newcomer: false, demo: false, paid: false, saved: false, q: "", sort: "deadline" };
 
     function rowJob(row) {
       return {
@@ -116,12 +111,6 @@
         posted: row.getAttribute("data-posted") || "",
         name: row.getAttribute("data-name") || "",
         search: row.getAttribute("data-search") || "",
-        title: row.getAttribute("data-title"),
-        org: row.getAttribute("data-org"),
-        url: row.querySelector(".pick").getAttribute("href"),
-        // Institution for 근무 후기; only the /test build sets it.
-        review: row.getAttribute("data-review") || "",
-        chips: Array.prototype.map.call(row.querySelectorAll(".chip"), function (c) { return c.textContent; }),
         row: row
       };
     }
@@ -139,26 +128,19 @@
         queryMatches(job);
     }
 
-    // 시·도 이름으로 찾으면 글자가 아니라 근무지로 걸러요: '서울'에 남서울대학교(천안)가
-    // 섞이면 지도가 전국으로 넓어지니까요. 온라인·해외 공고는 빠져요.
+    // 시·도 이름으로 찾으면 글자가 아니라 근무지로 걸러요: '서울'에
+    // 남서울대학교(천안)가 섞이지 않게요. 온라인·해외 공고는 빠져요.
     var REGION_FULL = {
       "충청북도": "충북", "충청남도": "충남", "전라북도": "전북", "전라남도": "전남",
       "경상북도": "경북", "경상남도": "경남"
     };
-    // 시·도 → [위도, 경도, 지도 레벨]: 그 지역에 공고가 없어도 지도는 그 지역으로 가요.
-    var regions = {
-      "서울": [37.5665, 126.978, 8], "부산": [35.1796, 129.0756, 9], "대구": [35.8714, 128.6014, 9],
-      "인천": [37.4563, 126.7052, 9], "광주": [35.1595, 126.8526, 8], "대전": [36.3504, 127.3845, 8],
-      "울산": [35.5384, 129.3114, 9], "세종": [36.48, 127.289, 9], "경기": [37.4138, 127.5183, 11],
-      "강원": [37.8228, 128.1555, 11], "충북": [36.8, 127.7, 11], "충남": [36.5184, 126.8, 11],
-      "전북": [35.7175, 127.153, 11], "전남": [34.8679, 126.991, 11], "경북": [36.4919, 128.8889, 11],
-      "경남": [35.4606, 128.2132, 11], "제주": [33.4996, 126.5312, 10]
-    };
+    var REGIONS = ["서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기",
+      "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"];
     function regionQuery(q) {
       var t = q.replace(/\s+/g, "");
       if (REGION_FULL[t]) return REGION_FULL[t];
       t = t.replace(/(특별자치시|특별자치도|특별시|광역시|시|도)$/, "");
-      return regions[t] ? t : "";
+      return REGIONS.indexOf(t) !== -1 ? t : "";
     }
     function queryMatches(job) {
       if (!state.q) return true;
@@ -170,8 +152,15 @@
     function hasPlace(job) { return !isNaN(job.lat) && !isNaN(job.lng); }
 
     function setHidden(selector, hidden) {
-      var el = board.querySelector(selector);
-      if (el) el.hidden = hidden;
+      var node = board.querySelector(selector);
+      if (node) node.hidden = hidden;
+    }
+
+    function el(tag, cls, text) {
+      var node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
     }
 
     // Saved and applied marks live in this browser only (localStorage).
@@ -195,9 +184,9 @@
     }
 
     function apply() {
-      if (popup) closePopup();
       var visible = jobs.filter(matches);
       jobs.forEach(function (job) { job.row.hidden = visible.indexOf(job) === -1; });
+      if (open && open.row.hidden) collapse();
       board.querySelector("[data-count]").textContent = visible.length + "개";
       board.querySelector("[data-empty]").hidden = visible.length !== 0;
       markRows();
@@ -214,44 +203,8 @@
           ? "공고 상세에서 '저장'을 누르면 여기 모여요. 이 브라우저에만 남아요."
           : emptyDesc.getAttribute("data-default");
       }
-
-      var showMap = state.scope === "all" || state.scope === "domestic";
       // The countries view exists only in the private build.
-      setHidden("[data-view=map]", !showMap);
       setHidden("[data-view=countries]", state.scope !== "overseas");
-      setHidden("[data-view=online]", state.scope !== "online");
-
-      var current = visible.filter(function (j) { return j.id === state.selected && hasPlace(j); })[0];
-      if (!current) current = visible.filter(hasPlace)[0] || null;
-      select(current ? current.id : null, false);
-
-      if (map) {
-        var bounds = new kakao.maps.LatLngBounds();
-        var shown = [];
-        jobs.forEach(function (job) {
-          var overlay = overlays[job.id];
-          if (overlay && showMap && visible.indexOf(job) !== -1) {
-            shown.push(overlay);
-            bounds.extend(overlay.getPosition());
-          }
-        });
-        // Pins close together (several boards in Seoul) merge into one count bubble.
-        clusterer.clear();
-        clusterer.addMarkers(shown);
-        if (showMap) {
-          map.relayout();
-          if (state.sort === "near" && here) fitNear(visible);
-          else if (!shown.length && regionQuery(state.q)) {
-            var spot = regions[regionQuery(state.q)];
-            map.setLevel(spot[2]);
-            map.setCenter(new kakao.maps.LatLng(spot[0], spot[1]));
-          } else if (shown.length === 1) {
-            // One pin: setBounds would zoom to street level; show the 동네 instead.
-            map.setLevel(6);
-            map.setCenter(shown[0].getPosition());
-          } else if (shown.length) map.setBounds(bounds, 60, 60, 160, 60);
-        }
-      }
       var summary = board.querySelector("[data-filter-summary]");
       if (summary) {
         var parts = [{ all: "전체", domestic: "국내", overseas: "해외", online: "온라인" }[state.scope]];
@@ -264,152 +217,81 @@
       }
     }
 
-    function select(id, pan) {
-      state.selected = id;
-      var chosen = null;
-      jobs.forEach(function (job) {
-        var on = job.id === id;
-        if (on) chosen = job;
-        if (on) job.row.setAttribute("aria-current", "true"); else job.row.removeAttribute("aria-current");
-        var pin = overlays[job.id] && overlays[job.id].getContent();
-        if (pin) pin.setAttribute("aria-pressed", on ? "true" : "false");
-        if (overlays[job.id]) overlays[job.id].setZIndex(on ? 3 : 1);
-      });
-      if (!pan || !chosen || !map) return;
-      if (!overlays[chosen.id]) {
-        closePopup();
-        mapToast(chosen.scope === "online"
-          ? "온라인·재택 공고라 지도에 표시할 곳이 없어요. 공고를 눌러 내용을 확인하세요."
-          : "이 공고는 근무지 위치를 아직 확인하지 못해 지도에 없어요. 공고를 눌러 내용을 확인하세요.");
-        return;
-      }
-      // Picked from the list: centre the map on it, zooming in (further if
-      // the pin is folded into a count bubble), then show its bubble. The
-      // move is instant: an animated panTo would be cut short by the bubble's
-      // own fit-inside-the-map pan right after it.
-      var pos = overlays[chosen.id].getPosition();
-      var level = overlays[chosen.id].getMap() ? 6 : 4;
-      if (map.getLevel() > level) map.setLevel(level);
-      map.setCenter(pos);
-      jobPopup(chosen);
+    // --- opening a row ---------------------------------------------------
+    // One row is open at a time. Its summary is already in the page, so
+    // opening only unhides it. The map is a single Kakao map that moves into
+    // whichever row asks for it.
+    var open = null;
+    var map = null;
+    var mapEl = null;
+    var pin = null;
+
+    function collapse() {
+      if (!open) return;
+      open.row.querySelector(".row-detail").hidden = true;
+      open.row.querySelector(".pick").setAttribute("aria-expanded", "false");
+      open.row.removeAttribute("aria-current");
+      var slot = open.row.querySelector("[data-row-map]");
+      if (slot) slot.hidden = true;
+      open = null;
     }
 
-    var toast = null;
-    var toastTimer = null;
-    function mapToast(text) {
-      if (!mapBox) return;
-      if (!toast) {
-        toast = el("p", "map-toast", "");
-        toast.setAttribute("role", "status");
-        mapBox.appendChild(toast);
+    function expand(job, withMap) {
+      if (open !== job) {
+        collapse();
+        open = job;
+        job.row.querySelector(".row-detail").hidden = false;
+        job.row.querySelector(".pick").setAttribute("aria-expanded", "true");
+        job.row.setAttribute("aria-current", "true");
       }
-      toast.textContent = text;
-      toast.hidden = false;
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(function () { toast.hidden = true; }, 4000);
+      if (withMap && hasPlace(job)) showMap(job);
+      // Keep the opened row in view, without moving the page when it already is.
+      var rect = job.row.getBoundingClientRect();
+      if (rect.top < 0 || rect.bottom > window.innerHeight) {
+        job.row.scrollIntoView({ behavior: "smooth", block: rect.height > window.innerHeight ? "start" : "nearest" });
+      }
     }
 
-    // Speech bubble over the map: one job for a pin, a list for a count bubble.
-    function el(tag, cls, text) {
-      var node = document.createElement(tag);
-      if (cls) node.className = cls;
-      if (text != null) node.textContent = text;
-      return node;
-    }
-    function closePopup() {
-      if (popup) { popup.setMap(null); popup = null; }
-    }
-    // Any press outside the bubble closes it: the map, a pin, the list, the
-    // page. A pin or count bubble then opens its own bubble on the click.
-    var downAt = null;
-    document.addEventListener("pointerdown", function (ev) {
-      downAt = { x: ev.clientX, y: ev.clientY };
-      if (popup && !popup.getContent().contains(ev.target)) closePopup();
-    }, true);
-    // Pins and count bubbles let drags through to the map, so a click that
-    // ends a drag must not open anything.
-    function isTap(ev) {
-      return !downAt || Math.abs(ev.clientX - downAt.x) + Math.abs(ev.clientY - downAt.y) < 8;
-    }
-    function openPopup(position, content) {
-      closePopup();
-      var box = el("div", "map-pop");
-      box.setAttribute("role", "dialog");
-      var x = el("button", "x", "×");
-      x.type = "button";
-      x.setAttribute("aria-label", "닫기");
-      x.addEventListener("click", closePopup);
-      box.appendChild(x);
-      box.appendChild(content);
-      // Clicks and drags inside the bubble must not reach the map.
-      ["mousedown", "touchstart", "click", "dblclick", "wheel"].forEach(function (type) {
-        box.addEventListener(type, function (ev) { ev.stopPropagation(); });
-      });
-      popup = new kakao.maps.CustomOverlay({ position: position, content: box, yAnchor: 0, zIndex: 10, clickable: true });
-      popup.setMap(map);
-      // Move the map so the whole bubble is inside it, not cut at an edge.
-      requestAnimationFrame(function () {
-        var frame = mapBox.getBoundingClientRect();
-        var rect = box.getBoundingClientRect();
-        var pad = 16;
-        var dx = 0, dy = 0;
-        if (rect.top < frame.top + pad) dy = rect.top - frame.top - pad;
-        else if (rect.bottom > frame.bottom - pad) dy = rect.bottom - frame.bottom + pad;
-        if (rect.left < frame.left + pad) dx = rect.left - frame.left - pad;
-        else if (rect.right > frame.right - pad) dx = rect.right - frame.right + pad;
-        if (dx || dy) map.panBy(dx, dy);
-      });
-    }
-    function badgeEl(job) {
-      var b = badgeFor(job.deadline);
-      return el("span", "badge" + (b.cls ? " " + b.cls : ""), b.text);
-    }
-    function jobPopup(job) {
-      var frag = document.createDocumentFragment();
-      frag.appendChild(badgeEl(job));
-      frag.appendChild(el("p", "t", job.title));
-      frag.appendChild(el("p", "o", job.org));
-      if (job.chips.length) {
-        var chips = el("div", "chips");
-        job.chips.forEach(function (c) { chips.appendChild(el("span", "chip", c)); });
-        frag.appendChild(chips);
-      }
-      var go = el("a", "btn btn-primary", "자세히 보기");
-      go.href = job.url;
-      frag.appendChild(go);
-      if (job.review) {
-        var rate = el("a", "btn btn-review", "후기 보기");
-        rate.href = "rating.html?org=" + encodeURIComponent(job.review);
-        frag.appendChild(rate);
-      }
-      openPopup(overlays[job.id].getPosition(), frag);
-    }
-    function clusterPopup(cluster) {
-      var markers = cluster.getMarkers();
-      var inside = jobs.filter(function (job) { return markers.indexOf(overlays[job.id]) !== -1; });
-      var frag = document.createDocumentFragment();
-      frag.appendChild(el("p", "head", "같은 곳의 공고 " + inside.length + "개"));
-      var list = el("ul");
-      inside.forEach(function (job) {
-        var li = el("li");
-        var grow = el("div", "grow");
-        grow.appendChild(badgeEl(job));
-        grow.appendChild(el("p", "t", job.title));
-        grow.appendChild(el("p", "o", job.org));
-        var go = el("a", "go", "자세히");
-        go.href = job.url;
-        li.appendChild(grow);
-        li.appendChild(go);
-        if (job.review) {
-          var rate = el("a", "go review", "후기");
-          rate.href = "rating.html?org=" + encodeURIComponent(job.review);
-          li.appendChild(rate);
+    function showMap(job) {
+      var slot = job.row.querySelector("[data-row-map]");
+      if (!slot) return;
+      slot.hidden = false;
+      loadKakao().then(function () {
+        if (open !== job) return;
+        var pos = new kakao.maps.LatLng(job.lat, job.lng);
+        if (!map) {
+          mapEl = el("div", "row-map-canvas");
+          slot.appendChild(mapEl);
+          map = new kakao.maps.Map(mapEl, { center: pos, level: 5 });
+          map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
+          var tag = el("span", "pin", "");
+          tag.setAttribute("aria-pressed", "true");
+          pin = new kakao.maps.CustomOverlay({ position: pos, content: tag, yAnchor: 1 });
+          pin.setMap(map);
+        } else if (mapEl.parentNode !== slot) {
+          slot.appendChild(mapEl);
         }
-        list.appendChild(li);
+        pin.getContent().textContent = job.name;
+        pin.setPosition(pos);
+        map.relayout();
+        map.setLevel(5);
+        map.setCenter(pos);
+      }).catch(function () {
+        showMapNote(slot, "지도를 불러오지 못했어요.");
       });
-      frag.appendChild(list);
-      openPopup(cluster.getCenter(), frag);
     }
+
+    rows.forEach(function (row, i) {
+      var job = jobs[i];
+      row.querySelector(".pick").addEventListener("click", function (ev) {
+        // Ctrl/Cmd-click or a middle click still opens the job page in a new tab.
+        if (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.button) return;
+        ev.preventDefault();
+        if (open === job) collapse(); else expand(job, false);
+      });
+      var btn = row.querySelector("[data-map]");
+      if (btn) btn.addEventListener("click", function () { expand(job, true); });
+    });
 
     // --- sorting ---------------------------------------------------------
     var list = board.querySelector(".jobs");
@@ -417,7 +299,6 @@
     // The visitor's position, asked for only when they pick 가까운순 and
     // kept in this page alone.
     var here = null;
-    var hereDot = null;
 
     function km(a, b) {
       var rad = Math.PI / 180;
@@ -458,43 +339,6 @@
       });
     }
 
-    // 가까운순: frame the visitor and the nearest few jobs. More jobs are
-    // added only while they stay within a few times the nearest distance, so
-    // one far job does not zoom the map out to the whole country.
-    function fitNear(visible) {
-      var pos = new kakao.maps.LatLng(here.lat, here.lng);
-      var near = visible.filter(hasPlace).sort(function (a, b) { return distance(a) - distance(b); });
-      if (!near.length) {
-        if (map.getLevel() > 6) map.setLevel(6);
-        map.setCenter(pos);
-        return;
-      }
-      var reach = Math.max(distance(near[0]) * 3, 10);
-      var bounds = new kakao.maps.LatLngBounds();
-      bounds.extend(pos);
-      near.slice(0, 5).forEach(function (job, i) {
-        if (i !== 0 && distance(job) > reach) return;
-        // Each job and its mirror across the visitor, so the frame is
-        // centred on the visitor and still holds every job.
-        bounds.extend(new kakao.maps.LatLng(job.lat, job.lng));
-        bounds.extend(new kakao.maps.LatLng(2 * here.lat - job.lat, 2 * here.lng - job.lng));
-      });
-      map.setBounds(bounds, 80, 80, 80, 80);
-      map.setCenter(pos);
-      // A job next door would zoom to street level; keep the area readable.
-      if (map.getLevel() < 4) map.setLevel(4, { anchor: pos });
-    }
-
-    function showHere() {
-      if (!map || !here || hereDot) return;
-      var dot = el("span", "here-dot", "");
-      dot.setAttribute("aria-label", "내 위치");
-      hereDot = new kakao.maps.CustomOverlay({
-        position: new kakao.maps.LatLng(here.lat, here.lng), content: dot, zIndex: 2, clickable: false
-      });
-      hereDot.setMap(map);
-    }
-
     function sortBy(key) {
       state.sort = key;
       jobs.sort(sorters[key]);
@@ -508,12 +352,10 @@
       if (key !== "near") sortNoteText("");
       // 가까운순 is not remembered, so a later visit never opens with a location prompt.
       try { localStorage.setItem("jobSort", key === "near" ? "deadline" : key); } catch (e) { /* not kept */ }
-      list.scrollTop = 0;
       apply();
     }
 
-    // say() shows progress where the visitor clicked (list or map).
-    function askHere(done, say) {
+    function askHere(done) {
       if (here) { done(true); return; }
       if (!navigator.geolocation) { done(false, "이 브라우저는 위치 확인을 지원하지 않아요."); return; }
       // Browsers refuse location on plain http (other than localhost).
@@ -521,12 +363,11 @@
         done(false, "보안 연결이 아니라서 위치를 쓸 수 없어요. https://korean-job-helper.com 으로 열어 주세요.");
         return;
       }
-      (say || sortNoteText)("내 위치를 확인하는 중이에요…");
+      sortNoteText("내 위치를 확인하는 중이에요…");
       var deviceOff = "브라우저는 위치를 허용했지만 기기의 위치 서비스가 꺼져 있어요. " +
         "Windows는 설정 > 개인 정보 및 보안 > 위치, 휴대폰은 설정의 위치(GPS)를 켜고, 브라우저 앱에도 위치 권한을 준 뒤 다시 눌러 주세요.";
       navigator.geolocation.getCurrentPosition(function (pos) {
         here = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        showHere();
         done(true);
       }, function (err) {
         if (err.code === 3) { done(false, "위치를 찾는 데 시간이 너무 걸렸어요. 잠시 뒤에 다시 눌러 주세요."); return; }
@@ -540,35 +381,6 @@
           done(false, status.state === "granted" ? deviceOff : blocked);
         }, function () { done(false, blocked); });
       }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 });
-    }
-
-    // "내 위치" on the map: mark the visitor and zoom in around them.
-    var hereNote = null;
-    function hereNoteText(text) {
-      if (!hereNote) return;
-      hereNote.textContent = text || "";
-      hereNote.hidden = !text;
-    }
-    function addHereButton() {
-      var btn = el("button", "here-btn", "내 위치");
-      btn.type = "button";
-      hereNote = el("p", "here-note", "");
-      hereNote.setAttribute("role", "status");
-      hereNote.hidden = true;
-      btn.addEventListener("click", function () {
-        btn.disabled = true;
-        askHere(function (ok, why) {
-          btn.disabled = false;
-          if (!ok) { hereNoteText(why); return; }
-          hereNoteText("");
-          closePopup();
-          var pos = new kakao.maps.LatLng(here.lat, here.lng);
-          if (map.getLevel() > 6) map.setLevel(6, { anchor: pos });
-          map.panTo(pos);
-        }, hereNoteText);
-      });
-      mapBox.appendChild(hereNote);
-      mapBox.appendChild(btn);
     }
 
     board.querySelectorAll("[data-sort]").forEach(function (btn) {
@@ -629,99 +441,11 @@
       search.addEventListener("compositionend", onSearch);
       search.addEventListener("search", onSearch);
     }
-    // A tap on a list row is a plain link to the job page (no JS needed);
-    // its 지도보기 button centres the map on that job instead.
-    rows.forEach(function (row) {
-      var btn = row.querySelector("[data-map]");
-      if (!btn) return;
-      btn.addEventListener("click", function () {
-        select(row.getAttribute("data-id"), true);
-        if (window.matchMedia("(max-width: 900px)").matches && mapBox) {
-          mapBox.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      });
-    });
 
-    var placed = jobs.filter(hasPlace);
-    if (mapBox && placed.length) {
-      loadKakao().then(function () {
-        map = new kakao.maps.Map(document.getElementById("map"), {
-          center: new kakao.maps.LatLng(placed[0].lat, placed[0].lng),
-          level: 9
-        });
-        map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
-        clusterer = new kakao.maps.MarkerClusterer({
-          map: map,
-          averageCenter: true,
-          minLevel: 1,
-          disableClickZoom: true,
-          // Not clickable, so a drag that starts on a count bubble still pans
-          // the map; taps are handled on the bubble's element below.
-          clickable: false,
-          gridSize: 56,
-          styles: [{
-            width: "48px", height: "48px", lineHeight: "48px", borderRadius: "24px",
-            background: "#191f28", color: "#ffffff", textAlign: "center",
-            fontSize: "15px", fontWeight: "600", boxShadow: "0 2px 8px rgba(0,0,0,0.25)"
-          }]
-        });
-        placed.forEach(function (job) {
-          var pin = document.createElement("button");
-          pin.type = "button";
-          pin.className = "pin" + (badgeFor(job.deadline).cls === "urgent" ? " urgent" : "");
-          pin.textContent = pinText(job.deadline);
-          pin.setAttribute("aria-label", job.org + ", " + badgeFor(job.deadline).text);
-          pin.setAttribute("aria-pressed", "false");
-          pin.addEventListener("click", function (ev) {
-            if (!isTap(ev)) return;
-            select(job.id, false);
-            jobPopup(job);
-          });
-          overlays[job.id] = new kakao.maps.CustomOverlay({
-            position: new kakao.maps.LatLng(job.lat, job.lng),
-            content: pin,
-            yAnchor: 1,
-            clickable: false
-          });
-        });
-        showHere();
-        addHereButton();
-        // A count bubble zooms in until its jobs separate into single pins.
-        // Jobs at the very same spot never separate, so those get the list.
-        function onCluster(cluster) {
-          closePopup();
-          var markers = cluster.getMarkers();
-          var first = markers[0].getPosition();
-          var samePlace = markers.every(function (m) {
-            var pos = m.getPosition();
-            return Math.abs(pos.getLat() - first.getLat()) < 1e-5 && Math.abs(pos.getLng() - first.getLng()) < 1e-5;
-          });
-          if (samePlace || map.getLevel() <= 1) { clusterPopup(cluster); return; }
-          var bounds = new kakao.maps.LatLngBounds();
-          markers.forEach(function (m) { bounds.extend(m.getPosition()); });
-          map.setBounds(bounds, 80, 80, 80, 80);
-        }
-        kakao.maps.event.addListener(clusterer, "clustered", function (clusters) {
-          clusters.forEach(function (cluster) {
-            var node = cluster.getClusterMarker().getContent();
-            if (!node || !node.addEventListener) return;
-            node.kjCluster = cluster;
-            if (node.kjWired) return;
-            node.kjWired = true;
-            node.style.cursor = "pointer";
-            node.addEventListener("click", function (ev) {
-              if (isTap(ev)) onCluster(node.kjCluster);
-            });
-          });
-        });
-        mapBox.querySelector(".map-note").hidden = true;
-        apply();
-      }).catch(function () {
-        showMapNote(mapBox, "지도를 불러오지 못했어요. 오른쪽 목록에서 공고를 확인해 주세요.");
-      });
-    } else if (mapBox) {
-      showMapNote(mapBox, "지도에 표시할 국내 공고가 아직 없어요.");
-    }
+    // Fetch the map script while the visitor reads the list, so the first
+    // 지도보기 shows the map without waiting for it.
+    if (jobs.some(hasPlace)) loadKakao().catch(function () { /* shown on 지도보기 */ });
+
     var lastSort = null;
     try { lastSort = localStorage.getItem("jobSort"); } catch (e) { lastSort = null; }
     if (list && lastSort && lastSort !== "deadline" && lastSort !== "near" && sorters[lastSort]) sortBy(lastSort);

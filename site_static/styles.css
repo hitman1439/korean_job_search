@@ -99,12 +99,8 @@ button, input, select { font: inherit; }
 .search input:focus-visible { outline: none; }
 .search:focus-within { outline: 3px solid var(--blue); outline-offset: 2px; }
 
-/* Home: map + list */
-/* The map is the page: it takes most of the width and the window's height. */
-.board { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 24px; align-items: stretch; }
-.map-panel { flex: 6 1 560px; min-width: 0; display: flex; flex-direction: column; }
-.map-box { position: relative; flex: 1; min-height: max(520px, calc(100vh - 320px)); border-radius: var(--radius); overflow: hidden; background: #eef1f4; }
-#map { position: absolute; inset: 0; }
+/* Home: a board-style list; a row opens in place, with its map on 지도보기. */
+.board { margin-top: 24px; }
 .map-note { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; color: var(--text-4); font-size: 15px; }
 .pin {
   min-width: 44px; min-height: 36px; padding: 0 12px; border-radius: 999px; cursor: pointer;
@@ -112,27 +108,6 @@ button, input, select { font: inherit; }
   font: inherit; font-size: 14px; font-weight: 600; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
   white-space: nowrap; transform: translateY(-50%);
 }
-.map-pop {
-  position: relative; transform: translateY(calc(-100% - 58px)); width: 300px; max-width: 80vw;
-  padding: 16px 18px; background: #fff; border-radius: 16px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2);
-  font-size: 15px; color: var(--text); white-space: normal; cursor: default;
-}
-.map-pop::after {
-  content: ""; position: absolute; left: 50%; bottom: -8px; margin-left: -8px;
-  border: 8px solid transparent; border-bottom: 0; border-top-color: #fff;
-}
-.map-pop .x { position: absolute; top: 6px; right: 6px; width: 32px; height: 32px; border: 0; background: none; font-size: 20px; color: var(--text-4); cursor: pointer; }
-.map-pop .t { margin-top: 8px; padding-right: 20px; font-size: 16px; font-weight: 700; line-height: 1.4; }
-.map-pop .o { margin-top: 2px; font-size: 14px; color: var(--text-4); }
-.map-pop .chips { margin-top: 8px; }
-.map-pop .btn { margin-top: 12px; width: 100%; justify-content: center; }
-.map-pop ul { list-style: none; margin: 8px 0 0; padding: 0; max-height: 260px; overflow-y: auto; }
-.map-pop li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
-.map-pop li:first-child { border-top: 0; }
-.map-pop li .grow { flex: 1; min-width: 0; }
-.map-pop li .t { margin-top: 2px; font-size: 15px; padding-right: 0; }
-.map-pop li .go { flex: 0 0 auto; padding: 6px 12px; border-radius: 10px; background: var(--blue); color: #fff; font-size: 14px; font-weight: 600; text-decoration: none; }
-.map-pop .head { font-size: 16px; font-weight: 700; padding-right: 24px; }
 .pin.urgent { color: var(--red); border-color: var(--red); }
 .pin[aria-pressed="true"] { background: var(--text); color: #fff; border-color: var(--text); }
 .panel-head { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 12px 12px; border-bottom: 1px solid var(--line); }
@@ -145,15 +120,15 @@ button, input, select { font: inherit; }
 .country[aria-pressed="true"] strong { color: var(--blue); }
 .country p { font-size: 15px; color: var(--text-3); }
 .country strong { display: block; margin-top: 4px; font-size: 26px; font-weight: 700; }
-.alt-view { min-height: 560px; padding: 8px 4px; }
+.alt-view { padding: 8px 4px 24px; }
 .alt-view h2 { font-size: 22px; font-weight: 700; }
 .alt-view > p { margin-top: 6px; font-size: 15px; color: var(--text-4); }
 
-.list-panel { flex: 4 1 380px; min-width: 0; display: flex; flex-direction: column; }
-.jobs { list-style: none; margin: 0; padding: 0; max-height: max(480px, calc(100vh - 370px)); overflow-y: auto; }
-.alt-view { min-height: max(520px, calc(100vh - 320px)); }
-.job-row { display: flex; align-items: stretch; margin: 2px 4px; border-radius: 16px; }
-.job-row[aria-current="true"] { background: var(--blue-soft); }
+.list-panel { min-width: 0; }
+.jobs { list-style: none; margin: 0; padding: 0; }
+.job-row { border-bottom: 1px solid var(--line); }
+.job-row[aria-current="true"] { background: var(--soft); }
+.row-head { display: flex; align-items: stretch; }
 .job-row[hidden] { display: none; }
 .job-row .pick {
   flex: 1; min-width: 0; text-align: left; border: 0; background: transparent;
@@ -161,6 +136,7 @@ button, input, select { font: inherit; }
   display: block; text-decoration: none; border-radius: 16px;
 }
 .job-row .pick:hover { background: var(--fill); }
+.job-row[aria-current="true"] .pick:hover { background: transparent; }
 .job-row .go {
   flex: 0 0 auto; align-self: center; margin: 0 10px 0 4px; padding: 8px 14px; min-height: 36px;
   display: inline-flex; align-items: center; border-radius: 10px; background: var(--fill);
@@ -187,25 +163,21 @@ button, input, select { font: inherit; }
 }
 .sort-note { margin: 8px 12px 0; font-size: 13px; line-height: 1.5; color: var(--text-4); }
 .dist { display: block; margin-top: 2px; font-size: 13px; font-weight: 600; color: var(--blue); }
-.here-dot {
-  display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--blue);
-  border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(27, 100, 218, 0.25);
-}
-.map-toast {
-  position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 6; width: max-content; max-width: calc(100% - 32px);
-  margin: 0; padding: 10px 14px; border-radius: 12px; background: rgba(25, 31, 40, 0.92); color: #fff; font-size: 14px; line-height: 1.5;
-}
-.here-btn {
-  position: absolute; right: 16px; bottom: 28px; z-index: 5; min-height: 44px; padding: 0 16px;
-  border: 0; border-radius: 22px; background: #fff; color: var(--text); font-size: 15px; font-weight: 700;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); cursor: pointer;
-}
-.here-btn::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; background: var(--blue); vertical-align: 1px; }
-.here-btn:disabled { color: var(--text-4); cursor: wait; }
-.here-note {
-  position: absolute; right: 16px; bottom: 84px; left: 16px; z-index: 5; max-width: 360px; margin: 0 0 0 auto;
-  padding: 10px 12px; border-radius: 12px; background: #fff; color: var(--text-2); font-size: 13px; line-height: 1.5;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+.row-detail { padding: 0 16px 20px; }
+.row-detail[hidden] { display: none; }
+.detail-sum { font-size: 15px; line-height: 1.6; color: var(--text-2); }
+.detail-facts { margin: 8px 0 0; }
+.detail-facts div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 2px 16px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px; line-height: 1.55; }
+.detail-facts div:first-child { border-top: 0; }
+.detail-facts dt { color: var(--text-4); }
+.detail-facts dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.row-map { position: relative; height: 300px; margin-top: 12px; border-radius: 16px; overflow: hidden; background: #eef1f4; }
+.row-map[hidden] { display: none; }
+.row-map-canvas { position: absolute; inset: 0; }
+.detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+@media (max-width: 480px) {
+  .detail-facts div { grid-template-columns: 1fr; }
+  .row-map { height: 260px; }
 }
 .local-note { margin: 12px 0 0; font-size: 14px; line-height: 1.6; color: var(--text-4); }
 .list-panel .local-note { margin: 8px 12px 4px; padding: 10px 12px; border-radius: 12px; background: var(--fill); }
@@ -241,11 +213,6 @@ button, input, select { font: inherit; }
 }
 .ad-slot.infeed { min-height: 88px; margin: 6px 8px; }
 
-/* Phones: the page scrolls, not a box inside it; a shorter map leaves room for the list. */
-@media (max-width: 900px) {
-  .jobs { max-height: none; overflow-y: visible; }
-  .map-box { min-height: 360px; }
-}
 
 /* Job detail */
 .back { display: inline-flex; align-items: center; min-height: 44px; margin-top: 20px; font-size: 15px; color: var(--text-3); text-decoration: none; }

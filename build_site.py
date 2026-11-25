@@ -622,6 +622,21 @@ def posted_date(job: dict) -> str:
     return (job.get("posted_at") or job.get("first_seen_at") or "")[:10]
 
 
+def detail_facts(job: dict) -> list[tuple[str, str]]:
+    """The short summary shown when a list row is opened on the home page."""
+    facts = [
+        ("마감", deadline_text(job.get("deadline"))),
+        ("근무지", job.get("address") if job["scope"] == "domestic" and job.get("address") else job["place"]),
+        ("강의료", job.get("salary_text")),
+        ("근무 시간", job.get("work_hours")),
+        ("근무 기간", job.get("work_period")),
+        ("지원 자격", job.get("qualification")),
+        ("전형", job.get("schedule") or ("서류 → 모의수업" if job.get("demo_lesson") == 1 else None)),
+        ("접수 방법", job.get("how_to_apply") or ("이메일 접수" if job.get("apply_email") else None)),
+    ]
+    return [(k, v) for k, v in facts if v]
+
+
 def job_row(job: dict, root: str, review: bool = False) -> str:
     chips = "".join(f'<span class="chip">{e(c)}</span>' for c in job["chips"])
     search = " ".join(str(x) for x in (job.get("title"), job["org"], job["place"], job.get("location_text")) if x).lower()
@@ -631,21 +646,35 @@ def job_row(job: dict, root: str, review: bool = False) -> str:
     country_attr = f' data-country="{e(job["place"])}"' if job["scope"] == "overseas" else ""
     region = region_of(job)
     country_attr += f' data-region="{region}"' if region else ""
+    facts = "".join(f"<div><dt>{e(k)}</dt><dd>{e(v)}</dd></div>" for k, v in detail_facts(job))
+    summary = f'<p class="detail-sum">{e(job["summary"])}</p>' if job.get("summary") else ""
+    review_link = (f'<a class="btn btn-review" href="{root}rating.html?org={e(urllib.parse.quote(job["institution_name"]))}">후기 보기</a>'
+                   if review and job.get("institution_name") else "")
+    detail_id = f"d{job['job_id']}"
+    # The summary is in the page from the start, so opening a row shows it at
+    # once with no request. Without JS the title is a plain link to the job page.
     return f"""<li class="job-row" data-id="{job['job_id']}" data-scope="{job['scope']}"{country_attr} data-newcomer="{1 if job.get('newcomer_ok') == 1 else 0}" data-demo="{1 if job.get('demo_lesson') == 1 else 0}" data-lat="{lat}" data-lng="{lng}" data-deadline="{e(job.get('deadline') or '')}" data-rate="{max(job['rates']) if job.get('rates') else ''}" data-posted="{e(posted_date(job))}" data-name="{e(job['org'])}" data-title="{e(job.get('title'))}" data-org="{e(job['org'] + ' · ' + job['place'])}" data-search="{e(search)}"{review_attr}>
-<a class="pick" href="{root}{job["path"]}">
+<div class="row-head">
+<a class="pick" href="{root}{job["path"]}" aria-expanded="false" aria-controls="{detail_id}">
 <span class="badge {job['badge_class']}" data-badge="{e(job.get('deadline') or '')}">{e(job['badge'])}</span>
 <span class="job-title">{e(job.get('title'))}</span>
 <span class="job-org">{e(job['org'])} · {e(job['place'])}</span>
 <span class="chips">{chips}</span>
 </a>
 {go_link(job, root)}
+</div>
+<div class="row-detail" id="{detail_id}" hidden>
+{summary}<dl class="detail-facts">{facts}</dl>
+<div class="row-map" data-row-map hidden><p class="map-note" hidden></p></div>
+<div class="detail-actions"><a class="btn btn-primary" href="{root}{job["path"]}">공고 전체 보기</a>{review_link}</div>
+</div>
 </li>"""
 
 
 def go_link(job: dict, root: str) -> str:
-    # Tapping the row opens the job page; this button shows the job on the map
-    # instead. Jobs without a place (online, or not yet located) say so with a
-    # plain label, so the missing button doesn't look like a fault.
+    # Tapping the title opens the row's summary; this button opens it with the
+    # job's map. Jobs without a place (online, or not yet located) say so with
+    # a plain label, so the missing button doesn't look like a fault.
     if not job["has_place"]:
         return '<span class="go none">지도 없음</span>'
     return f'<button type="button" class="go" data-map aria-label="{e(job["org"])} 위치를 지도에서 보기">지도보기</button>'
@@ -708,18 +737,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 </section>
 
 <div class="board">
-<section class="map-panel" aria-label="지도">
-<div class="map-box" data-view="map">
-<div id="map"></div>
-<p class="map-note">지도를 불러오는 중이에요</p>
-</div>
 {countries_view}
-<div class="alt-view" data-view="online" hidden>
-<h2>온라인·재택 공고는 장소가 없어요</h2>
-<p>오른쪽 목록에서 수업 시간대와 학습자 국가를 확인하세요.</p>
-</div>
-</section>
-
 <section class="list-panel" aria-labelledby="listTitle">
 <div class="panel-head"><h2 id="listTitle">공고 목록</h2><span data-count>{len(jobs)}개</span></div>
 <div class="sort-bar" role="group" aria-label="정렬">
