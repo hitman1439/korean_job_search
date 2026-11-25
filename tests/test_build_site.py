@@ -45,6 +45,10 @@ def seed(db_path: Path) -> None:
         "WHERE title = '아주대 강사 모집'"
     )
     conn.execute("UPDATE jobs SET is_overseas = 1, country = '미국' WHERE title = 'Lecturer of Korean'")
+    # The public site lists a domestic posting only with a map pin; this one is far from 아주대.
+    conn.execute("UPDATE jobs SET latitude = 35.1, longitude = 129.0, address = '부산 해운대구' WHERE title LIKE '%<script>%'")
+    # The public site shows a posting only with its full notice; seeded postings have one.
+    conn.execute("UPDATE jobs SET body_text = ?", ("## 모집 개요\n공고 본문",))
     conn.commit()
     conn.close()
 
@@ -221,7 +225,7 @@ class BuildTests(unittest.TestCase):
         self.assertIn("data-mini-map", page)
 
     def test_map_rows(self):
-        self.assertEqual(self.stats["on_map"], 1)
+        self.assertEqual(self.stats["on_map"], 2)
         self.assertIn('data-lat="37.28"', self.index)
 
     def test_sitemap_and_canonical(self):
@@ -528,6 +532,26 @@ class BuildTests(unittest.TestCase):
 
     def test_kakao_key_reaches_page_config(self):
         self.assertIn('window.SITE = {"kakaoKey": "KEY"', self.index)
+
+    def test_public_site_skips_unmapped_domestic_and_empty_postings(self):
+        conn = cj.init_db(self.db)
+        conn.execute("UPDATE jobs SET latitude = NULL, longitude = NULL WHERE title = '아주대 강사 모집'")
+        conn.execute("UPDATE jobs SET body_text = NULL WHERE title LIKE '%<script>%'")
+        conn.commit()
+        conn.close()
+        stats = bs.build(self.db, self.out, self.config, TODAY, BUILT_AT)
+        self.assertEqual(stats["jobs"], 0)
+        # The test build still shows both, to see what is missing.
+        stats = bs.build(self.db, self.out, dict(self.config, test=True), TODAY, BUILT_AT)
+        self.assertEqual(stats["domestic"], 2)
+
+    def test_public_overseas_postings_need_their_notice(self):
+        conn = cj.init_db(self.db)
+        conn.execute("UPDATE jobs SET body_text = NULL WHERE title = 'Lecturer of Korean'")
+        conn.commit()
+        conn.close()
+        stats = bs.build(self.db, self.out, dict(self.config, overseas=True), TODAY, BUILT_AT)
+        self.assertEqual(stats["overseas"], 0)
 
     def test_rebuild_removes_expired_pages(self):
         conn = cj.init_db(self.db)

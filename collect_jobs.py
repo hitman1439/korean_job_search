@@ -1994,6 +1994,8 @@ def collect_discovery_sources(
 
 
 ATTACHMENT_NAME = re.compile(r"\.(?:hwp|hwpx|pdf|docx?|xlsx?|zip)\s*$", re.I)
+# Boards often print the size after the name: "지원서류.hwpx (90.32 KB)", "공고문.pdf [1.2MB]".
+FILE_SIZE_SUFFIX = re.compile(r"\s*[(\[]\s*[\d.,]+\s*[KMG]?i?B(?:ytes)?\s*[)\]]\s*$", re.I)
 
 
 def extract_attachments(links: list[tuple[str, str]], base_url: str, limit: int = 6) -> list[tuple[str, str]]:
@@ -2005,7 +2007,10 @@ def extract_attachments(links: list[tuple[str, str]], base_url: str, limit: int 
     found: list[tuple[str, str]] = []
     seen: set[str] = set()
     for text, href in links:
-        name = clean_text(text)
+        name = FILE_SIZE_SUFFIX.sub("", clean_text(text))
+        # Some boards show the URL-encoded name, with + for spaces.
+        if "+" in name and " " not in name:
+            name = clean_text(name.replace("+", " ")).replace(" .", ".")
         if not ATTACHMENT_NAME.search(name):
             continue
         url = urllib.parse.urljoin(base_url, href)
@@ -3239,10 +3244,17 @@ def fill_job_fields(conn: sqlite3.Connection, llm_backend: str | None, llm_limit
             fields = extract_fields.extract_rules(job)
             stats["rules"] += 1
         columns = [column for column, _ in JOB_FIELD_COLUMNS if column in fields]
+        values = [fields[column] for column in columns]
+        # Claude reads the employer from the posting itself; the scraped guess
+        # can be the poster's username ("minju kang") or a board heading.
+        institution = clean_text(fields.get("institution") or "") if source == "llm" else ""
+        if institution and not is_vague_institution(institution):
+            columns.append("institution_name")
+            values.append(institution)
         assignments = ", ".join(f"{column} = ?" for column in columns)
         conn.execute(
             f"UPDATE jobs SET {assignments}, fields_source = ?, fields_extracted_at = ? WHERE job_id = ?",
-            [fields[column] for column in columns] + [source, utc_now(), job["job_id"]],
+            values + [source, utc_now(), job["job_id"]],
         )
     return stats
 

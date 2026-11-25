@@ -546,6 +546,18 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
 """
 
 
+def public_ready(job: dict) -> bool:
+    """What the public site shows: a domestic posting only with a map pin, and
+    a collected posting only once its full notice (body_text) is filled in, so
+    no detail page opens empty. Saramin postings link out and need neither.
+    The test and private builds show everything, to see what is missing."""
+    if job.get("external"):
+        return True
+    if job["scope"] == "domestic" and not job["has_place"]:
+        return False
+    return bool((job.get("body_text") or "").strip())
+
+
 def services_on(config: dict) -> bool:
     """Paid services (첨삭, 시강 교안 AI) are not launched yet: the public site
     shows only the free job board. --with-services turns them on; the private
@@ -1799,6 +1811,8 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     try:
         jobs = load_jobs(conn, today, approved_only, include_overseas=overseas_on(config),
                          include_saramin=saramin_on(config))
+        if not (config.get("test") or config.get("private")):
+            jobs = [job for job in jobs if public_ready(job)]
         last_run = conn.execute("SELECT MAX(finished_at) FROM collection_runs").fetchone()[0]
         orgs = review_orgs(conn) if config.get("test") else []
     finally:

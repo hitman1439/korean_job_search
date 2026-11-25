@@ -254,6 +254,7 @@ def _nullable(schema: dict) -> dict:
 LLM_SCHEMA = {
     "type": "object",
     "properties": {
+        "institution": _nullable({"type": "string"}),
         "institution_type": {"type": "string", "enum": INSTITUTION_TYPES},
         "country": _nullable({"type": "string"}),
         "qualification": _nullable({"type": "string"}),
@@ -273,7 +274,7 @@ LLM_SCHEMA = {
         "summary": {"type": "string"},
     },
     "required": [
-        "institution_type", "country", "qualification", "experience_required",
+        "institution", "institution_type", "country", "qualification", "experience_required",
         "newcomer_ok", "demo_lesson", "salary_text", "benefits",
         "apply_email", "work_period", "work_hours", "documents", "how_to_apply", "schedule", "contact",
         "body_text", "summary",
@@ -285,7 +286,8 @@ LLM_SYSTEM = """You read job postings for Korean-language teachers (한국어 �
 
 The posting text was scraped from a web page, so it may include menus, other listings, or comments; use only the posting itself. Record only what the posting states. Use null when it does not say; do not infer a value from what is typical.
 
-Write every string value in Korean.
+Write every string value in Korean, except institution.
+- institution: the hiring organization's name as the posting writes it (a university, school, center or company), e.g. "広島文教大学", "Austin Community College", "울산과학대학교". The "기관" line given above the posting was guessed by a scraper and may be wrong: it can be the username of whoever posted the copy, a person's name, or a board's heading. Use null when the posting does not name the employer; never a person's name or a website or board name.
 - institution_type: university (Korean university language centers), overseas_university, sejong (세종학당), multicultural (가족센터/다문화), kiip (사회통합프로그램), school (K-12, 교육청), academy (private 학원), online, government (public agencies, foundations), other.
 - country: the country where the work happens, e.g. "대한민국", "미국"; null for fully online work.
 - qualification: the required teaching credential, e.g. "한국어교원 2급 이상".

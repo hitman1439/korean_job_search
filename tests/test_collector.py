@@ -742,6 +742,29 @@ class LlmRequestTests(unittest.TestCase):
         self.assertEqual(stats, {"rules": 2, "llm": 0, "llm_failed": 0})
         conn.close()
 
+    def test_llm_names_the_employer_over_the_scraped_guess(self):
+        conn = cj.init_db(Path(":memory:"))
+        cj.save_job(conn, make_job(institution_name="minju kang"))
+        cj.save_job(conn, make_job(original_url="https://example.org/2", title="다른 공고", institution_name="가나대학교"))
+        replies = iter([{"institution": "방콕 한국어학원", "body_text": "본문", "summary": "요약"},
+                        {"institution": None, "body_text": "본문", "summary": "요약"}])
+        original = ef.make_extractor
+        ef.make_extractor = lambda backend: (lambda job, text: next(replies))
+        try:
+            cj.fill_job_fields(conn, "claude-code", 50)
+        finally:
+            ef.make_extractor = original
+        names = [r[0] for r in conn.execute("SELECT institution_name FROM jobs ORDER BY job_id")]
+        self.assertEqual(names, ["방콕 한국어학원", "가나대학교"])
+        conn.close()
+
+    def test_attachment_names_with_a_size_or_plus_signs(self):
+        links = [("한국어강사+지원서류+.hwpx (90.32 KB)", "/index.php?mode=fdn&num=1"),
+                 ("채용 공고문.pdf [1.2MB]", "/down?id=2"),
+                 ("공지사항", "/notice")]
+        files = cj.extract_attachments(links, "https://korean.example.ac.kr/board")
+        self.assertEqual([n for n, _ in files], ["한국어강사 지원서류.hwpx", "채용 공고문.pdf"])
+
     def test_llm_stops_when_its_time_is_used(self):
         conn = cj.init_db(Path(":memory:"))
         cj.save_job(conn, make_job())
