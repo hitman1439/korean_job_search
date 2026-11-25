@@ -1400,6 +1400,65 @@ def title_key(title: str | None) -> str:
     return normalize(text)
 
 
+# Words every notice title shares; left out when comparing two titles.
+TITLE_GENERIC = re.compile(r"공고|채용|모집|초빙|선발|안내|한국어|강사|교사|교원|대학교|대학|\d{4}\s*(?:학년도|년도|년)?")
+# Words that make two otherwise alike notices different postings.
+TITLE_ROLE = re.compile(r"시간강사|강의전담|전임|튜터|추가|예비|인력풀|특별과정|[2-9]차")
+TITLE_TERM = re.compile(r"봄|여름|가을|겨울|[1-4]학기|[1-4]쿼터")
+REPOST_YEAR = re.compile(r"20\d\d")
+REPOST_SAME_ORG = 0.75   # title overlap enough when the institution matches
+REPOST_ANY_ORG = 0.9     # …and when the institution was read differently
+REPOST_WINDOW_DAYS = 120
+
+
+def title_bigrams(title: str | None) -> set[str]:
+    text = normalize(TITLE_GENERIC.sub(" ", title_key_text(title or "")))
+    return {text[i:i + 2] for i in range(len(text) - 1)}
+
+
+def title_overlap(a: str | None, b: str | None) -> float:
+    """How much of the shorter title (generic words removed) the other one contains."""
+    left, right = title_bigrams(a), title_bigrams(b)
+    if not left or not right:
+        return 1.0 if not left and not right else 0.0
+    return len(left & right) / min(len(left), len(right))
+
+
+def same_posting_words(a: str | None, b: str | None) -> bool:
+    """No word that tells two postings apart: role, round, term, year."""
+    a, b = a or "", b or ""
+    if set(TITLE_ROLE.findall(a)) != set(TITLE_ROLE.findall(b)):
+        return False
+    terms_a, terms_b = set(TITLE_TERM.findall(a)), set(TITLE_TERM.findall(b))
+    if terms_a and terms_b and terms_a != terms_b:
+        return False
+    years_a, years_b = set(REPOST_YEAR.findall(a)), set(REPOST_YEAR.findall(b))
+    return not (years_a and years_b and not years_a & years_b)
+
+
+def is_repost(a: tuple, b: tuple) -> bool:
+    """Two domestic rows from different boards that are one notice worded a little differently.
+
+    Rows are (title, institution, deadline, source, first_seen_at).
+    """
+    title_a, inst_a, deadline_a, source_a, seen_a = a
+    title_b, inst_b, deadline_b, source_b, seen_b = b
+    if source_a == source_b or not same_posting_words(title_a, title_b):
+        return False
+    dated = {d for d in (deadline_a, deadline_b) if d and d != "rolling"}
+    if len(dated) > 1:
+        return False
+    try:
+        apart = abs((dt.datetime.fromisoformat(seen_a) - dt.datetime.fromisoformat(seen_b)).days)
+    except (TypeError, ValueError):
+        apart = 0
+    if apart > REPOST_WINDOW_DAYS:
+        return False
+    core_a, core_b = institution_core(inst_a, title_a or ""), institution_core(inst_b, title_b or "")
+    need = REPOST_SAME_ORG if core_a and core_a == core_b else REPOST_ANY_ORG
+    return title_overlap(title_a, title_b) >= need
+
+
 def assign_duplicate_groups(conn: sqlite3.Connection) -> int:
     """Group the same notice collected from different boards; mark one canonical.
 
@@ -1410,7 +1469,11 @@ def assign_duplicate_groups(conn: sqlite3.Connection) -> int:
     Returns the number of non-canonical (duplicate) rows.
     """
     rows = conn.execute(
-        "SELECT job_id, title, institution_name, deadline, content_hash, confidence_score, status, first_seen_at, source_name FROM jobs"
+        "SELECT job_id, title, institution_name, deadline, content_hash, confidence_score, status, first_seen_at, source_name,"
+        " is_overseas,"
+        " (body_text IS NOT NULL AND body_text != '') + (summary IS NOT NULL) + (salary_text IS NOT NULL)"
+        " + (work_hours IS NOT NULL) + (qualification IS NOT NULL) + (how_to_apply IS NOT NULL) + (attachments IS NOT NULL)"
+        " FROM jobs"
     ).fetchall()
     parent = {row[0]: row[0] for row in rows}
 
@@ -1425,7 +1488,17 @@ def assign_duplicate_groups(conn: sqlite3.Connection) -> int:
     # board (세종대: 시간강사 / 강의전담강사), so institution + deadline only
     # joins rows that came from different boards: a repost.
     by_deadline: dict[str, list[tuple[int, str]]] = {}
-    for job_id, title, institution, deadline, *_, source in rows:
+    # Reposts worded a little differently ("…채용" / "[공고] …채용 공고"), often
+    # without a deadline. Not between two overseas rows: overseas boards post
+    # one template per country (Language Trainers 미국 / 영국 / 캐나다).
+    earlier: list[tuple[int, bool, tuple]] = []
+    for job_id, title, institution, deadline, _hash, _score, _status, first_seen, source, overseas, _filled in rows:
+        facts = (title, institution, deadline, source, first_seen)
+        for other_id, other_overseas, other in earlier:
+            if not (overseas and other_overseas) and is_repost(facts, other):
+                parent[find(job_id)] = find(other_id)
+                break
+        earlier.append((job_id, bool(overseas), facts))
         tkey = title_key(title)
         if len(tkey) >= 8:  # too short a title ("강사 모집") names no single notice
             if tkey in first_by_title:
@@ -1451,10 +1524,12 @@ def assign_duplicate_groups(conn: sqlite3.Connection) -> int:
             if len(members) > 1 else members[0][4][:16]
         # Prefer a row not found through Saramin (those are test-build only,
         # so one must not hide a notice the public site already shows), then a
-        # reviewed-approved row, then one that states its deadline, then the
-        # most trusted board, then the oldest.
-        members.sort(key=lambda r: (r[8] == SARAMIN_ORIGINAL_NAME, r[6] != "approved", not r[3], -(r[5] or 0),
-                                    r[7] or "", r[0]))
+        # reviewed-approved row, then one that states a date (KLEOcean files
+        # undated copies as "rolling"), then the one with the most read out of it (a board that copies only the title
+        # must not hide a copy with the full notice), then the most trusted
+        # board, then the oldest.
+        members.sort(key=lambda r: (r[8] == SARAMIN_ORIGINAL_NAME, r[6] != "approved", r[3] in (None, "rolling"),
+                                    -(r[10] or 0), not r[3], -(r[5] or 0), r[7] or "", r[0]))
         for index, row in enumerate(members):
             conn.execute(
                 "UPDATE jobs SET duplicate_group_id = ?, is_canonical = ? WHERE job_id = ?",

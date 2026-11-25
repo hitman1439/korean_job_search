@@ -579,6 +579,35 @@ class DatabaseTests(unittest.TestCase):
                                         deadline="2026-11-12", source_name="국립국어원", original_url="https://example.org/2"))
         self.assertEqual(cj.assign_duplicate_groups(self.conn), 0)
 
+    def test_reworded_repost_joins_and_the_fuller_copy_leads(self):
+        # The same notice on two boards, worded a little differently and undated.
+        cj.save_job(self.conn, make_job(title="숭실대학교 한국어교육원 한국어강사 채용 공고", institution_name="숭실대학교 한국어교육원",
+                                        deadline=None, source_name="동신대", original_url="https://a.example/1",
+                                        summary="겨울학기 강사를 뽑아요"))
+        cj.save_job(self.conn, make_job(title="N 숭실대학교 한국어교육원 한국어강사 채용", institution_name="숭실대학교",
+                                        deadline="rolling", source_name="KLEOcean", original_url="https://b.example/1",
+                                        confidence_score=95))
+        # Different positions, rounds or programs stay apart.
+        cj.save_job(self.conn, make_job(title="부산외국어대학교 한국어문화교육원 한국어교사 모집", institution_name="부산외국어대학교",
+                                        deadline=None, source_name="부산외대", original_url="https://c.example/1"))
+        cj.save_job(self.conn, make_job(title="부산외국어대학교 한국어문화교육원 한국어교사 추가 모집", institution_name="부산외국어대학교",
+                                        deadline=None, source_name="KLEOcean", original_url="https://c.example/2"))
+        cj.save_job(self.conn, make_job(title="화성시글로벌청소년센터 찾아가는 한국어 교육 강사 채용", institution_name="화성시글로벌청소년센터",
+                                        deadline=None, source_name="A", original_url="https://d.example/1"))
+        cj.save_job(self.conn, make_job(title="화성시글로벌청소년센터 '지구별 한국어학교' 한국어 강사 모집 공고",
+                                        institution_name="화성시글로벌청소년센터", deadline=None, source_name="B",
+                                        original_url="https://d.example/2"))
+        self.assertEqual(cj.assign_duplicate_groups(self.conn), 1)
+        lead = self.conn.execute("SELECT source_name FROM jobs WHERE is_canonical = 1 AND title LIKE '%숭실%'").fetchall()
+        self.assertEqual(lead, [("동신대",)])
+
+    def test_overseas_templates_per_country_stay_apart(self):
+        for n, country in enumerate(("미국", "영국", "캐나다")):
+            cj.save_job(self.conn, make_job(title=f"{country} Language Trainers 한국어 교사 해외채용", institution_name="Language Trainers",
+                                            deadline=None, source_name=f"board{n}", original_url=f"https://e.example/{n}",
+                                            is_overseas=1))
+        self.assertEqual(cj.assign_duplicate_groups(self.conn), 0)
+
     def test_title_key_drops_board_markers(self):
         self.assertEqual(cj.title_key("남서울대학교 겨울학기 한국어 강사 채용 공고-2"), cj.title_key("남서울대학교 겨울학기 한국어 강사 채용 공고"))
         self.assertEqual(cj.title_key("N 미국 Emory University 한국어 교수"), cj.title_key("미국 Emory University 한국어 교수"))
