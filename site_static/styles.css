@@ -355,3 +355,59 @@ button, input, select { font: inherit; }
 .nav .menu-panel a:hover { background: var(--fill); color: var(--text); }
 .nav .menu-panel a[aria-current="page"] { background: var(--blue-soft); color: var(--blue); font-weight: 600; }
 .nav .menu-panel a:first-child { margin-bottom: 4px; border-bottom: 1px solid var(--line); border-radius: 6px 6px 0 0; }
+
+/* TIP 게시판: a classic list board (번호 · 분류 · 제목 · 글쓴이 · 날짜). */
+.board { max-width: 960px; padding-top: 28px; }
+.bd-head { padding-bottom: 16px; }
+.bd-name { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; }
+.bd-desc { margin-top: 6px; font-size: 15px; color: var(--text-4); }
+.bd-count { margin-bottom: 8px; font-size: 14px; color: var(--text-4); }
+.bd-list { width: 100%; border-collapse: collapse; table-layout: fixed; border-top: 2px solid var(--text); font-size: 15px; }
+.bd-list th.bd-no { width: 64px; }
+.bd-list th.bd-cat { width: 96px; }
+.bd-list th.bd-author { width: 80px; }
+.bd-list th.bd-date { width: 96px; }
+.bd-list th { padding: 11px 8px; background: var(--soft); border-bottom: 1px solid var(--line-strong); font-weight: 600; color: var(--text-2); }
+.bd-list td { padding: 12px 8px; border-bottom: 1px solid var(--line); text-align: center; color: var(--text-4); }
+.bd-list td.bd-title { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bd-title a { color: var(--text); text-decoration: none; }
+.bd-title a:hover { text-decoration: underline; }
+.bd-list tr.is-notice td { background: var(--fill); }
+.bd-list tr.is-notice .bd-title a { font-weight: 700; }
+.bd-tag { display: inline-block; padding: 1px 6px; background: var(--red); color: #fff; font-size: 12px; font-weight: 700; }
+.bd-new { display: inline-block; margin-left: 4px; padding: 0 4px; border: 1px solid var(--red); color: var(--red); font-size: 11px; font-weight: 700; line-height: 16px; vertical-align: 1px; }
+.bd-empty { padding: 40px 8px !important; }
+.bd-pager { display: flex; justify-content: center; gap: 4px; margin-top: 24px; font-size: 15px; }
+.bd-pager a, .bd-pager strong { min-width: 36px; padding: 6px 10px; border: 1px solid var(--line-strong); text-align: center; text-decoration: none; color: var(--text-3); }
+.bd-pager strong { background: var(--text); border-color: var(--text); color: #fff; }
+
+.bd-crumb { font-size: 14px; }
+.bd-crumb a { color: var(--text-4); text-decoration: none; }
+.bd-post { margin-top: 10px; border-top: 2px solid var(--text); }
+.bd-post-head { padding: 18px 4px 14px; border-bottom: 1px solid var(--line-strong); }
+.bd-post-head h1 { font-size: 22px; font-weight: 700; line-height: 1.45; letter-spacing: -0.02em; }
+.bd-post-cat { color: var(--blue); }
+.bd-post-meta { display: flex; gap: 14px; margin-top: 8px; font-size: 14px; color: var(--text-4); }
+.bd-post-body { padding: 28px 4px 36px; font-size: 17px; line-height: 1.85; color: var(--text-2); max-width: 720px; }
+.bd-post-body p + p, .bd-post-body ul, .bd-post-body h2 { margin-top: 18px; }
+.bd-post-body ul { padding-left: 22px; }
+.bd-post-body li + li { margin-top: 4px; }
+.bd-post-body h2 { font-size: 18px; font-weight: 700; color: var(--text); }
+.bd-more { padding: 14px 4px; border-top: 1px dashed var(--line-strong); font-size: 15px; }
+.bd-near { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); font-size: 15px; }
+.bd-near li { display: flex; gap: 16px; padding: 12px 4px; }
+.bd-near li + li { border-top: 1px solid var(--line); }
+.bd-near span { flex: none; width: 52px; color: var(--text-4); }
+.bd-near a { color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bd-actions { margin-top: 16px; text-align: right; }
+.bd-btn { display: inline-block; padding: 9px 22px; border: 1px solid var(--line-strong); background: var(--bg); color: var(--text-2); font-size: 15px; text-decoration: none; }
+.bd-btn:hover { background: var(--soft); color: var(--text); }
+
+@media (max-width: 640px) {
+  .bd-list .bd-cat, .bd-list .bd-author { display: none; }
+  .bd-list th.bd-no { width: 44px; }
+  .bd-list th.bd-date { width: 60px; }
+  .bd-list th, .bd-list td { padding-inline: 4px; font-size: 14px; }
+  .bd-list td.bd-title { font-size: 15px; }
+  .bd-post-body { font-size: 16px; }
+}

@@ -625,6 +625,7 @@ def header(root: str, active: str, with_services: bool = False, with_alerts: boo
                 f'<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'
                 f'<div class="menu-panel" id="menuCourse" hidden>{panel}</div></div>')
     nav += link("pay", f"{root}pay.html", "실수령 계산기")
+    nav += link("board", f"{root}board/index.html", BOARD_NAME)
     if with_services:
         nav += link("resume", f"{root}resume.html", "이력서·자소서 첨삭") + link("demo", f"{root}demo.html", "시강 교안 AI")
     return f"""<header class="top"><div class="wrap">
@@ -1582,11 +1583,182 @@ def absolute(config: dict, path: str) -> str | None:
     return f"{base.rstrip('/')}/{path}" if base else None
 
 
-def render_sitemap(jobs: list[dict], config: dict, today: dt.date) -> str | None:
+# --- TIP 게시판 (board/) ---------------------------------------------------------
+# Posts are text files in board/: a few "key: value" lines between --- marks,
+# then the body. A post dated after today stays hidden until that day, so
+# posts can be written ahead and appear one by one on the scheduled builds.
+# Body markup: blank line = new paragraph, "- " = list item, "## " = subheading,
+# **bold**. Every post is the operator's own; no made-up users or view counts.
+
+BOARD_DIR = ROOT / "board"
+BOARD_NAME = "TIP 게시판"
+BOARD_AUTHOR = "운영자"
+BOARD_PER_PAGE = 15
+BOARD_NEW_DAYS = 3
+POST_FILE = re.compile(r"^(\d+)\.md$")
+
+
+def load_posts(board_dir: Path, today: dt.date) -> list[dict]:
+    """Published posts, newest first (notices are kept in the same list)."""
+    posts = []
+    if not board_dir.is_dir():
+        return posts
+    for path in board_dir.iterdir():
+        match = POST_FILE.match(path.name)
+        if not match:
+            continue
+        text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+        head, sep, body = text.removeprefix("---\n").partition("\n---\n")
+        if not sep:
+            raise ValueError(f"{path.name}: the header must sit between --- lines")
+        meta = {}
+        for line in head.splitlines():
+            key, _, value = line.partition(":")
+            if value:
+                meta[key.strip()] = value.strip()
+        try:
+            date = dt.date.fromisoformat(meta["날짜"])
+            title = meta["제목"]
+        except (KeyError, ValueError) as exc:
+            raise ValueError(f"{path.name}: needs 제목 and 날짜 (YYYY-MM-DD)") from exc
+        if date > today:
+            continue
+        posts.append({
+            "id": int(match.group(1)),
+            "title": title,
+            "category": meta.get("분류", "TIP"),
+            "date": date,
+            "notice": meta.get("공지") in {"예", "yes", "1"},
+            "body": body.strip(),
+        })
+    posts.sort(key=lambda p: (p["date"], p["id"]), reverse=True)
+    return posts
+
+
+def post_inline(text: str) -> str:
+    parts = re.split(r"\*\*(.+?)\*\*", text)
+    return "".join(f"<strong>{inline_html(part)}</strong>" if i % 2 else inline_html(part)
+                   for i, part in enumerate(parts))
+
+
+def post_body_html(body: str) -> str:
+    out = []
+    for block in re.split(r"\n\s*\n", body):
+        lines = [line.rstrip() for line in block.strip().splitlines() if line.strip()]
+        if not lines:
+            continue
+        if lines[0].startswith("## ") and len(lines) == 1:
+            out.append(f"<h2>{post_inline(lines[0][3:])}</h2>")
+        elif all(line.startswith("- ") for line in lines):
+            out.append("<ul>" + "".join(f"<li>{post_inline(line[2:])}</li>" for line in lines) + "</ul>")
+        else:
+            out.append("<p>" + "<br>".join(post_inline(line) for line in lines) + "</p>")
+    return "\n".join(out)
+
+
+def post_summary(body: str, limit: int = 120) -> str:
+    plain = re.sub(r"\*\*|^## |^- ", "", body, flags=re.M)
+    return short(" ".join(plain.split()), limit) or ""
+
+
+def board_page_name(number: int) -> str:
+    return "index.html" if number == 1 else f"list{number}.html"
+
+
+def board_row(post: dict, number: str, today: dt.date) -> str:
+    new = ' <span class="bd-new" title="새 글">N</span>' if (today - post["date"]).days < BOARD_NEW_DAYS else ""
+    date = post["date"].strftime("%Y.%m.%d") if post["date"].year != today.year else post["date"].strftime("%m.%d")
+    return (f'<tr{" class=\"is-notice\"" if post["notice"] else ""}>'
+            f'<td class="bd-no">{number}</td>'
+            f'<td class="bd-cat">{e(post["category"])}</td>'
+            f'<td class="bd-title"><a href="{post["id"]}.html">{e(post["title"])}</a>{new}</td>'
+            f'<td class="bd-author">{BOARD_AUTHOR}</td>'
+            f'<td class="bd-date">{date}</td></tr>')
+
+
+def board_table(rows: str) -> str:
+    return f"""<table class="bd-list">
+<thead><tr><th scope="col" class="bd-no">번호</th><th scope="col" class="bd-cat">분류</th><th scope="col">제목</th><th scope="col" class="bd-author">글쓴이</th><th scope="col" class="bd-date">날짜</th></tr></thead>
+<tbody>{rows}</tbody></table>"""
+
+
+def render_board_list(posts: list[dict], page_no: int, pages: int, config: dict, today: dt.date) -> str:
+    notices = [p for p in posts if p["notice"]]
+    normal = [p for p in posts if not p["notice"]]
+    start = (page_no - 1) * BOARD_PER_PAGE
+    rows = "".join(board_row(p, '<span class="bd-tag">공지</span>', today) for p in notices)
+    rows += "".join(board_row(p, str(len(normal) - start - i), today)
+                    for i, p in enumerate(normal[start:start + BOARD_PER_PAGE]))
+    if not posts:
+        rows = '<tr><td colspan="5" class="bd-empty">아직 올라온 글이 없어요.</td></tr>'
+    pager = ""
+    if pages > 1:
+        links = "".join(
+            f'<strong aria-current="page">{n}</strong>' if n == page_no else f'<a href="{board_page_name(n)}">{n}</a>'
+            for n in range(1, pages + 1))
+        pager = f'<nav class="bd-pager" aria-label="페이지">{links}</nav>'
+    body = f"""<main class="wrap board">
+<div class="bd-head"><h1 class="bd-name">{BOARD_NAME}</h1>
+<p class="bd-desc">한국어 강사 구직과 일에 도움이 되는 짧은 이야기를 올려요. 시기에 맞는 글을 먼저 올립니다.</p></div>
+<p class="bd-count">전체 {len(normal)}개</p>
+{board_table(rows)}
+{pager}
+</main>"""
+    name = board_page_name(page_no)
+    return page(f"{BOARD_NAME} · {SITE_NAME}", "한국어 강사 채용 시기, 지원 서류, 시강·면접, 강사료와 세금에 관한 짧은 TIP 모음.",
+                body, root="../", config=config, canonical=absolute(config, f"board/{name}"), active="board")
+
+
+def render_post(post: dict, posts: list[dict], config: dict) -> str:
+    i = posts.index(post)
+    newer = posts[i - 1] if i > 0 else None
+    older = posts[i + 1] if i + 1 < len(posts) else None
+    near = "".join(
+        f'<li><span>{label}</span><a href="{p["id"]}.html">{e(p["title"])}</a></li>'
+        for label, p in (("이전글", older), ("다음글", newer)) if p)
+    ebook = SERVICE_LINKS.get("ebook")
+    ebook_line = (f'<p class="bd-more">더 자세한 이야기는 <a href="{e(ebook)}">전자책</a>에 정리해 두었어요.</p>'
+                  if ebook else "")
+    body = f"""<main class="wrap board">
+<p class="bd-crumb"><a href="index.html">{BOARD_NAME}</a></p>
+<article class="bd-post">
+<header class="bd-post-head"><h1><span class="bd-post-cat">[{e(post["category"])}]</span> {e(post["title"])}</h1>
+<p class="bd-post-meta"><span>{BOARD_AUTHOR}</span><time datetime="{post["date"].isoformat()}">{post["date"].strftime("%Y.%m.%d")}</time></p></header>
+<div class="bd-post-body">
+{post_body_html(post["body"])}
+</div>
+{ebook_line}
+</article>
+{f'<ul class="bd-near">{near}</ul>' if near else ""}
+<p class="bd-actions"><a class="bd-btn" href="index.html">목록</a></p>
+</main>"""
+    return page(f"{post['title']} · {BOARD_NAME}", post_summary(post["body"]), body, root="../", config=config,
+                canonical=absolute(config, f"board/{post['id']}.html"), active="board")
+
+
+def write_board(out_dir: Path, posts: list[dict], config: dict, today: dt.date) -> list[str]:
+    """Write board/ and return its paths (for the sitemap)."""
+    (out_dir / "board").mkdir(exist_ok=True)
+    normal = sum(1 for p in posts if not p["notice"])
+    pages = max(1, -(-normal // BOARD_PER_PAGE))
+    paths = []
+    for n in range(1, pages + 1):
+        rel = f"board/{board_page_name(n)}"
+        (out_dir / rel).write_text(render_board_list(posts, n, pages, config, today), encoding="utf-8")
+        paths.append(rel)
+    for post in posts:
+        rel = f"board/{post['id']}.html"
+        (out_dir / rel).write_text(render_post(post, posts, config), encoding="utf-8")
+        paths.append(rel)
+    return paths
+
+
+def render_sitemap(jobs: list[dict], config: dict, today: dt.date, extra: list[str] | None = None) -> str | None:
     if not config.get("site_url"):
         return None
     service_pages = ["resume.html", "demo.html"] if services_on(config) else []
-    urls = ["index.html", "pay.html"] + service_pages + [job["path"] for job in jobs if not job.get("external")]
+    urls = (["index.html", "pay.html"] + service_pages + list(extra or [])
+            + [job["path"] for job in jobs if not job.get("external")])
     entries = "".join(f"<url><loc>{e(absolute(config, u))}</loc><lastmod>{today.isoformat()}</lastmod></url>" for u in urls)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{entries}</urlset>\n'
 
@@ -1634,6 +1806,8 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     write = lambda rel, text: (out_dir / rel).write_text(text, encoding="utf-8")
     write("index.html", render_index(jobs, config, collected_at))
     write("pay.html", render_pay(config))
+    posts = load_posts(Path(config.get("board_dir") or BOARD_DIR), today)
+    board_paths = write_board(out_dir, posts, config, today)
     if services_on(config):
         write("demo.html", render_demo(config))
         write("resume.html", render_resume(config))
@@ -1651,7 +1825,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     if config.get("private") or config.get("test"):
         write("robots.txt", "User-agent: *\nDisallow: /\n")
     else:
-        sitemap = render_sitemap(jobs, config, today)
+        sitemap = render_sitemap(jobs, config, today, board_paths)
         if sitemap:
             write("sitemap.xml", sitemap)
         write("robots.txt", render_robots(config))
@@ -1660,6 +1834,7 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
         "domestic": sum(1 for j in jobs if j["scope"] == "domestic"),
         "overseas": sum(1 for j in jobs if j["scope"] == "overseas"),
         "online": sum(1 for j in jobs if j["scope"] == "online"),
+        "posts": len(posts),
         "on_map": sum(1 for j in jobs if j["has_place"]),
         "saramin": sum(1 for j in jobs if j.get("external")),
     }

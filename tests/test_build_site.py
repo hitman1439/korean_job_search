@@ -56,7 +56,8 @@ class BuildTests(unittest.TestCase):
         self.db = base / "jobs.sqlite3"
         self.out = base / "site"
         seed(self.db)
-        self.config = {"site_url": "https://jobs.example", "kakao_js_key": "KEY", "alert_endpoint": None, "adsense_client": None}
+        self.config = {"site_url": "https://jobs.example", "kakao_js_key": "KEY", "alert_endpoint": None, "adsense_client": None,
+                       "board_dir": str(base / "no-board")}
         self.stats = bs.build(self.db, self.out, self.config, TODAY, BUILT_AT)
         self.index = (self.out / "index.html").read_text(encoding="utf-8")
 
@@ -225,7 +226,7 @@ class BuildTests(unittest.TestCase):
 
     def test_sitemap_and_canonical(self):
         sitemap = (self.out / "sitemap.xml").read_text(encoding="utf-8")
-        self.assertEqual(sitemap.count("<url>"), 4)
+        self.assertEqual(sitemap.count("<url>"), 5)  # + board/index.html
         self.assertIn("<loc>https://jobs.example/pay.html</loc>", sitemap)
         self.assertIn('<link rel="canonical" href="https://jobs.example/index.html">', self.index)
 
@@ -333,6 +334,55 @@ class BuildTests(unittest.TestCase):
         self.assertNotIn("도착 기준인지 발송 기준인지", start)
         self.assertIn('href="start.html#prep-documents">서류전형 checklist</a>', nav)
         self.assertTrue((test_out / "rating.html").exists())
+
+    def write_post(self, board: Path, number: int, title: str, date: str, body: str = "본문", notice: bool = False):
+        board.mkdir(exist_ok=True)
+        head = f"제목: {title}\n분류: 서류\n날짜: {date}\n" + ("공지: 예\n" if notice else "")
+        (board / f"{number}.md").write_text(f"---\n{head}---\n{body}\n", encoding="utf-8")
+
+    def test_board_lists_published_posts_and_hides_scheduled_ones(self):
+        board = Path(self.tmp.name) / "board"
+        self.write_post(board, 1, "게시판 안내", "2026-10-01", notice=True)
+        self.write_post(board, 2, "오래된 글", "2026-10-01")
+        self.write_post(board, 3, "새 글 <b>", "2026-10-28", body="첫 줄\n**굵게**\n\n- 하나\n- 둘")
+        self.write_post(board, 4, "예약 글", "2026-11-30")
+        config = dict(self.config, board_dir=str(board))
+        stats = bs.build(self.db, self.out, config, TODAY, BUILT_AT)
+        self.assertEqual(stats["posts"], 3)
+        listing = (self.out / "board" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('href="../index.html"', listing)
+        self.assertNotIn("예약 글", listing)
+        self.assertFalse((self.out / "board" / "4.html").exists())
+        # Notice on top without a number; the rest count down, newest first.
+        self.assertLess(listing.index("게시판 안내"), listing.index("새 글"))
+        self.assertLess(listing.index("새 글"), listing.index("오래된 글"))
+        self.assertIn('<td class="bd-no">2</td>', listing)
+        self.assertIn("새 글 &lt;b&gt;", listing)
+        self.assertIn('class="bd-new"', listing)
+        post = (self.out / "board" / "3.html").read_text(encoding="utf-8")
+        self.assertIn("<p>첫 줄<br><strong>굵게</strong></p>", post)
+        self.assertIn("<ul><li>하나</li><li>둘</li></ul>", post)
+        self.assertIn('href="2.html"', post)  # 이전글
+        sitemap = (self.out / "sitemap.xml").read_text(encoding="utf-8")
+        self.assertIn("board/3.html", sitemap)
+        self.assertNotIn("board/4.html", sitemap)
+        self.assertIn("board/index.html", (self.out / "pay.html").read_text(encoding="utf-8"))  # in the menu
+
+    def test_board_pages_after_fifteen_posts(self):
+        board = Path(self.tmp.name) / "board"
+        for n in range(1, 18):
+            self.write_post(board, n, f"글 {n}", "2026-10-01")
+        bs.build(self.db, self.out, dict(self.config, board_dir=str(board)), TODAY, BUILT_AT)
+        self.assertTrue((self.out / "board" / "list2.html").exists())
+        second = (self.out / "board" / "list2.html").read_text(encoding="utf-8")
+        self.assertIn('<td class="bd-no">1</td>', second)
+
+    def test_post_without_date_fails_loudly(self):
+        board = Path(self.tmp.name) / "board"
+        board.mkdir()
+        (board / "1.md").write_text("---\n제목: 날짜 없음\n---\n본문\n", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            bs.load_posts(board, TODAY)
 
     def test_pay_calculator_is_public(self):
         conn = sqlite3.connect(self.db)
