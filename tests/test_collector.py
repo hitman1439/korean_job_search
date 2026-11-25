@@ -372,6 +372,34 @@ class SourceParserTests(unittest.TestCase):
         # The second URL is refused without another request.
         self.assertEqual(len(calls), tried)
 
+    def test_unreachable_host_is_skipped_after_two_failures(self):
+        import urllib.error
+        calls = []
+        original_once = cj.fetch_url_once
+
+        def no_answer(url, timeout):
+            calls.append(url)
+            raise urllib.error.URLError(TimeoutError("timed out"))
+
+        cj.fetch_url_once = no_answer
+        try:
+            for n in (1, 2):
+                with self.assertRaises(urllib.error.URLError):
+                    cj.fetch_url(f"https://down.example/{n}")
+            with self.assertRaises(cj.HostUnreachable):
+                cj.fetch_url("https://down.example/3")
+            # An HTTP error page means the host answered; it does not count.
+            def not_found(url, timeout):
+                raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+            cj.fetch_url_once = not_found
+            for n in (1, 2, 3):
+                with self.assertRaises(urllib.error.HTTPError):
+                    cj.fetch_url(f"https://up.example/{n}")
+        finally:
+            cj.fetch_url_once = original_once
+            cj._UNREACHABLE.clear()
+        self.assertEqual(len(calls), 2)
+
     def test_a_hung_request_is_abandoned(self):
         import time as _time
         started = _time.monotonic()

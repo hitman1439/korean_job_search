@@ -208,6 +208,11 @@ class Handler(SimpleHTTPRequestHandler):
         # Admin pages must never sit in a shared cache (Cloudflare, proxies).
         if test_path(self.path) is not None or admin_page(self.path) is not None:
             self.send_header("Cache-Control", "no-store, private")
+        elif urlsplit(self.path).path.endswith((".html", "/")):
+            # Pages change with every build; without this, phones keep showing
+            # an old page for a while. no-cache still lets them reuse it after a
+            # quick 304 check. Assets carry ?v=hash, so they can stay cached.
+            self.send_header("Cache-Control", "no-cache")
         super().end_headers()
 
     def translate_path(self, path: str) -> str:

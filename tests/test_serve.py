@@ -161,6 +161,9 @@ class AdminGateTests(unittest.TestCase):
     def test_public_site_needs_no_password(self):
         self.assertEqual(self.fetch("/index.html")[:2], (200, "public"))
 
+    def test_public_pages_are_revalidated(self):
+        self.assertEqual(self.fetch("/index.html")[2]["Cache-Control"], "no-cache")
+
     def test_test_needs_the_password(self):
         status, _, headers = self.fetch("/test/index.html")
         self.assertEqual(status, 401)

@@ -13,6 +13,7 @@ import http.cookiejar
 import json
 import os
 import re
+import socket
 import ssl
 import sqlite3
 import sys
@@ -387,6 +388,27 @@ class HostRateLimited(Exception):
     """The host is rate-limiting this run; skip its remaining requests."""
 
 
+# Hosts that could not be reached this run (no answer at all), counted per host.
+# A site that is down costs up to a minute per request; with dozens of stored
+# posts to re-check, KLEOcean being down kept every run past its 50-minute
+# limit for days, so no source got collected at all.
+_UNREACHABLE: dict[str, int] = {}
+UNREACHABLE_LIMIT = 2
+
+
+class HostUnreachable(HostRateLimited):
+    """The host did not answer twice this run; skip its remaining requests."""
+
+
+def is_connection_failure(exc: BaseException) -> bool:
+    """No answer from the host (timeout, refused, DNS), as opposed to an HTTP error page."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return False
+    if isinstance(exc, urllib.error.URLError):
+        exc = exc.reason if isinstance(exc.reason, BaseException) else exc
+    return isinstance(exc, (TimeoutError, ConnectionError, socket.gaierror, urllib.error.URLError))
+
+
 def wait_for_host(url: str) -> None:
     """Space out requests to one host by MIN_REQUEST_INTERVAL (or HOST_INTERVAL) seconds."""
     host = urllib.parse.urlparse(url).hostname or ""
@@ -416,9 +438,13 @@ def fetch_url(url: str, timeout: int = 20) -> str:
     host = urllib.parse.urlparse(url).hostname or ""
     if host in _BLOCKED_HOSTS:
         raise HostRateLimited(f"{host} is rate-limiting this run")
+    if _UNREACHABLE.get(host, 0) >= UNREACHABLE_LIMIT:
+        raise HostUnreachable(f"{host} did not answer earlier in this run")
     for attempt in range(RATE_LIMIT_RETRIES + 1):
         try:
-            return with_deadline(fetch_url_once, (url, timeout), timeout * 3)
+            page = with_deadline(fetch_url_once, (url, timeout), timeout * 3)
+            _UNREACHABLE.pop(host, None)
+            return page
         except urllib.error.HTTPError as exc:
             if exc.code != 429:
                 raise
@@ -429,6 +455,12 @@ def fetch_url(url: str, timeout: int = 20) -> str:
             retry_after = exc.headers.get("Retry-After", "")
             delay = int(retry_after) if retry_after.isdigit() else 5 * (attempt + 1)
             time.sleep(min(delay, 60))
+        except Exception as exc:
+            if is_connection_failure(exc):
+                _UNREACHABLE[host] = _UNREACHABLE.get(host, 0) + 1
+                if _UNREACHABLE[host] == UNREACHABLE_LIMIT:
+                    print(f"warning: {host} is not answering; skipping it for the rest of this run", file=sys.stderr)
+            raise
     raise AssertionError("unreachable")
 
 
