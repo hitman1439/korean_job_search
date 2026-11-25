@@ -744,8 +744,9 @@ class LlmRequestTests(unittest.TestCase):
 
     def test_llm_names_the_employer_over_the_scraped_guess(self):
         conn = cj.init_db(Path(":memory:"))
-        cj.save_job(conn, make_job(institution_name="minju kang"))
-        cj.save_job(conn, make_job(original_url="https://example.org/2", title="다른 공고", institution_name="가나대학교"))
+        cj.save_job(conn, make_job(institution_name="minju kang", deadline="rolling"))
+        cj.save_job(conn, make_job(original_url="https://example.org/2", title="다른 공고", institution_name="가나대학교",
+                                   deadline="rolling"))
         replies = iter([{"institution": "방콕 한국어학원", "body_text": "본문", "summary": "요약"},
                         {"institution": None, "body_text": "본문", "summary": "요약"}])
         original = ef.make_extractor
@@ -756,6 +757,19 @@ class LlmRequestTests(unittest.TestCase):
             ef.make_extractor = original
         names = [r[0] for r in conn.execute("SELECT institution_name FROM jobs ORDER BY job_id")]
         self.assertEqual(names, ["방콕 한국어학원", "가나대학교"])
+        conn.close()
+
+    def test_expired_postings_get_rules_not_claude(self):
+        conn = cj.init_db(Path(":memory:"))
+        cj.save_job(conn, make_job(deadline="2020-01-01"))
+        calls = []
+        original = ef.make_extractor
+        ef.make_extractor = lambda backend: (lambda job, text: calls.append(job) or {"body_text": "본문"})
+        try:
+            stats = cj.fill_job_fields(conn, "claude-code", 50)
+        finally:
+            ef.make_extractor = original
+        self.assertEqual((len(calls), stats["llm"], stats["rules"]), (0, 0, 1))
         conn.close()
 
     def test_attachment_names_with_a_size_or_plus_signs(self):

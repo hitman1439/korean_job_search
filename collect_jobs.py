@@ -3054,6 +3054,10 @@ def geocode_query(conn: sqlite3.Connection, query: str, rest_key: str) -> dict |
     return result
 
 
+# A board's category in front of the name: "한국어교원소식 - 부산광역시교육청 다문화교육지원센터".
+BOARD_PREFIX = re.compile(r"^[^-]{2,15}(?:소식|게시판|구인정보|채용정보)\s*-\s*")
+
+
 def parent_institution(name: str | None) -> str | None:
     """'부산외국어대학교 한국어문화교육원' -> '부산외국어대학교'; None when there is no unit to drop."""
     match = re.match(r"(\S+?(?:대학교|대학))(?:\([^)]*\))?\s+\S", clean_text(name or ""))
@@ -3154,6 +3158,7 @@ def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
         if location in {"해외", "국외", "온라인", "재택"} or location in COUNTRY_NAMES:
             continue
         result = None
+        institution = BOARD_PREFIX.sub("", institution or "") or None
         # A bare unit name ("가족센터") matches some other branch anywhere in the country.
         if institution and (clean_text(institution) in GENERIC_INSTITUTION_NAMES or is_vague_institution(institution)):
             institution = None
@@ -3203,7 +3208,8 @@ def fill_job_fields(conn: sqlite3.Connection, llm_backend: str | None, llm_limit
     try:
         pending = conn.execute(
             """
-            SELECT job_id, title, institution_name, location_text, deadline, description, raw_text, fields_source
+            SELECT job_id, title, institution_name, location_text, deadline, description, raw_text, fields_source,
+                   posted_at, first_seen_at
             FROM jobs
             WHERE status != 'rejected' AND is_canonical = 1
               AND (fields_source IS NULL OR fields_source = 'rules' OR body_text IS NULL)
@@ -3214,6 +3220,9 @@ def fill_job_fields(conn: sqlite3.Connection, llm_backend: str | None, llm_limit
         ).fetchall()
     finally:
         conn.row_factory = None
+    # Claude's runs are limited: spend them on postings the site can still
+    # show. Rules are cheap and still run for every posting.
+    today = dt.date.today()
 
     extractor = extract_fields.make_extractor(llm_backend) if llm_backend else None
     stop_at = time.monotonic() + llm_minutes * 60
@@ -3224,7 +3233,8 @@ def fill_job_fields(conn: sqlite3.Connection, llm_backend: str | None, llm_limit
         job = dict(row)
         fields = None
         source = "rules"
-        if extractor is not None and stats["llm"] + stats["llm_failed"] < llm_limit:
+        live = is_live_job(job["deadline"], job["posted_at"], job["first_seen_at"], today)
+        if extractor is not None and live and stats["llm"] + stats["llm_failed"] < llm_limit:
             text = strip_site_chrome(job["raw_text"] or job["description"] or "")
             try:
                 fields = extractor(job, text)

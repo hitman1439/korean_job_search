@@ -112,6 +112,13 @@ def job_scope(job: dict) -> str:
         return "online"
     if job.get("is_overseas"):
         return "overseas"
+    # 세종학당 posts teachers abroad; some notices only say "해외", or name the
+    # country in the title alone ("한국어 강사 태국 취업").
+    if job.get("institution_type") == "sejong" or job.get("location_text") in {"해외", "국외"}:
+        return "overseas"
+    country = collect_jobs.extract_fields.detect_country(job.get("title") or "", None, "")
+    if country and country != "대한민국":
+        return "overseas"
     return "domestic"
 
 

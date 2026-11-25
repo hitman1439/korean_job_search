@@ -444,6 +444,12 @@ class BuildTests(unittest.TestCase):
                          [45000, 40000, 37000])
         self.assertEqual(bs.hourly_rates({**job, "salary_text": "시급 35,000원(화목), 35,000원(월수금)"}), [35000])
 
+    def test_work_abroad_counts_as_overseas(self):
+        self.assertEqual(bs.job_scope({"title": "한국어 강사 태국 취업"}), "overseas")
+        self.assertEqual(bs.job_scope({"title": "국외 파견 교원 선발", "institution_type": "sejong"}), "overseas")
+        self.assertEqual(bs.job_scope({"title": "강사 모집", "location_text": "해외"}), "overseas")
+        self.assertEqual(bs.job_scope({"title": "아주대 강사 모집", "location_text": "경기"}), "domestic")
+
     def test_region_of_reads_the_place_not_the_title(self):
         def job(**kw):
             return {"scope": "domestic", "address": None, "location_text": None, **kw}
