@@ -35,7 +35,10 @@ log "collect start"
 # Exit 2 means some sources failed (a board down, a timeout) but the rest were
 # saved: build anyway. Anything else (a crash) keeps the last good site.
 status=0
-python3 collect_jobs.py || status=$?
+# --llm-fields: Claude (the signed-in `claude` CLI) reads each new posting
+# into summary, body and fields; about 20 s each, at most 15 per run and
+# 20 minutes in all, so the run stays inside the timer's 50-minute limit.
+python3 collect_jobs.py --llm-fields --llm-limit 15 || status=$?
 if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
   log "collect failed (exit $status); site left as it was"
   exit "$status"

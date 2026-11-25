@@ -3183,12 +3183,15 @@ def geocode_jobs(conn: sqlite3.Connection) -> dict[str, int]:
     return stats
 
 
-def fill_job_fields(conn: sqlite3.Connection, llm_backend: str | None, llm_limit: int) -> dict[str, int]:
+def fill_job_fields(conn: sqlite3.Connection, llm_backend: str | None, llm_limit: int,
+                    llm_minutes: float = 20) -> dict[str, int]:
     """Fill the structured columns (JOB_FIELD_COLUMNS) for jobs that lack them.
 
     Rules run for every job not yet extracted. With an llm_backend, jobs whose
     fields so far came only from rules also go to Claude, at most llm_limit per
     run, so each posting is sent once and the usage per run stays bounded.
+    Claude also stops after llm_minutes, so a slow day cannot push the whole
+    run past the collection timer's limit; the rest waits for the next run.
     """
     stats = {"rules": 0, "llm": 0, "llm_failed": 0}
     conn.row_factory = sqlite3.Row
@@ -3208,7 +3211,11 @@ def fill_job_fields(conn: sqlite3.Connection, llm_backend: str | None, llm_limit
         conn.row_factory = None
 
     extractor = extract_fields.make_extractor(llm_backend) if llm_backend else None
+    stop_at = time.monotonic() + llm_minutes * 60
     for row in pending:
+        if extractor is not None and time.monotonic() > stop_at:
+            print(f"llm fields paused: {llm_minutes:g} minutes used; the rest goes next run", file=sys.stderr)
+            extractor = None
         job = dict(row)
         fields = None
         source = "rules"

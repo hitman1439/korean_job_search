@@ -742,6 +742,19 @@ class LlmRequestTests(unittest.TestCase):
         self.assertEqual(stats, {"rules": 2, "llm": 0, "llm_failed": 0})
         conn.close()
 
+    def test_llm_stops_when_its_time_is_used(self):
+        conn = cj.init_db(Path(":memory:"))
+        cj.save_job(conn, make_job())
+        calls = []
+        original = ef.make_extractor
+        ef.make_extractor = lambda backend: (lambda job, text: calls.append(job) or {})
+        try:
+            stats = cj.fill_job_fields(conn, "claude-code", 50, llm_minutes=-1)
+        finally:
+            ef.make_extractor = original
+        self.assertEqual((calls, stats["llm"], stats["rules"]), ([], 0, 1))
+        conn.close()
+
     def run_claude_code(self, returncode, reply):
         """extract_claude_code against a fake `claude -p` run."""
         import json
