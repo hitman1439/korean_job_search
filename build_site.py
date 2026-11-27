@@ -522,7 +522,8 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
         '<div class="private-bar" role="note">비공개 미리보기 · 해외 공고와 준비 중인 서비스 포함 · 배포하지 마세요</div>'
         if private else '<div class="private-bar" role="note">테스트 페이지 · 관리자만 볼 수 있어요</div>' if test else ""
     )
-    test_css = f'<link rel="stylesheet" href="{root}assets/large.css?v={asset_version("large.css")}">' if test else ""
+    test_css = (f'<link rel="stylesheet" href="{root}assets/large.css?v={asset_version("large.css")}">\n'
+                f'<link rel="stylesheet" href="{root}assets/mobile.css?v={asset_version("mobile.css")}">') if test else ""
     return f"""<!doctype html>
 <html lang="ko">
 <head>

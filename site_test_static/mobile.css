@@ -1,0 +1,63 @@
+/* Test build only (/test): phone layout trial, benchmarked on 잡아바 일자리맵.
+   Step 1 — postings as cards, condition pills on one swipeable line, rounder
+   controls with one blue accent. Loaded after styles.css and large.css; only
+   phones (≤600px) change. Fold into styles.css when it goes public. */
+@media (max-width: 600px) {
+  /* Header: on a phone the menu wraps to two lines, so it scrolls away
+     instead of sticking over the cards, and sits tighter. */
+  .top { position: static; }
+  .top .wrap { gap: 0 18px; padding-block: 6px; }
+  .nav { gap: 0 16px; font-size: 16px; }
+  .nav a, .menu-btn { padding-block: 8px; }
+
+  /* Scope tabs: full width, the picked one in blue. */
+  .hero .filters { gap: 10px; }
+  .seg { display: flex; width: 100%; padding: 4px; border: 0; border-radius: 12px; background: var(--fill); }
+  .seg button { flex: 1 1 0; padding: 0 8px; border-radius: 9px; white-space: nowrap; }
+  .seg button[aria-pressed="true"] { background: var(--blue); box-shadow: 0 2px 6px rgba(26, 85, 192, 0.25); }
+
+  /* Search: a soft filled box instead of a hard outline. */
+  .search { flex-basis: 100%; border-color: transparent; border-radius: 12px; background: var(--fill); }
+
+  /* Conditions: one line of pills that scrolls sideways, edge to edge. */
+  .toggles {
+    flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    margin: 12px calc(-1 * var(--gutter)) 0; padding: 0 var(--gutter) 2px;
+  }
+  .toggles::-webkit-scrollbar { display: none; }
+  .toggles .toggle { flex: 0 0 auto; white-space: nowrap; border-radius: 999px; border-color: var(--line); }
+  .toggle[aria-pressed="true"], .toggles .toggle[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); }
+
+  /* List area: a light grey ground so the white cards stand out. */
+  .board { margin: 20px calc(-1 * var(--gutter)) 0; padding: 4px var(--gutter) 24px; background: var(--soft); }
+  .panel-head { padding: 12px 2px; border-bottom: 0; }
+  .sort select { min-height: 40px; padding: 0 14px; border-color: var(--line); border-radius: 999px; color: var(--text); font-weight: 600; }
+  .list-panel .local-note { margin: 0 0 10px; }
+
+  /* Postings: white cards with a soft shadow. */
+  .jobs { display: flex; flex-direction: column; gap: 10px; }
+  .job-row {
+    border: 1px solid var(--line); border-radius: 14px; background: #fff;
+    box-shadow: 0 1px 3px rgba(25, 31, 40, 0.06); overflow: hidden;
+  }
+  .job-row:hover, .job-row[aria-current="true"] { background: #fff; }
+  .job-row[aria-current="true"] { border-color: var(--blue); }
+  .job-row .pick { padding: 16px 16px 12px; }
+  .job-meta { gap: 6px; margin-top: 8px; align-items: center; }
+  .job-org { font-size: 0.9em; }
+  /* Facts line as small pills: D-day, pay, and the two marks. */
+  .job-meta .badge, .meta-pay, .flag {
+    display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px;
+    border-radius: 999px; font-size: 0.85em; line-height: 1.3;
+  }
+  .meta-pay { background: var(--blue-soft); color: var(--blue); font-weight: 700; }
+  .flag { background: var(--fill); color: var(--text-2); font-weight: 600; }
+  .job-row .go { border-radius: 999px; border-color: var(--line); }
+  .ad-slot.infeed { margin: 0; border-radius: 14px; background: #fff; }
+
+  /* Opened card: facts and buttons stay inside the card. */
+  .row-detail { padding: 4px 16px 18px; border-top: 1px solid var(--line); }
+  .detail-sum { margin-top: 12px; }
+  .row-map { border-radius: 12px; }
+  .detail-actions .btn { border-radius: 12px; }
+}
