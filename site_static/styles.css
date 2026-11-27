@@ -109,10 +109,12 @@ button, input, select { font: inherit; }
 
 /* Home: a board-style list; a row opens in place, with its map on 지도보기. */
 .board { margin-top: 24px; }
-/* The home page is a list to read, so it keeps a reading width. */
+/* The home page is a list to read, so it keeps a reading width. The header
+   and footer are shared by every page, so they keep that one width everywhere
+   and the logo and menu never move between pages. */
 .wrap.home,
-.page-home .top .wrap,
-.page-home .foot .wrap { max-width: 920px; }
+.top .wrap,
+.foot .wrap { max-width: 920px; }
 .map-note { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; color: var(--text-4); font-size: 15px; }
 .pin {
   min-width: 44px; min-height: 36px; padding: 0 12px; border-radius: 6px; cursor: pointer;
