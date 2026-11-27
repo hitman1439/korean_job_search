@@ -257,6 +257,9 @@ def prepare(job: dict, today: dt.date) -> dict:
     # Only the copies the collector mirrored (mirror_attachments): the page
     # never links to the board that carried the post.
     job["summary"] = public_text(job.get("summary"))
+    # Every notice file the post listed, mirrored or not: content_holds() keeps
+    # a posting off the public site until all of them are served from here.
+    job["listed_files"] = sum(1 for f in files if isinstance(f, dict))
     job["files"] = [
         (public_file_name(f.get("name") or "첨부파일", f["file"]), f["file"]) for f in files
         if isinstance(f.get("file"), str) and re.fullmatch(r"\d+/\d+\.[a-z]{2,4}", f["file"])
@@ -522,8 +525,7 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
         '<div class="private-bar" role="note">비공개 미리보기 · 해외 공고와 준비 중인 서비스 포함 · 배포하지 마세요</div>'
         if private else '<div class="private-bar" role="note">테스트 페이지 · 관리자만 볼 수 있어요</div>' if test else ""
     )
-    test_css = (f'<link rel="stylesheet" href="{root}assets/large.css?v={asset_version("large.css")}">\n'
-                f'<link rel="stylesheet" href="{root}assets/mobile.css?v={asset_version("mobile.css")}">') if test else ""
+    test_css = f'<link rel="stylesheet" href="{root}assets/large.css?v={asset_version("large.css")}">' if test else ""
     return f"""<!doctype html>
 <html lang="ko">
 <head>
@@ -538,6 +540,7 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
 <link rel="stylesheet" href="{FONT_CSS}">
 <link rel="stylesheet" href="{root}assets/styles.css?v={asset_version('styles.css')}">
 {test_css}
+<link rel="stylesheet" href="{root}assets/mobile.css?v={asset_version('mobile.css')}">
 {head_ads}
 {private_head}
 {extra_head}
@@ -549,7 +552,7 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
 {footer(root)}
 <script>window.SITE = {json_for_script(site_config)};</script>
 <script src="{root}assets/app.js?v={asset_version('app.js')}" defer></script>
-{f'<script src="{root}assets/mobile.js?v={asset_version("mobile.js")}" defer></script>' if test else ""}
+<script src="{root}assets/mobile.js?v={asset_version('mobile.js')}" defer></script>
 </body>
 </html>
 """
@@ -565,6 +568,68 @@ def public_ready(job: dict) -> bool:
     if job["scope"] == "domestic" and not job["has_place"]:
         return False
     return bool((job.get("body_text") or "").strip())
+
+
+# --- content completeness ------------------------------------------------------
+# A posting with a missing notice file or an empty notice costs the site its
+# readers' trust, so the public build leaves such a posting out until the next
+# collection fills it in. The test build shows it with a "확인 필요" mark, and
+# every build prints the list (see report_holds).
+
+# The notice pointing at a file of its own ("자세한 내용은 첨부파일 참조",
+# "붙임 1", "별첨"), not an applicant attaching documents ("이력서를 첨부하여").
+NOTICE_FILE_HINT = re.compile(
+    r"첨부\s*(?:파일|문서|공고|양식)|첨부(?:된|한)\s*(?:공고|파일|문서|양식)|첨부\s*(?:를|을)?\s*참[조고]"
+    r"|붙임\s*(?:파일|문서|\d)|별첨|^#+\s*첨부", re.M)
+_OLE = b"\xd0\xcf\x11\xe0"
+FILE_MAGIC = {".pdf": (b"%PDF",), ".hwp": (_OLE,), ".doc": (_OLE,), ".xls": (_OLE,),
+              ".hwpx": (b"PK",), ".docx": (b"PK",), ".xlsx": (b"PK",), ".zip": (b"PK",)}
+
+
+def file_ok(path: Path) -> bool:
+    """A real document, not a missing copy, an empty file, or an error page saved
+    under a document's name (boards answer a login wall with HTML)."""
+    try:
+        if path.stat().st_size < 1024:
+            return False
+        with path.open("rb") as f:
+            head = f.read(8)
+    except OSError:
+        return False
+    magic = FILE_MAGIC.get(path.suffix.lower())
+    return bool(magic) and head.startswith(magic)
+
+
+def content_holds(job: dict, files_dir: Path) -> list[str]:
+    """Why this posting's page would be incomplete; empty when it is whole.
+    Keeps only the files that pass file_ok() in job["files"]."""
+    if job.get("external"):
+        return []
+    job["files"] = [(name, rel) for name, rel in job["files"] if file_ok(files_dir / rel)]
+    reasons = []
+    body = (job.get("body_text") or "").strip()
+    if not body:
+        reasons.append("공고 본문 없음")
+    missing = job.get("listed_files", 0) - len(job["files"])
+    if missing > 0:
+        reasons.append(f"첨부파일 {missing}개를 받지 못함")
+    elif body and not job["files"] and NOTICE_FILE_HINT.search(body):
+        reasons.append("본문이 첨부파일을 가리키는데 파일이 없음")
+    return reasons
+
+
+def report_holds(jobs: list[dict], public: bool) -> None:
+    held = [job for job in jobs if job.get("holds")]
+    if not held:
+        return
+    where = "공개 사이트에서 뺌" if public else "확인 필요 표시"
+    lines = [f"content check: {len(held)} posting(s) incomplete ({where})"]
+    lines += [f"  job {job['job_id']} {job['org']} | {', '.join(job['holds'])} | {(job.get('title') or '')[:40]}"
+              for job in held]
+    # A console that can't show a character (Windows cp949) must not stop the build.
+    encoding = sys.stdout.encoding or "utf-8"
+    for line in lines:
+        print(line.encode(encoding, "replace").decode(encoding))
 
 
 def services_on(config: dict) -> bool:
@@ -716,6 +781,8 @@ def row_meta(job: dict) -> str:
         items.append('<span class="flag">모의수업</span>')
     if job.get("external"):
         items.append('<span class="flag">사람인</span>')
+    if job.get("show_holds") and job.get("holds"):
+        items.append('<span class="flag hold">확인 필요</span>')
     return "".join(items)
 
 
@@ -802,13 +869,12 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 <div class="countries">{country_cards or '<p class="fine">지금 열린 해외 공고가 없어요.</p>'}</div>
 </div>""" if show_overseas else ""
     services = service_blocks(config, "")
-    # Test build only: a 목록 | 지도 switch and one map of every listed posting
-    # (site_test_static/mobile.js draws it), benchmarked on 잡아바 일자리맵.
-    test = bool(config.get("test"))
+    # A 목록 | 지도 switch and one map of every listed posting (site_static/
+    # mobile.js draws it), benchmarked on 잡아바 일자리맵.
     view_tabs = """<div class="view-tabs" role="group" aria-label="보기">
 <button type="button" data-view-btn="list" aria-pressed="true">목록보기</button>
 <button type="button" data-view-btn="map" aria-pressed="false">지도보기</button>
-</div>""" if test else ""
+</div>"""
     all_map = """<section class="all-map" data-all-map hidden aria-label="공고 지도">
 <div class="all-map-canvas" data-all-map-canvas></div>
 <p class="map-note" hidden></p>
@@ -818,7 +884,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 <div class="sheet-head"><strong data-sheet-title></strong><button type="button" class="sheet-close" data-sheet-close aria-label="목록 닫기">×</button></div>
 <ul class="sheet-list" data-sheet-list></ul>
 </div>
-</section>""" if test else ""
+</section>"""
     alert_section = """<section id="alert" class="callout alert-box" aria-labelledby="alertTitle">
 <h2 id="alertTitle">지금 고른 조건 그대로<br>새 공고를 알려 드릴게요</h2>
 <p class="desc"><span data-filter-summary>전체</span> · 새 공고와 마감 3일 전에만, 일주일에 두 번 이하로 보내요.</p>
@@ -951,11 +1017,15 @@ def render_job(job: dict, jobs: list[dict], config: dict, today: dt.date) -> str
                        f'target="_blank" rel="noopener">사람인에서 지원하기</a></div>'
                        f'<p class="fine">사람인 채용정보예요. {SARAMIN_CREDIT}</p>')
     files_block = ""
+    if job.get("show_holds") and job.get("holds"):
+        # Test/private builds only: the public build leaves this posting out.
+        files_block = (f'<p class="hold-note" role="note"><strong>확인 필요</strong> · {e(", ".join(job["holds"]))}. '
+                       '공개 사이트에는 나가지 않아요.</p>')
     if job["files"]:
         items = "".join(
             f'<li><a href="{root}files/{e(path)}" download="{e(name)}">{e(name)}</a></li>' for name, path in job["files"]
         )
-        files_block = f'<div class="files"><h3>공고문·지원 양식</h3><ul>{items}</ul></div>'
+        files_block += f'<div class="files"><h3>공고문·지원 양식</h3><ul>{items}</ul></div>'
     notice = notice_html(job.get("body_text"))
     if job.get("external"):
         # The API gives no notice text, and Saramin's pages are not copied.
@@ -1839,8 +1909,19 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
     try:
         jobs = load_jobs(conn, today, approved_only, include_overseas=overseas_on(config),
                          include_saramin=saramin_on(config))
-        if not (config.get("test") or config.get("private")):
+        public = not (config.get("test") or config.get("private"))
+        files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)
+        for job in jobs:
+            job["holds"] = content_holds(job, files_dir)
+            job["show_holds"] = not public
+        if public:
+            # Postings outside public_ready() never meant to be here; only
+            # report the ones held back for missing content.
             jobs = [job for job in jobs if public_ready(job)]
+            report_holds(jobs, public)
+            jobs = [job for job in jobs if not job["holds"]]
+        else:
+            report_holds(jobs, public)
         last_run = conn.execute("SELECT MAX(finished_at) FROM collection_runs").fetchone()[0]
         orgs = review_orgs(conn) if config.get("test") else []
     finally:
@@ -1868,9 +1949,8 @@ def build(db_path: Path, out_dir: Path, config: dict, today: dt.date, built_at: 
         write("start.html", render_start(config))
         write("rating.html", render_rating(config, orgs))
         write("review.html", render_review(config, orgs))
-    files_dir = Path(config.get("files_dir") or collect_jobs.DEFAULT_FILES_DIR)
     for job in jobs:
-        job["files"] = [(name, rel) for name, rel in job["files"] if (files_dir / rel).is_file()]
+        # content_holds() already kept only the files that are real documents.
         for _, rel in job["files"]:
             (out_dir / "files" / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(files_dir / rel, out_dir / "files" / rel)

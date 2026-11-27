@@ -472,17 +472,43 @@ class BuildTests(unittest.TestCase):
         self.assertIn("data-alert-form", index)
         self.assertIn('href="index.html#alert">알림 받기', index)
 
+    def test_incomplete_attachments_keep_a_posting_off_the_public_site(self):
+        files = Path(self.tmp.name) / "files"
+        (files / "1").mkdir(parents=True)
+        (files / "1" / "1.pdf").write_bytes(b"%PDF-1.4\n" + b"0" * 2048)
+        conn = cj.init_db(self.db)
+        conn.execute(
+            """UPDATE jobs SET attachments = '[{"name": "채용공고문.pdf", "url": "https://x.example/1", "file": "1/1.pdf"},
+                               {"name": "미러없음.hwp", "url": "https://x.example/2"},
+                               {"name": "악성.hwp", "url": "javascript:alert(1)", "file": "../../x.hwp"}]',
+               body_text = '## 지원 자격
+- 한국어교원 2급 이상'
+               WHERE title = '아주대 강사 모집'"""
+        )
+        conn.commit()
+        conn.close()
+        config = {**self.config, "files_dir": str(files)}
+        bs.build(self.db, self.out, config, TODAY, BUILT_AT)
+        public = "".join(p.read_text(encoding="utf-8") for p in (self.out / "jobs").glob("*.html"))
+        self.assertNotIn("아주대 강사 모집", public)
+        self.assertNotIn("아주대 강사 모집", (self.out / "index.html").read_text(encoding="utf-8"))
+        bs.build(self.db, self.out, {**config, "test": True}, TODAY, BUILT_AT)
+        page = self.job_page("아주대 강사 모집")
+        self.assertIn("확인 필요", page)
+        self.assertIn("첨부파일 2개를 받지 못함", page)
+        self.assertIn('href="../files/1/1.pdf"', page)
+        self.assertNotIn("미러없음.hwp", page)
+        self.assertNotIn("악성.hwp", page)
+
     def test_job_page_holds_everything_and_never_names_the_board(self):
         files = Path(self.tmp.name) / "files"
         (files / "1").mkdir(parents=True)
-        (files / "1" / "1.pdf").write_bytes(b"%PDF-1.4")
+        (files / "1" / "1.pdf").write_bytes(b"%PDF-1.4\n" + b"0" * 2048)
         conn = cj.init_db(self.db)
         job_id = conn.execute("SELECT job_id FROM jobs WHERE title = '아주대 강사 모집'").fetchone()[0]
         conn.execute(
             """UPDATE jobs SET apply_email = 'ili3@sejong.ac.kr',
-               attachments = '[{"name": "채용공고문.pdf", "url": "https://klp.korean.go.kr/certif/file/download?fileNo=1", "file": "1/1.pdf"},
-                               {"name": "미러없음.hwp", "url": "https://klp.korean.go.kr/certif/file/download?fileNo=2"},
-                               {"name": "악성.hwp", "url": "javascript:alert(1)", "file": "../../x.hwp"}]',
+               attachments = '[{"name": "채용공고문.pdf", "url": "https://klp.korean.go.kr/certif/file/download?fileNo=1", "file": "1/1.pdf"}]',
                apply_url = 'https://klp.korean.go.kr/certif/jobsearch/35051', apply_url_source = 'aggregator',
                original_url = 'https://klp.korean.go.kr/certif/jobsearch/35051',
                work_period = '2026.12.07 ~ 2027.02.18',
@@ -505,8 +531,6 @@ class BuildTests(unittest.TestCase):
         self.assertNotIn("이메일로 지원하기", page)
         self.assertIn('href="../files/1/1.pdf" download="채용공고문.pdf"', page)
         self.assertTrue((self.out / "files" / "1" / "1.pdf").exists())
-        self.assertNotIn("미러없음.hwp", page)
-        self.assertNotIn("악성.hwp", page)
         self.assertIn("<h3>지원 자격</h3>", page)
         self.assertIn("<li>한국어교원 2급 이상</li>", page)
         self.assertIn('href="https://forms.example/apply"', page)

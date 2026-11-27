@@ -2056,6 +2056,17 @@ def fetch_file(url: str, timeout: int = 30) -> bytes:
     return with_deadline(once, (), timeout * 3)
 
 
+_OLE_MAGIC = b"\xd0\xcf\x11\xe0"
+DOCUMENT_MAGIC = {".pdf": b"%PDF", ".hwp": _OLE_MAGIC, ".doc": _OLE_MAGIC, ".xls": _OLE_MAGIC,
+                  ".hwpx": b"PK", ".docx": b"PK", ".xlsx": b"PK", ".zip": b"PK"}
+
+
+def looks_like_document(data: bytes, suffix: str) -> bool:
+    """The bytes open as the file type the name says (build_site.file_ok checks the same)."""
+    magic = DOCUMENT_MAGIC.get(suffix)
+    return bool(magic) and len(data) >= 1024 and data.startswith(magic)
+
+
 def mirror_attachments(conn: sqlite3.Connection, files_dir: Path) -> dict[str, int]:
     """Download each published job's notice files into files_dir/<job_id>/.
 
@@ -2074,9 +2085,11 @@ def mirror_attachments(conn: sqlite3.Connection, files_dir: Path) -> dict[str, i
             continue
         changed = False
         for index, item in enumerate(files, start=1):
-            if item.get("file") and (files_dir / item["file"]).exists():
-                continue
             suffix = Path(item.get("name") or "").suffix.lower()
+            saved = files_dir / item["file"] if item.get("file") else None
+            # A copy saved before this check may be an error page: fetch it again.
+            if saved and saved.exists() and looks_like_document(saved.read_bytes(), saved.suffix.lower()):
+                continue
             if not re.fullmatch(r"\.(?:hwp|hwpx|pdf|docx?|xlsx?|zip)", suffix):
                 continue
             relative = f"{job_id}/{index}{suffix}"
@@ -2084,6 +2097,12 @@ def mirror_attachments(conn: sqlite3.Connection, files_dir: Path) -> dict[str, i
                 data = fetch_file(item["url"])
             except Exception as exc:  # network, size, login wall: try again next run
                 print(f"attachment: job {job_id} {item.get('name')}: {exc}", file=sys.stderr)
+                stats["failed"] += 1
+                continue
+            if not looks_like_document(data, suffix):
+                # A login wall or error page answered with HTML: keep nothing,
+                # so the site never serves it as the notice, and retry next run.
+                print(f"attachment: job {job_id} {item.get('name')}: not a {suffix} file", file=sys.stderr)
                 stats["failed"] += 1
                 continue
             target = files_dir / relative

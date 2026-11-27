@@ -1,7 +1,7 @@
-/* Test build only (/test): phone layout trial, benchmarked on 잡아바 일자리맵.
+/* Phone layout, benchmarked on 잡아바 일자리맵.
    Step 1 — postings as cards, condition pills on one swipeable line, rounder
    controls with one blue accent. Loaded after styles.css and large.css; only
-   phones (≤600px) change. Fold into styles.css when it goes public. */
+   phones (≤600px) change. */
 @media (max-width: 600px) {
   /* Header: on a phone the menu wraps to two lines, so it scrolls away
      instead of sticking over the cards, and sits tighter. */

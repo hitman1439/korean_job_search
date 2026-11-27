@@ -411,3 +411,7 @@ button, input, select { font: inherit; }
   .bd-list td.bd-title { font-size: 15px; }
   .bd-post-body { font-size: 16px; }
 }
+
+/* Test/private builds: a posting the public build leaves out for missing content. */
+.flag.hold { color: var(--red); }
+.hold-note { margin: 0 0 16px; padding: 12px 14px; border-radius: 6px; background: var(--red-soft); color: var(--red); font-size: 15px; line-height: 1.6; }

@@ -18,6 +18,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import collect_jobs as cj  # noqa: E402
+
+PDF_BYTES = b"%PDF-1.4\n" + b"0" * 2048
 import extract_fields as ef  # noqa: E402
 
 TODAY = dt.date(2026, 10, 29)
@@ -451,7 +453,7 @@ class DatabaseTests(unittest.TestCase):
             {"name": "양식.hwp", "url": "https://board.example/f?2"},
         ], ensure_ascii=False)
         self.conn.execute("UPDATE jobs SET attachments = ?", (files,))
-        answers = {"https://board.example/f?1": b"%PDF", "https://board.example/f?2": ValueError("login wall")}
+        answers = {"https://board.example/f?1": PDF_BYTES, "https://board.example/f?2": ValueError("login wall")}
 
         def fake_fetch(url):
             answer = answers[url]
@@ -464,7 +466,7 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(stats, {"mirrored": 1, "failed": 1})
             stored = json.loads(self.conn.execute("SELECT attachments FROM jobs").fetchone()[0])
             self.assertEqual(stored[0]["file"], "1/1.pdf")
-            self.assertEqual((Path(tmp) / "1" / "1.pdf").read_bytes(), b"%PDF")
+            self.assertEqual((Path(tmp) / "1" / "1.pdf").read_bytes(), PDF_BYTES)
             self.assertNotIn("file", stored[1])
             fetch.reset_mock()
             cj.mirror_attachments(self.conn, Path(tmp))

@@ -1,4 +1,4 @@
-// Test build only (/test): 목록 | 지도 switch on the home page, with one map of
+// Home page: 목록 | 지도 switch on the home page, with one map of
 // every posting the list currently shows (benchmarked on 잡아바 일자리맵).
 // Runs after app.js, which owns the filters and row opening; this file only
 // reads the rows (their data-* and hidden state) and clicks a row to open it.
