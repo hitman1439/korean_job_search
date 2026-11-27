@@ -61,3 +61,66 @@
   .row-map { border-radius: 12px; }
   .detail-actions .btn { border-radius: 12px; }
 }
+
+/* Step 2 — 목록 | 지도 switch and the map of all postings (mobile.js). The
+   switch shows at every width in the test build; the map fills the phone. */
+.view-tabs { display: flex; gap: 4px; padding: 4px; margin-bottom: 20px; border-radius: 12px; background: #fff; border: 1px solid var(--line); box-shadow: 0 1px 4px rgba(25, 31, 40, 0.06); }
+.view-tabs button {
+  flex: 1 1 0; min-height: 46px; border: 0; border-radius: 9px; background: transparent;
+  color: var(--text-2); font-weight: 700; cursor: pointer;
+}
+.view-tabs button[aria-pressed="true"] { background: var(--blue); color: #fff; box-shadow: 0 2px 6px rgba(26, 85, 192, 0.25); }
+/* On the map, the headline steps aside; the filters stay so they still apply. */
+.view-map .hero h1, .view-map .hero .hero-meta { display: none; }
+
+.all-map { position: relative; height: calc(100svh - 230px); min-height: 380px; border-radius: 14px; overflow: hidden; background: #eef1f4; }
+.all-map[hidden] { display: none; }
+.all-map-canvas { position: absolute; inset: 0; }
+.all-map-count {
+  position: absolute; z-index: 5; top: 12px; left: 12px; max-width: calc(100% - 24px);
+  padding: 8px 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); font-size: 14px; font-weight: 600; color: var(--text-2);
+}
+.all-map-here {
+  position: absolute; z-index: 5; right: 12px; bottom: 16px; min-height: 44px; padding: 0 16px;
+  border: 0; border-radius: 999px; background: #fff; color: var(--blue); font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); cursor: pointer;
+}
+.map-dot {
+  width: 34px; height: 34px; border-radius: 50%; border: 3px solid #fff; cursor: pointer;
+  background: #0f9d6e; color: #fff; font: inherit; font-size: 14px; font-weight: 700;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+.map-dot.urgent { background: var(--red); }
+.here-dot { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--blue); border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(26, 85, 192, 0.2); }
+
+/* Bottom sheet: the postings under a tapped marker. */
+.map-sheet {
+  position: absolute; z-index: 6; left: 8px; right: 8px; bottom: 8px; max-height: 55%;
+  display: flex; flex-direction: column; border-radius: 16px; background: #fff;
+  box-shadow: 0 -2px 16px rgba(0, 0, 0, 0.18);
+}
+.map-sheet[hidden] { display: none; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 6px 6px 18px; border-bottom: 1px solid var(--line); }
+.sheet-head strong { font-size: 16px; }
+.sheet-close { width: 44px; height: 44px; border: 0; background: transparent; font-size: 24px; color: var(--text-3); cursor: pointer; }
+.sheet-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+.sheet-list li + li { border-top: 1px solid var(--line); }
+.sheet-item { display: block; width: 100%; padding: 12px 18px; border: 0; background: transparent; text-align: left; font: inherit; color: var(--text); cursor: pointer; }
+.sheet-item:hover { background: var(--soft); }
+.sheet-top { display: flex; gap: 6px; margin-bottom: 6px; }
+.sheet-badge, .sheet-pay { padding: 2px 9px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+.sheet-badge { border: 1px solid var(--line-strong); color: var(--text-2); }
+.sheet-badge.urgent { background: var(--red); border-color: var(--red); color: #fff; }
+.sheet-pay { background: var(--blue-soft); color: var(--blue); }
+.sheet-title { display: block; font-size: 16px; font-weight: 700; line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-org { display: block; margin-top: 2px; font-size: 14px; color: var(--text-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 600px) {
+  /* Phone map: tabs on top, the map under them fills the rest of the screen.
+     The filters step aside too (the count chip says when they still apply). */
+  .view-map .hero .filters, .view-map .hero .toggles { display: none; }
+  .view-map .view-tabs { margin-bottom: 0; }
+  .view-map .board { margin-top: 12px; padding: 0; background: none; }
+  /* .board already reaches the screen edges (step 1), so the map just fills it. */
+  .all-map { border-radius: 0; height: calc(100svh - 88px); }
+}

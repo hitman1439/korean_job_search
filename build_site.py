@@ -549,6 +549,7 @@ def page(title: str, description: str, body: str, *, root: str, config: dict, ca
 {footer(root)}
 <script>window.SITE = {json_for_script(site_config)};</script>
 <script src="{root}assets/app.js?v={asset_version('app.js')}" defer></script>
+{f'<script src="{root}assets/mobile.js?v={asset_version("mobile.js")}" defer></script>' if test else ""}
 </body>
 </html>
 """
@@ -801,6 +802,23 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 <div class="countries">{country_cards or '<p class="fine">지금 열린 해외 공고가 없어요.</p>'}</div>
 </div>""" if show_overseas else ""
     services = service_blocks(config, "")
+    # Test build only: a 목록 | 지도 switch and one map of every listed posting
+    # (site_test_static/mobile.js draws it), benchmarked on 잡아바 일자리맵.
+    test = bool(config.get("test"))
+    view_tabs = """<div class="view-tabs" role="group" aria-label="보기">
+<button type="button" data-view-btn="list" aria-pressed="true">목록보기</button>
+<button type="button" data-view-btn="map" aria-pressed="false">지도보기</button>
+</div>""" if test else ""
+    all_map = """<section class="all-map" data-all-map hidden aria-label="공고 지도">
+<div class="all-map-canvas" data-all-map-canvas></div>
+<p class="map-note" hidden></p>
+<p class="all-map-count" data-all-map-count role="status"></p>
+<button type="button" class="all-map-here" data-all-map-here aria-label="내 위치로 지도 옮기기">내 위치</button>
+<div class="map-sheet" data-map-sheet hidden>
+<div class="sheet-head"><strong data-sheet-title></strong><button type="button" class="sheet-close" data-sheet-close aria-label="목록 닫기">×</button></div>
+<ul class="sheet-list" data-sheet-list></ul>
+</div>
+</section>""" if test else ""
     alert_section = """<section id="alert" class="callout alert-box" aria-labelledby="alertTitle">
 <h2 id="alertTitle">지금 고른 조건 그대로<br>새 공고를 알려 드릴게요</h2>
 <p class="desc"><span data-filter-summary>전체</span> · 새 공고와 마감 3일 전에만, 일주일에 두 번 이하로 보내요.</p>
@@ -812,6 +830,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 </section>""" if alerts_on(config) else ""
     body = f"""<main class="wrap home" data-board>
 <section class="hero" aria-labelledby="headline">
+{view_tabs}
 <h1 id="headline" class="title-xl">한국어 강사 채용공고</h1>
 <p class="hero-meta">지원 가능 <strong>{len(jobs)}개</strong> · {collected_at.month}월 {collected_at.day}일 {collected_at.hour}시 업데이트</p>
 <div class="filters">
@@ -827,6 +846,7 @@ def render_index(jobs: list[dict], config: dict, collected_at: dt.datetime) -> s
 </section>
 
 <div class="board">
+{all_map}
 {countries_view}
 <section class="list-panel" aria-labelledby="listTitle">
 <div class="panel-head"><h2 id="listTitle"><span class="sr-only">공고 목록 </span><span data-count>{len(jobs)}개</span></h2>
